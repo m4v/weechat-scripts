@@ -25,7 +25,6 @@
 #
 # TODO
 # - grepping should run in background for big logs
-# - add a filter for exclude log files we don't want
 ###
 
 from __future__ import with_statement # This isn't required in Python 2.6
@@ -101,14 +100,23 @@ class defaultDictError(defaultDict):
 				%(key, ', '.join(map(repr, self.keys())), self.default))
 
 ### config
-settings = (('clear_buffer', 'off'),) # Should clear the buffer before every search
+settings = (
+		('clear_buffer', 'off'), # Should clear the buffer before every search
+		('log_filter', '')) # filter for exclude log files
 
-# XXX I can't find for the love of me how to easily add a boolean config option in plugins.var.python
+# I can't find for the love of me how to easily add a boolean config option in plugins.var.python
 # with config_set_plugin any string is valid, will do value validation here.
 boolDict = defaultDictError({'on':True, 'off':False}, 'off')
 def get_config_clear_buffer():
 	"""Gets our config value, returns a sane default if value is wrong."""
 	return boolDict[weechat.config_get_plugin('clear_buffer')]
+
+def get_config_log_filter():
+	filter = weechat.config_get_plugin('log_filter')
+	if filter:
+		return filter.split(',')
+	else:
+		return []
 
 def get_home():
 	home = weechat.config_string(weechat.config_get('logger.file.path'))
@@ -195,7 +203,7 @@ def human_readable_size(size):
 
 ### log files and buffers
 cache_dir = {} # for avoid walking the dir tree more than once per command
-def dir_list(dir):
+def dir_list(dir, filter_list=(), filter_excludes=True):
 	"""Returns a list of files in 'dir' and its subdirs."""
 	global cache_dir
 	debug('dir_list: listing in %s' %dir)
@@ -206,9 +214,22 @@ def dir_list(dir):
 	def f(arg, dir, fnames):
 		arg.extend(map(lambda s:path.join(dir, s), fnames))
 
+	def filter(file):
+		if path.isdir(file):
+			return True
+		elif filter_list:
+			import fnmatch
+			file = file[len(dir):] # pattern shouldn't match home dir
+			for pattern in filter_list:
+				if fnmatch.fnmatch(file, pattern):
+					return filter_excludes
+		return not filter_excludes
+
 	file_list = []
+	filter_list = filter_list or get_config_log_filter()
+	debug('filter: %s' %filter_list)
 	path.walk(dir, f, file_list) # get a list of log files, including in subdirs
-	file_list = [ file for file in file_list if not path.isdir(file) ]
+	file_list = [ file for file in file_list if not filter(file) ]
 	cache_dir[dir] = file_list
 	return file_list
 
@@ -601,10 +622,11 @@ def logs_cmd(data, buffer, args):
 	from os import stat
 	get_size = lambda x: stat(x).st_size
 	sort_by_size = False
+	filter = []
 	try:
-		opts, filename = getopt.gnu_getopt(args.split(), 's', ['size'])
-		if filename:
-			filename = filename[0]
+		opts, args = getopt.gnu_getopt(args.split(), 's', ['size'])
+		if args:
+			filter = args
 		for opt, var in opts:
 			opt = opt.strip('-')
 			if opt in ('size', 's'):
@@ -614,10 +636,9 @@ def logs_cmd(data, buffer, args):
 		return WEECHAT_RC_OK
 	# args look good
 	cmd_init()
-	file_list = dir_list(home_dir)
+	# is there's a filter, filter_excludes should be False
+	file_list = dir_list(home_dir, filter, filter_excludes=not filter)
 	home_dir_len = len(home_dir)
-	if filename:
-		file_list = [ file for file in file_list if filename in file[home_dir_len:] ]
 	if sort_by_size:
 		file_list.sort(key=get_size)
 	else:
