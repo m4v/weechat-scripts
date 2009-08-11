@@ -73,13 +73,14 @@ class linesDict(dict):
 		else:
 			return ''
 
-class defaultDict(dict):
+class ValidValuesDict(dict):
 	"""
 	Dict that returns the default value defined by 'defaultKey' key if __getitem__ raises
 	KeyError. 'defaultKey' must be in the supplied dict.
 	"""
 	def _error_msg(self, key):
-		pass
+		error("'%s' is an invalid option value, allowed: %s. Defaulting to '%s'" \
+				%(key, ', '.join(map(repr, self.keys())), self.default))
 
 	def __init__(self, dict, defaultKey):
 		self.update(dict)
@@ -94,19 +95,14 @@ class defaultDict(dict):
 			self._error_msg(key)
 			return dict.__getitem__(self, self.default)
 
-class defaultDictError(defaultDict):
-	def _error_msg(self, key):
-		error("'%s' is an invalid option value, allowed: %s. Defaulting to '%s'" \
-				%(key, ', '.join(map(repr, self.keys())), self.default))
-
 ### config
 settings = (
 		('clear_buffer', 'off'), # Should clear the buffer before every search
 		('log_filter', '')) # filter for exclude log files
 
 # I can't find for the love of me how to easily add a boolean config option in plugins.var.python
-# with config_set_plugin any string is valid, will do value validation here.
-boolDict = defaultDictError({'on':True, 'off':False}, 'off')
+# config_set_plugin any string is valid, will do value validation here.
+boolDict = ValidValuesDict({'on':True, 'off':False}, 'off')
 def get_config_clear_buffer():
 	"""Gets our config value, returns a sane default if value is wrong."""
 	return boolDict[weechat.config_get_plugin('clear_buffer')]
@@ -192,14 +188,13 @@ def split_line(s):
 		weechat_format = False # incoming lines won't be formatted if they have 2 tabs
 		return '', '', s.replace('\t', ' ')
 
-sizeDict = {-1:'', 0:'b', 1:'KiB', 2:'MiB', 3:'GiB', 4:'TiB'}
-sizeDict = defaultDict(sizeDict, -1)
+sizeDict = {0:'b', 1:'KiB', 2:'MiB', 3:'GiB', 4:'TiB'}
 def human_readable_size(size):
 	power = 0
 	while size > 1024:
 		power += 1
 		size /= 1024.0
-	return '%.2f%s' %(size, sizeDict[power])
+	return '%.2f%s' %(size, sizeDict.get(power, ''))
 
 ### log files and buffers
 cache_dir = {} # for avoid walking the dir tree more than once per command
