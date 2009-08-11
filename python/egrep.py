@@ -422,6 +422,25 @@ def grep_buffer(buffer, head, tail, *args):
 		lines.reverse()
 	return lines
 
+### this is our main grep function
+def get_matching_lines(logs, *args):
+	"""
+	get_matching_lines(logs, head, tail, regexp, hilight, exact) => linesDict
+	Given a list of log files or buffer pointers, returns a linesDict with the matching lines
+	"""
+	global home_dir
+	matched_lines = linesDict()
+	for log in logs:
+		if log == '' or log.startswith('0x'):
+			# is a buffer
+			buffer_name = weechat.buffer_get_string(log, 'name')
+			matched_lines[buffer_name] = grep_buffer(log, *args)
+		else:
+			# is a file
+			log_name = log[len(home_dir):]
+			matched_lines[log_name] = grep_file(log, *args)
+	return matched_lines
+
 ### output buffer
 def buffer_update(matched_lines, pattern, count, *args):
 	"""Updates our buffer with new lines."""
@@ -464,7 +483,22 @@ def buffer_create():
 			weechat.buffer_clear(buffer)
 	return buffer
 
-def buffer_input(*args):
+def buffer_input(data, buffer, input_data):
+	global last_search
+	if last_search and input_data:
+		logs, head, tail, regexp, hilight, exact, count, matchcase = last_search
+		try:
+			regexp = make_regexp(input_data, matchcase)
+		except Exception, e:
+			error(e)
+			return WEECHAT_RC_OK
+		# lets be sure that our pointers in 'logs' are still valid
+		for log in logs:
+			if log.startswith('0x') and not weechat.infolist_get('buffer', log, ''):
+				# this is so ugly, but I'm lazy and I don't want any crashes
+				raise Exception("Got invalid pointer, did you close a buffer? use /egrep")
+		matched_lines = get_matching_lines(logs, head, tail, regexp, hilight, exact)
+		buffer_update(matched_lines, input_data, count, hilight)
 	return WEECHAT_RC_OK
 
 def buffer_close(*args):
@@ -475,15 +509,16 @@ def script_init():
 	home_dir = get_home()
 
 def cmd_init():
-	global home_dir, weechat_format, cache_dir
+	global home_dir, weechat_format, cache_dir, last_search
 	home_dir = get_home()
 	weechat_format = True
 	cache_dir = {}
+	last_search = None
 
 ### commands
 def grep_cmd(data, buffer, args):
 	"""Search in buffers and logs."""
-	global home_dir
+	global home_dir, last_search
 	if not args:
 		weechat.command('', '/help %s' %SCRIPT_COMMAND)
 		return WEECHAT_RC_OK
@@ -593,20 +628,12 @@ def grep_cmd(data, buffer, args):
 				logs.append(pointer)
 	# grepping
 	debug('Grepping in %s' %logs)
-	matched_lines = linesDict()
-	for log in logs:
-		if log == '' or log.startswith('0x'):
-			# is a buffer
-			buffer_name = weechat.buffer_get_string(log, 'name')
-			matched_lines[buffer_name] = grep_buffer(log, head, tail, regexp, hilight, exact)
-		else:
-			# is a file
-			try:
-				log_name = log[len(home_dir):]
-				matched_lines[log_name] = grep_file(log, head, tail, regexp, hilight, exact)
-			except Exception, e:
-				error(e)
-				return WEECHAT_RC_OK
+	try:
+		matched_lines = get_matching_lines(logs, head, tail, regexp, hilight, exact)
+		last_search = (logs, head, tail, regexp, hilight, exact, count, matchcase)
+	except Exception, e:
+		error(e)
+		return WEECHAT_RC_OK
 	# output
 	buffer_update(matched_lines, pattern, count, hilight)
 	return WEECHAT_RC_OK
