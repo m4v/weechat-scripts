@@ -23,6 +23,21 @@
 #	Originally I just wanted to add some fixes in grep.py, but then
 #   I got carried away and rewrote everything, so new script.
 #
+#	Commands:
+#	* /egrep
+#	  Search in logs or buffers, see /help egrep
+#	* /logs:
+#	  Lists logs in ~/.weechat/logs, see /help logs
+#
+#	Settings:
+#	* plugins.var.python.clear_buffer:
+#	  Clear the results buffer before each search. Valid values: on, off
+#	* plugins.var.python.log_filter:
+#	  Coma separated list of patterns that egrep will use for exclude logs,
+#	  if you use '*server/*' any log in the 'server' folder will be excluded
+#	  when using the command '/egrep log'
+#
+#
 # TODO
 # - grepping should run in background for big logs
 ###
@@ -47,7 +62,7 @@ script_debug   = True
 ### class definitions
 class linesDict(dict):
 	"""
-	Special class for handling matched lines in more than one buffer.
+	Class for handling matched lines in more than one buffer.
 	linesDict[buffer_name] = matched_lines_list
 	"""
 	def __setitem__(self, key, value):
@@ -134,7 +149,7 @@ def say(s, prefix='', buffer=''):
 
 ### formatting
 def color_nick(nick):
-	"""Returns colored nick, with colored mode if any."""
+	"""Returns coloured nick, with coloured mode if any."""
 	# XXX should check if nick has a prefix and subfix string?
 	if not nick: return ''
 	# nick mode
@@ -188,6 +203,7 @@ def split_line(s):
 		weechat_format = False # incoming lines won't be formatted if they have 2 tabs
 		return '', '', s.replace('\t', ' ')
 
+# for /logs cmd
 sizeDict = {0:'b', 1:'KiB', 2:'MiB', 3:'GiB', 4:'TiB'}
 def human_readable_size(size):
 	power = 0
@@ -201,19 +217,19 @@ cache_dir = {} # for avoid walking the dir tree more than once per command
 def dir_list(dir, filter_list=(), filter_excludes=True):
 	"""Returns a list of files in 'dir' and its subdirs."""
 	global cache_dir
+	import fnmatch
 	debug('dir_list: listing in %s' %dir)
 	if dir in cache_dir:
 		debug('dir_list: using dir cache.')
 		return cache_dir[dir]
 
-	def f(arg, dir, fnames):
+	def append_files(arg, dir, fnames):
 		arg.extend(map(lambda s:path.join(dir, s), fnames))
 
 	def filter(file):
 		if path.isdir(file):
 			return True
 		elif filter_list:
-			import fnmatch
 			file = file[len(dir):] # pattern shouldn't match home dir
 			for pattern in filter_list:
 				if fnmatch.fnmatch(file, pattern):
@@ -223,20 +239,20 @@ def dir_list(dir, filter_list=(), filter_excludes=True):
 	file_list = []
 	filter_list = filter_list or get_config_log_filter()
 	debug('filter: %s' %filter_list)
-	path.walk(dir, f, file_list) # get a list of log files, including in subdirs
+	path.walk(dir, append_files, file_list) # get a list of log files, including in subdirs
 	file_list = [ file for file in file_list if not filter(file) ]
 	cache_dir[dir] = file_list
 	return file_list
 
-def get_file_by_filename(pattern, all=False):
-	"""Returns the first log whose path matches or contains 'filename',
+def get_file_by_pattern(pattern, all=False):
+	"""Returns the first log whose path matches 'pattern',
 	if all is True returns all logs that matches."""
 	global home_dir
 	if not pattern: return []
 	debug('get_file_by_filename: searching for %s.' %pattern)
 	file = path.join(home_dir, pattern)
 	if not path.isfile(file):
-		# lets see if there's a log matching *name*
+		# lets see if there's a log matching pattern
 		import fnmatch
 		file = []
 		file_list = dir_list(home_dir)
@@ -277,8 +293,8 @@ def get_file_by_name(buffer_name):
 	masks = [weechat.config_string(weechat.config_get('logger.mask.irc'))]
 	masks.append(weechat.config_string(weechat.config_get('logger.file.mask')))
 	# I can't see how to replace all the local vars in mask nicely, so I just replace $channel,
-	# $server and other local vars, split in the unreplaced vars left, and use the longest string as
-	# a mask for get the path with get_file_by_filename
+	# $server and other local vars, replace the unreplaced vars left with '*', and use it as
+	# a mask for get the path with get_file_by_pattern
 	for mask in masks:
 		debug('get_file_by_name: mask: %s' %mask)
 		if '$name' in mask:
@@ -286,6 +302,7 @@ def get_file_by_name(buffer_name):
 		elif '$channel' in mask or '$server' in mask or '$short_name' in mask:
 			if '.' in buffer_name and \
 					'#' not in buffer_name[:buffer_name.find('.')]: # the dot isn't part of the channel name
+				#	 ^ I'm asuming channel starts with #, i'm lazy.
 				server, channel = buffer_name.split('.', 1)
 			else:
 				server, channel = '', buffer_name
@@ -293,15 +310,16 @@ def get_file_by_name(buffer_name):
 			mask = mask.replace('$channel', channel)
 			if server:
 				mask = mask.replace('$server', server)
-		# split in the unreplaced vars
+		# change the unreplaced vars by '*'
 		if '$' in mask:
 			chars = 'abcdefghijklmnopqrstuvwxyz_'
 			masks = mask.split('$')
 			masks = map(lambda s: s.lstrip(chars), masks)
-			masks.sort(key=len)
-			mask = masks[-1].strip('.')
+			mask = '*'.join(masks)
+			if not mask.startswith('*'):
+				mask = '*' + mask
 		debug('get_file_by_name: using mask %s' %mask)
-		file = get_file_by_filename(mask)
+		file = get_file_by_pattern(mask)
 		if file:
 			return file
 	return None
@@ -324,13 +342,12 @@ def get_buffer_by_name(buffer_name):
 	return None
 
 def get_all_buffers():
+	"""Returns list with pointers of all open buffers."""
 	buffers = []
 	infolist = weechat.infolist_get('buffer', '', '')
-	try:
-		while weechat.infolist_next(infolist):
-			buffers.append(weechat.infolist_pointer(infolist, 'pointer'))
-	finally:
-		weechat.infolist_free(infolist)
+	while weechat.infolist_next(infolist):
+		buffers.append(weechat.infolist_pointer(infolist, 'pointer'))
+	weechat.infolist_free(infolist)
 	return buffers
 
 ### grep
@@ -405,7 +422,6 @@ def grep_buffer(buffer, head, tail, *args):
 		prefix = weechat.string_remove_color(prefix, '')
 		message = weechat.string_remove_color(message, '')
 		if grep_buffer:
-			#d(prefix); debug(message)
 			if script_nick == prefix: # ignore our lines
 				continue
 			date = prefix
@@ -488,32 +504,31 @@ def buffer_create():
 	return buffer
 
 def buffer_input(data, buffer, input_data):
+	"""Repeats last search with 'input_data' as regexp."""
 	global last_search
 	if last_search and input_data:
 		logs, head, tail, regexp, hilight, exact, count, matchcase = last_search
 		try:
 			regexp = make_regexp(input_data, matchcase)
 		except Exception, e:
-			error(e)
+			error(e, buffer=buffer)
 			return WEECHAT_RC_OK
 		# lets be sure that our pointers in 'logs' are still valid
 		for log in logs:
 			if log.startswith('0x') and not weechat.infolist_get('buffer', log, ''):
 				# I don't want any crashes
-				buffer = weechat.buffer_search('python', SCRIPT_NAME)
 				error("Got invalid pointer, did you close a buffer? use /egrep", buffer=buffer)
 				return WEECHAT_RC_OK
 		matched_lines = get_matching_lines(logs, head, tail, regexp, hilight, exact)
 		buffer_update(matched_lines, input_data, count, hilight)
+	elif not last_search:
+		error("There isn't any previous search to repeat.", buffer=buffer)
 	return WEECHAT_RC_OK
 
 def buffer_close(*args):
 	return WEECHAT_RC_OK
 
-def script_init():
-	global home_dir
-	home_dir = get_home()
-
+### commands
 def cmd_init():
 	global home_dir, weechat_format, cache_dir, last_search
 	home_dir = get_home()
@@ -521,8 +536,7 @@ def cmd_init():
 	cache_dir = {}
 	last_search = None
 
-### commands
-def grep_cmd(data, buffer, args):
+def cmd_grep(data, buffer, args):
 	"""Search in buffers and logs."""
 	global home_dir, last_search
 	if not args:
@@ -584,6 +598,7 @@ def grep_cmd(data, buffer, args):
 			if not head and not tail:
 				raise Exception, "--number only works with --tail or --head."
 			if number == 0:
+				# waste of cpu cycles
 				say("This humble script refuses to search and return zero lines.", buffer=buffer)
 				return WEECHAT_RC_OK
 			if head:
@@ -603,7 +618,7 @@ def grep_cmd(data, buffer, args):
 	cmd_init()
 	log_file = search_buffer = None
 	if log_name:
-		log_file = get_file_by_filename(log_name, all)
+		log_file = get_file_by_pattern(log_name, all)
 		if not log_file:
 			error("Couldn't find any log for %s. Try /logs" %log_name)
 			return WEECHAT_RC_OK
@@ -617,6 +632,8 @@ def grep_cmd(data, buffer, args):
 			if not log_file:
 				error("Logs or buffer for '%s' not found." %buffer_name)
 				return WEECHAT_RC_OK
+		else:
+			search_buffer = [search_buffer]
 	else:
 		search_buffer = [buffer]
 	# make the log list
@@ -624,8 +641,6 @@ def grep_cmd(data, buffer, args):
 	if log_file:
 		logs = log_file
 	else:
-		if isinstance(search_buffer, str):
-			search_buffer = [search_buffer]
 		for pointer in search_buffer:
 			log = get_file_by_buffer(pointer)
 			if log:
@@ -636,6 +651,7 @@ def grep_cmd(data, buffer, args):
 	debug('Grepping in %s' %logs)
 	try:
 		matched_lines = get_matching_lines(logs, head, tail, regexp, hilight, exact)
+		# save last search
 		last_search = (logs, head, tail, regexp, hilight, exact, count, matchcase)
 	except Exception, e:
 		error(e)
@@ -644,7 +660,7 @@ def grep_cmd(data, buffer, args):
 	buffer_update(matched_lines, pattern, count, hilight)
 	return WEECHAT_RC_OK
 
-def logs_cmd(data, buffer, args):
+def cmd_logs(data, buffer, args):
 	"""List files in Weechat's log dir."""
 	global home_dir
 	from os import stat
@@ -705,37 +721,40 @@ def completion_egrep_args(data, completion_item, buffer, completion):
 	return WEECHAT_RC_OK
 
 ### Main
+def script_init():
+	global home_dir
+	home_dir = get_home()
+
 if weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
 		SCRIPT_DESC, '', ''):
 	script_init()
-	weechat.hook_command(SCRIPT_COMMAND, grep_cmd.__doc__,
+	weechat.hook_command(SCRIPT_COMMAND, cmd_grep.__doc__,
 			"[[log <file>] | [buffer <name>]] [-a|--all] [-c|--count] [-m|--matchcase] "
 			"[-H|--hilight] [-e|--exact] [(-h|--head)|(-t|--tail) [-n|--number <n>]] <expression>",
 			# help
-			"     log <file>: Search in <file> or one log that matches *file* in the logger path, normally ~/.weechat/logs.\n"
+			"     log <file>: Search in one log that matches <file> in the logger path. Use '*' and '?' as jokers.\n"
 			"  buffer <name>: Search in buffer <name>, if there's no buffer with <name> it will try to search for a log file.\n"
 			"       -a|--all: Search in all open buffers.\n"
 			"                 If used with 'log <file>' search in all logs that matches <file>.\n"
-			"     -c|--count: Show the number of matched lines, without listing them.\n"
+			"     -c|--count: Just count the number of matched lines instead of showing them.\n"
 			" -m|--matchcase: Don't do case insensible search.\n"
-			"   -H|--hilight: Color exact matches in output buffer.\n"
+			"   -H|--hilight: Colour exact matches in output buffer.\n"
 			"     -e|--exact: Print exact matches only.\n"
 			"      -t|--tail: Print the last 10 matching lines.\n"
 			"      -h|--head: Print the first 10 matching lines.\n"
 			"-n|--number <n>: Overrides default number of lines for --tail or --head.\n"
 			"   <expression>: Expression to search.\n\n"
-			"see http://docs.python.org/lib/re-syntax.html for documentation about python regular expressions.\n\n"
-			"Settings:\n"
-			"  clear_buffer: Clear the results buffer before each search.\n"
-			"                valid values: on, off",
+			"egrep buffer input:\n"
+			"  Repeat last search using the new given expression.\n\n"
+			"see http://docs.python.org/lib/re-syntax.html for documentation about python regular expressions.\n",
 			# completion template
 			"buffer %(buffers_names) %(egrep_arguments)|%*"
 			"||log %(egrep_log_files) %(egrep_arguments)|%*"
 			"||%(egrep_arguments)|%*",
-			'grep_cmd' ,'')
-	weechat.hook_command('logs', logs_cmd.__doc__, "[-s|--size] [<filter>]",
+			'cmd_grep' ,'')
+	weechat.hook_command('logs', cmd_logs.__doc__, "[-s|--size] [<filter>]",
 			"-s|--size: Sort logs by size.\n"
-			" <filter>: Only show logs that match *filter*", '--size', 'logs_cmd', '')
+			" <filter>: Only show logs that match <filter>. Use '*' and '?' as jokers.", '--size', 'cmd_logs', '')
 	weechat.hook_completion('egrep_log_files', "list of log files",
 			'completion_log_files', '')
 	weechat.hook_completion('egrep_arguments', "list of arguments",
