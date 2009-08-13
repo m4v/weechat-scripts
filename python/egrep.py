@@ -124,9 +124,9 @@ def debug(s, prefix='debug:'):
 	if script_debug:
 		weechat.prnt('', '%s %s'  %(prefix,s))
 
-def error(s, prefix=SCRIPT_NAME):
+def error(s, prefix=SCRIPT_NAME, buffer=''):
 	"""Error msg"""
-	weechat.prnt('', '%s%s: %s' %(weechat.prefix('error'), prefix, s))
+	weechat.prnt(buffer, '%s%s: %s' %(weechat.prefix('error'), prefix, s))
 
 def say(s, prefix='', buffer=''):
 	"""normal msg"""
@@ -138,7 +138,7 @@ def color_nick(nick):
 	# XXX should check if nick has a prefix and subfix string?
 	if not nick: return ''
 	# nick mode
-	modes = '@#+##' # FIXME add missing modes cuz i don't remember them all
+	modes = '@!+%' # XXX I hope I got them right
 	if nick[0] in modes:
 		mode, nick = nick[0], nick[1:]
 		mode_color = weechat.config_string(weechat.config_get('weechat.color.nicklist_prefix%d' \
@@ -443,14 +443,17 @@ def get_matching_lines(logs, *args):
 	return matched_lines
 
 ### output buffer
+make_title = lambda pattern, buffer, count: \
+	"Search in '%s' matched %s lines, pattern: '%s'" \
+		%(buffer, count, pattern)
 def buffer_update(matched_lines, pattern, count, *args):
 	"""Updates our buffer with new lines."""
 	buffer = buffer_create()
-	title = "Search for '%s' in '%s' matched %s lines" %(pattern, matched_lines, len(matched_lines))
+	title = make_title(pattern, matched_lines, len(matched_lines))
 	weechat.buffer_set(buffer, 'title', title)
 	if matched_lines: # lines matched in at least one log
 		for log, lines in matched_lines.iteritems():
-			info = "Search for '%s' in '%s' matched %s lines" %(pattern, log, len(lines))
+			info = make_title(pattern, log, len(lines))
 			print_info(info, buffer)
 			if not count:
 				for line in lines:
@@ -496,8 +499,10 @@ def buffer_input(data, buffer, input_data):
 		# lets be sure that our pointers in 'logs' are still valid
 		for log in logs:
 			if log.startswith('0x') and not weechat.infolist_get('buffer', log, ''):
-				# this is so ugly, but I'm lazy and I don't want any crashes
-				raise Exception("Got invalid pointer, did you close a buffer? use /egrep")
+				# I don't want any crashes
+				buffer = weechat.buffer_search('python', SCRIPT_NAME)
+				error("Got invalid pointer, did you close a buffer? use /egrep", buffer=buffer)
+				return WEECHAT_RC_OK
 		matched_lines = get_matching_lines(logs, head, tail, regexp, hilight, exact)
 		buffer_update(matched_lines, input_data, count, hilight)
 	return WEECHAT_RC_OK
