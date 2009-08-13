@@ -9,7 +9,7 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
@@ -19,27 +19,49 @@
 ###
 # Search in Weechat buffers and logs (for Weechat 0.3.*)
 #
-#	Inspired by xt's grep.py
-#	Originally I just wanted to add some fixes in grep.py, but then
+#   Inspired by xt's grep.py
+#   Originally I just wanted to add some fixes in grep.py, but then
 #   I got carried away and rewrote everything, so new script.
 #
-#	Commands:
-#	* /egrep
-#	  Search in logs or buffers, see /help egrep
-#	* /logs:
-#	  Lists logs in ~/.weechat/logs, see /help logs
+#   Commands:
+#   * /egrep
+#     Search in logs or buffers, see /help egrep
+#   * /logs:
+#     Lists logs in ~/.weechat/logs, see /help logs
 #
-#	Settings:
-#	* plugins.var.python.clear_buffer:
-#	  Clear the results buffer before each search. Valid values: on, off
-#	* plugins.var.python.log_filter:
-#	  Coma separated list of patterns that egrep will use for exclude logs,
-#	  if you use '*server/*' any log in the 'server' folder will be excluded
-#	  when using the command '/egrep log'
+#   Settings:
+#   * plugins.var.python.clear_buffer:
+#     Clear the results buffer before each search. Valid values: on, off
+#   * plugins.var.python.log_filter:
+#     Coma separated list of patterns that egrep will use for exclude logs,
+#     if you use '*server/*' any log in the 'server' folder will be excluded
+#     when using the command '/egrep log'
 #
 #
-# TODO
-# - grepping should run in background for big logs
+#   TODO:
+#   * grepping should run in background for big logs
+#
+#
+#   History:
+#   2009-08-13
+#   version 0.5: rewritten from xt's grep.py
+#   * fixed searching in non weechat logs, for cases like, if you're
+#     switching from irssi and rename and copy your irssi logs to %h/logs
+#   * fixed "timestamp rainbow" when you /grep in grep's buffer
+#   * allow to search in other buffers other than current or in logs
+#     of currently closed buffers with cmd 'buffer'
+#   * allow to search in any log file in %h/logs with cmd 'log'
+#   * added --count for return the number of matched lines
+#   * added --matchcase for case sensible search
+#   * added --hilight for color matches
+#   * added --head and --tail options, and --number
+#   * added command /logs for list files in %h/logs
+#   * added config option for clear the buffer before a search
+#   * added config option for filter logs we don't want to grep
+#   * added the posibility to repeat last search with another regexp by writing
+#     it in egrep's buffer
+#   * changed spaces for tabs in the code, which is my preference
+#
 ###
 
 from __future__ import with_statement # This isn't required in Python 2.6
@@ -116,7 +138,7 @@ settings = (
 		('log_filter', '')) # filter for exclude log files
 
 # I can't find for the love of me how to easily add a boolean config option in plugins.var.python
-# config_set_plugin any string is valid, will do value validation here.
+# config_set_plugin sets a string option and any string is valid, will do value validation here.
 boolDict = ValidValuesDict({'on':True, 'off':False}, 'off')
 def get_config_clear_buffer():
 	"""Gets our config value, returns a sane default if value is wrong."""
