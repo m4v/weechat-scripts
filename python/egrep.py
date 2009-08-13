@@ -228,21 +228,22 @@ def dir_list(dir, filter_list=(), filter_excludes=True):
 	cache_dir[dir] = file_list
 	return file_list
 
-def get_file_by_filename(filename, all=False):
+def get_file_by_filename(pattern, all=False):
 	"""Returns the first log whose path matches or contains 'filename',
 	if all is True returns all logs that matches."""
 	global home_dir
-	if not filename: return []
-	debug('get_file_by_filename: searching for %s.' %filename)
-	file = path.join(home_dir, filename)
+	if not pattern: return []
+	debug('get_file_by_filename: searching for %s.' %pattern)
+	file = path.join(home_dir, pattern)
 	if not path.isfile(file):
 		# lets see if there's a log matching *name*
+		import fnmatch
 		file = []
 		file_list = dir_list(home_dir)
 		n = len(home_dir)
 		for log in file_list:
 			basename = log[n:]
-			if filename in basename:
+			if fnmatch.fnmatch(basename, pattern):
 				file.append(log)
 				if not all: break
 	else:
