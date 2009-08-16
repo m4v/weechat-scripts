@@ -78,7 +78,7 @@ SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Search in buffers and logs"
 SCRIPT_COMMAND = "egrep"
 
-script_nick    = '<***>'
+script_nick    = '***'
 
 ### class definitions
 class linesDict(dict):
@@ -134,14 +134,15 @@ class ValidValuesDict(dict):
 ### config
 settings = (
 		('clear_buffer', 'off'), # Should clear the buffer before every search
-		('log_filter', '')) # filter for exclude log files
+		('log_filter', ''), # filter for exclude log files
+		('show_summary', 'on')) # Show summary line after the search
 
 # I can't find for the love of me how to easily add a boolean config option in plugins.var.python
 # config_set_plugin sets a string option and any string is valid, will do value validation here.
 boolDict = ValidValuesDict({'on':True, 'off':False}, 'off')
-def get_config_clear_buffer():
+def get_config_boolean(config):
 	"""Gets our config value, returns a sane default if value is wrong."""
-	return boolDict[weechat.config_get_plugin('clear_buffer')]
+	return boolDict[weechat.config_get_plugin(config)]
 
 def get_config_log_filter():
 	filter = weechat.config_get_plugin('log_filter')
@@ -490,11 +491,10 @@ def buffer_update(matched_lines, pattern, count, *args):
 	if matched_lines: # lines matched in at least one log
 		for log, lines in matched_lines.iteritems():
 			info = make_title(pattern, log, len(lines))
-			print_info(info, buffer)
 			if not count:
 				for line in lines:
 					weechat.prnt(buffer, format_line(line, *args))
-			if lines and not count: # don't print twice if no matches or count is True
+			if get_config_boolean('show_summary'):
 				print_info(info, buffer)
 	else:
 		print_info(title, buffer)
@@ -519,7 +519,7 @@ def buffer_create():
 		weechat.buffer_set(buffer, 'title', 'egrep output buffer')
 		weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
 	else:
-		if get_config_clear_buffer():
+		if get_config_boolean('clear_buffer'):
 			weechat.buffer_clear(buffer)
 	return buffer
 
@@ -787,7 +787,7 @@ if weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, 
 	colors = {
 			'date': weechat.color('brown'),
 			'script_nick': weechat.color('lightgreen'),
-			'info': weechat.color('bold'),
+			'info': weechat.color('cyan'),
 			'hilight': weechat.color('lightred'),
 			'reset': weechat.color('reset'),
 			}
