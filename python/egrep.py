@@ -33,9 +33,11 @@
 #   * plugins.var.python.clear_buffer:
 #     Clear the results buffer before each search. Valid values: on, off
 #   * plugins.var.python.log_filter:
-#     Coma separated list of patterns that egrep will use for exclude logs,
+#     Coma separated list of patterns that egrep will use for exclude logs, e.g.
 #     if you use '*server/*' any log in the 'server' folder will be excluded
 #     when using the command '/egrep log'
+#   * plugins.var.python.show_summary:
+#     Shows summary for each log. Valid values: on, off
 #
 #
 #   TODO:
@@ -43,6 +45,9 @@
 #
 #
 #   History:
+#   2009-08-17
+#   version 0.5.1: some refactoring, show_summary option added.
+#
 #   2009-08-13
 #   version 0.5: rewritten from xt's grep.py
 #   * fixed searching in non weechat logs, for cases like, if you're
@@ -73,7 +78,7 @@ from weechat import WEECHAT_RC_OK
 
 SCRIPT_NAME    = "egrep"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.5"
+SCRIPT_VERSION = "0.5.1"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Search in buffers and logs"
 SCRIPT_COMMAND = "egrep"
@@ -156,17 +161,17 @@ def get_home():
 	return home.replace('%h', weechat.info_get('weechat_dir', ''))
 
 ### messages
-def debug(s, prefix='debug:'):
+def debug(s, prefix='debug'):
 	"""Debug msg"""
-	weechat.prnt('', '%s %s'  %(prefix,s))
+	weechat.prnt('', '%s: %s'  %(prefix,s))
 
 def error(s, prefix=SCRIPT_NAME, buffer=''):
 	"""Error msg"""
 	weechat.prnt(buffer, '%s%s: %s' %(weechat.prefix('error'), prefix, s))
 
-def say(s, prefix='', buffer=''):
+def say(s, prefix=SCRIPT_NAME, buffer=''):
 	"""normal msg"""
-	weechat.prnt(buffer, '%s\t%s' %(prefix, s))
+	weechat.prnt(buffer, '%s: %s' %(prefix, s))
 
 ### formatting
 def color_nick(nick):
@@ -490,10 +495,10 @@ def buffer_update(matched_lines, pattern, count, *args):
 	weechat.buffer_set(buffer, 'title', title)
 	if matched_lines: # lines matched in at least one log
 		for log, lines in matched_lines.iteritems():
-			info = make_title(pattern, log, len(lines))
 			if not count:
 				for line in lines:
 					weechat.prnt(buffer, format_line(line, *args))
+			info = make_title(pattern, log, len(lines))
 			if get_config_boolean('show_summary'):
 				print_info(info, buffer)
 	else:
@@ -752,18 +757,18 @@ if weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, 
 			"[[log <file>] | [buffer <name>]] [-a|--all] [-c|--count] [-m|--matchcase] "
 			"[-H|--hilight] [-e|--exact] [(-h|--head)|(-t|--tail) [-n|--number <n>]] <expression>",
 			# help
-			"     log <file>: Search in one log that matches <file> in the logger path. Use '*' and '?' as jokers.\n"
-			"  buffer <name>: Search in buffer <name>, if there's no buffer with <name> it will try to search for a log file.\n"
-			"       -a|--all: Search in all open buffers.\n"
-			"                 If used with 'log <file>' search in all logs that matches <file>.\n"
-			"     -c|--count: Just count the number of matched lines instead of showing them.\n"
-			" -m|--matchcase: Don't do case insensible search.\n"
-			"   -H|--hilight: Colour exact matches in output buffer.\n"
-			"     -e|--exact: Print exact matches only.\n"
-			"      -t|--tail: Print the last 10 matching lines.\n"
-			"      -h|--head: Print the first 10 matching lines.\n"
-			"-n|--number <n>: Overrides default number of lines for --tail or --head.\n"
-			"   <expression>: Expression to search.\n\n"
+			"      log <file>: Search in one log that matches <file> in the logger path. Use '*' and '?' as jokers.\n"
+			"   buffer <name>: Search in buffer <name>, if there's no buffer with <name> it will try to search for a log file.\n"
+			"       -a, --all: Search in all open buffers.\n"
+			"                  If used with 'log <file>' search in all logs that matches <file>.\n"
+			"     -c, --count: Just count the number of matched lines instead of showing them.\n"
+			" -m, --matchcase: Don't do case insensible search.\n"
+			"   -H, --hilight: Colour exact matches in output buffer.\n"
+			"     -e, --exact: Print exact matches only.\n"
+			"      -t, --tail: Print the last 10 matching lines.\n"
+			"      -h, --head: Print the first 10 matching lines.\n"
+			"-n, --number <n>: Overrides default number of lines for --tail or --head.\n"
+			"    <expression>: Expression to search.\n\n"
 			"egrep buffer input:\n"
 			"  Repeat last search using the new given expression.\n\n"
 			"see http://docs.python.org/lib/re-syntax.html for documentation about python regular expressions.\n",
