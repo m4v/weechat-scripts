@@ -30,13 +30,13 @@
 #     Lists logs in ~/.weechat/logs, see /help logs
 #
 #   Settings:
-#   * plugins.var.python.clear_buffer:
+#   * plugins.var.python.egrep.clear_buffer:
 #     Clear the results buffer before each search. Valid values: on, off
-#   * plugins.var.python.log_filter:
+#   * plugins.var.python.egrep.log_filter:
 #     Coma separated list of patterns that egrep will use for exclude logs, e.g.
 #     if you use '*server/*' any log in the 'server' folder will be excluded
 #     when using the command '/egrep log'
-#   * plugins.var.python.show_summary:
+#   * plugins.var.python.egrep.show_summary:
 #     Shows summary for each log. Valid values: on, off
 #
 #
