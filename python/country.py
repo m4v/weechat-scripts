@@ -5,6 +5,7 @@ SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
 
 try:
 	import weechat
+	from weechat import WEECHAT_RC_OK
 	import_ok = True
 except ImportError:
 	print "This script must be run under WeeChat."
@@ -84,7 +85,7 @@ def update_database_cb(data, command, rc, stdout, stderr):
 		hook_download = ''
 	return weechat.WEECHAT_RC_OK
 
-def isIP(ip):
+def is_ip(ip):
 	if ip.count('.') == 3:
 		L = ip.split('.')
 		try:
@@ -98,50 +99,89 @@ def isIP(ip):
 	else:
 		return False
 
-def isHost(host):
+def is_host(host):
 	if '/' in host:
 		return False
-	return True
+	elif '.' in host:
+		return True
+	return False
 
-def getIP(host):
+def is_nick(nick, buffer):
+	pass
+
+def get_ip(host):
 	import socket
 	return socket.gethostbyname(host)
 
-def sumIP(ip):
+def sum_ip(ip):
 	L = map(int, ip.split('.'))
 	return L[0]*16777216 + L[1]*65536 + L[2]*256 + L[3]
 
-# TODO write a better search algorithm
-def ip_to_country(n):
+def search_in_database(n):
 	import csv
 	global ip_database
 	try:
 		fd = open(ip_database)
+		reader = csv.reader(fd)
+		max = os.path.getsize(ip_database)
+		last_high = last_low = min = 0
+		while True:
+			mid = (max + min)/2
+			fd.seek(mid)
+			fd.readline()
+			_, _, low, high, code, country = reader.next()
+			if low == last_low and high == last_high:
+				break
+			if n < long(low):
+				max = mid
+			elif n > long(high):
+				min = mid
+			elif n > long(low) and n < long(high):
+				return (code, country)
+			else:
+				break
+			last_low, last_high = low, high
 	except IOError, e:
 		error(e)
-		return (None, None)
-	for _, _, low, high, code, country in csv.reader(fd):
-		if long(low) < n and long(high) > n:
-			return (code, country)
-	fd.close()
+	except StopIteration:
+		pass
 	return (None, None)
 
+def get_country(host):
+	if is_ip(host):
+		ip = host
+	else:
+		if is_host(host):
+			ip = get_ip(host)
+		else:
+			ip = None
+	if ip:
+		return search_in_database(sum_ip(ip))
+	else:
+		return (None, None)
+
+### cmd
+def cmd_country(data, buffer, args):
+	if not args:
+		return WEECHAT_RC_OK
+	if ' ' in args:
+		host = args[args.rfind(' '):]
+	else:
+		host = args
+	code, country = get_country(host)
+	whois('%s (%s)' %(country, code), host, buffer)
+	return WEECHAT_RC_OK
+
+### signal callback
 def whois_cb(data, signal, signal_data):
 	nick, user, host = signal_data.split()[3:6]
 	server = signal[:signal.find(',')]
 	#debug('%s | %s | %s' %(data, signal, signal_data))
-	if not isIP(host):
-		if isHost(host):
-			ip = getIP(host)
-		else:
-			ip = None
-	else:
-		ip = host
-	if ip:
-		code, country = ip_to_country(sumIP(ip))
+	code, country = get_country(host)
+	if code:
 		buffer = weechat.buffer_search('irc', 'server.%s' %server)
 		whois('%s (%s)' %(country, code), nick, buffer)
-	return weechat.WEECHAT_RC_OK
+	return WEECHAT_RC_OK
 
 if weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, '', '', '', '', ''):
 	ip_database = os.path.join(get_script_dir(), database_file)
@@ -151,5 +191,6 @@ if weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, '', '', '', '', ''):
 	else:
 		say("IP database found.")
 	weechat.hook_signal('*,irc_in2_311', 'whois_cb', '')
+	weechat.hook_command('country', '', "nick|host", "", '', 'cmd_country', '')
 
 # vim:set shiftwidth=4 tabstop=4 noexpandtab textwidth=100:
