@@ -1,10 +1,33 @@
 # -*- coding: utf-8 -*-
+###
+# Copyright (c) 2009 by Elián Hanisch <lambdae2@gmail.com>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+###
+
+###
+# TODO
+# write some stuff
+#
+#
+###
 
 SCRIPT_NAME    = "country"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
 SCRIPT_VERSION = "0.1"
 SCRIPT_LICENSE = "GPL3"
-SCRIPT_DESC    = ""
+SCRIPT_DESC    = "Shows user's country in whois replies"
 SCRIPT_COMMAND = "country"
 
 try:
@@ -22,6 +45,36 @@ import os
 database_url = 'http://geolite.maxmind.com/download/geoip/database/GeoIPCountryCSV.zip'
 database_file = 'GeoIPCountryWhois.csv'
 
+### config
+class ValidValuesDict(dict):
+	"""
+	Dict that returns the default value defined by 'defaultKey' key if __getitem__ raises
+	KeyError. 'defaultKey' must be in the supplied dict.
+	"""
+	def _error_msg(self, key):
+		error("'%s' is an invalid option value, allowed: %s. Defaulting to '%s'" \
+				%(key, ', '.join(map(repr, self.keys())), self.default))
+
+	def __init__(self, dict, defaultKey):
+		self.update(dict)
+		assert defaultKey in self
+		self.default = defaultKey
+
+	def __getitem__(self, key):
+		try:
+			return dict.__getitem__(self, key)
+		except KeyError:
+			# user set a bad value
+			self._error_msg(key)
+			return dict.__getitem__(self, self.default)
+
+settings = (('show_in_whois', 'on'),)
+
+boolDict = ValidValuesDict({'on':True, 'off':False}, 'off')
+def get_config_boolean(config):
+	"""Gets our config value, returns a sane default if value is wrong."""
+	return boolDict[weechat.config_get_plugin(config)]
+
 ### messages
 def say(s, prefix=SCRIPT_NAME, buffer=''):
 	weechat.prnt(buffer, '%s: %s' %(prefix, s))
@@ -33,6 +86,7 @@ def debug(s, prefix='debug', buffer=''):
 	weechat.prnt(buffer, '%s: %s' %(prefix, s))
 
 def whois(s, nick, buffer=''):
+	"""Message formatted like a whois reply."""
 	weechat.prnt(buffer, '%s%s[%s%s%s] %s%s' %(
 			weechat.prefix('network'),
 			weechat.color('chat_delimiters'),
@@ -52,6 +106,7 @@ def get_script_dir():
 
 ip_database = ''
 def check_database():
+	"""Check if there's a database already installed."""
 	global ip_database
 	ip_database = os.path.join(get_script_dir(), database_file)
 	return os.path.isfile(ip_database)
@@ -59,6 +114,7 @@ def check_database():
 timeout = 1000*60
 hook_download = ''
 def update_database():
+	"""Downloads and uncompress the database."""
 	global hook_download
 	if hook_download:
 		weechat.unhook(hook_download)
@@ -85,6 +141,7 @@ def update_database():
 
 process_stderr = ''
 def update_database_cb(data, command, rc, stdout, stderr):
+	"""callback for our database download."""
 	global hook_download, process_stderr
 	#debug("%s @ stderr: '%s', stdout: '%s'" %(rc, stderr.strip('\n'), stdout.strip('\n')))
 	if stdout:
@@ -101,6 +158,7 @@ def update_database_cb(data, command, rc, stdout, stderr):
 	return WEECHAT_RC_OK
 
 def is_ip(ip):
+	"""Checks if 'ip' is a valid ip number."""
 	if ip.count('.') == 3:
 		L = ip.split('.')
 		try:
@@ -115,6 +173,7 @@ def is_ip(ip):
 		return False
 
 def is_host(host):
+	"""A valid host must have at least one dot an no slashes."""
 	if '/' in host:
 		return False
 	elif '.' in host:
@@ -122,6 +181,7 @@ def is_host(host):
 	return False
 
 def get_host_by_nick(nick, buffer):
+	"""Gets host from a given nick, for code simplicity we only search in current buffer."""
 	channel = weechat.buffer_get_string(buffer, 'localvar_channel')
 	server = weechat.buffer_get_string(buffer, 'localvar_server')
 	if channel and server:
@@ -135,17 +195,26 @@ def get_host_by_nick(nick, buffer):
 			weechat.infolist_free(infolist)
 	return ''
 
+# FIXME resolving the domain might take a while! make sure it doesn't freeze weechat
+# FIXME catch "[Errno -5] No hay dirección asociada con el nombre de host" except
 def get_ip(host):
 	import socket
 	return socket.gethostbyname(host)
 
 def sum_ip(ip):
+	"""Converts the ip number from dot-decimal notation to decimal."""
 	L = map(int, ip.split('.'))
 	return L[0]*16777216 + L[1]*65536 + L[2]*256 + L[3]
 
 def search_in_database(n):
+	"""
+	search_in_database(ip_number) => (code, country)
+	ip_number must be in decimal notation, returns (None, None) if nothing found.
+	"""
 	import csv
 	global ip_database
+	if not ip_database:
+		return (None, None)
 	try:
 		fd = open(ip_database)
 		reader = csv.reader(fd)
@@ -186,7 +255,11 @@ def get_country(host):
 
 ### cmd
 def cmd_country(data, buffer, args):
+	"""
+	Shows country for a given ip, uri or nick.
+	"""
 	if not args:
+		weechat.command('/HELP %s' %SCRIPT_COMMAND)
 		return WEECHAT_RC_OK
 	if ' ' in args:
 		# picks the first argument only
@@ -202,15 +275,20 @@ def cmd_country(data, buffer, args):
 			#debug('host: %s' %host)
 		else:
 			host = args
+		debug(host)
 		code, country = get_country(host)
 		whois('%s (%s)' %(country, code), args, buffer)
-	except IOError:
+	except IOError, e:
 		error("IP database not found. You must download a database with '/country update' before "
 				"using this script.", buffer=buffer)
+		debug(e)
 	return WEECHAT_RC_OK
 
 ### signal callback
 def whois_cb(data, signal, signal_data):
+	"""function for /WHOIS"""
+	if not get_config_boolean('show_in_whois'):
+		return WEECHAT_RC_OK
 	nick, user, host = signal_data.split()[3:6]
 	server = signal[:signal.find(',')]
 	#debug('%s | %s | %s' %(data, signal, signal_data))
@@ -226,12 +304,17 @@ def whois_cb(data, signal, signal_data):
 ### main
 if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
 		SCRIPT_DESC, '', ''):
-	weechat.hook_signal('*,irc_in2_311', 'whois_cb', '')
-	weechat.hook_command('country', '', "nick|ip|uri", "", 'update||%(nick)', 'cmd_country', '')
+	weechat.hook_signal('*,irc_in2_311', 'whois_cb', cmd_country.__doc__)
+	weechat.hook_command('country', '', 'update | (nick|ip|uri)',
+			"       update: Downloads/updates ip database with country codes.\n"
+			"nick, ip, uri: Gets country for a given ip, domain or nick.",
+			'update||%(nick)', 'cmd_country', '')
+	# settings
+	for opt, val in settings:
+		if not weechat.config_is_set_plugin(opt):
+			weechat.config_set_plugin(opt, val)
 	if not check_database():
 		say("IP database not found. You must download a database with '/country update' before "
 				"using this script.")
-	else:
-		say("IP database found.")
 
 # vim:set shiftwidth=4 tabstop=4 noexpandtab textwidth=100:
