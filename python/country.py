@@ -85,16 +85,20 @@ def error(s, prefix=SCRIPT_NAME, buffer=''):
 def debug(s, prefix='debug', buffer=''):
 	weechat.prnt(buffer, '%s: %s' %(prefix, s))
 
-def whois(s, nick, buffer=''):
+def whois(nick, country, code, buffer=''):
 	"""Message formatted like a whois reply."""
-	weechat.prnt(buffer, '%s%s[%s%s%s] %s%s' %(
+	weechat.prnt(buffer, '%s%s[%s%s%s] %s%s %s(%s%s%s)' %(
 			weechat.prefix('network'),
 			weechat.color('chat_delimiters'),
 			weechat.color('chat_nick'),
 			nick,
 			weechat.color('chat_delimiters'),
 			weechat.color('chat'),
-			s))
+			country,
+			weechat.color('chat_delimiters'),
+			weechat.color('chat'),
+			code,
+			weechat.color('chat_delimiters')))
 
 ### functions
 def get_script_dir():
@@ -277,7 +281,7 @@ def cmd_country(data, buffer, args):
 			host = args
 		debug(host)
 		code, country = get_country(host)
-		whois('%s (%s)' %(country, code), args, buffer)
+		whois(args, country, code, buffer)
 	except IOError, e:
 		error("IP database not found. You must download a database with '/country update' before "
 				"using this script.", buffer=buffer)
@@ -296,7 +300,7 @@ def whois_cb(data, signal, signal_data):
 		code, country = get_country(host)
 		if code:
 			buffer = weechat.buffer_search('irc', 'server.%s' %server)
-			whois('%s (%s)' %(country, code), nick, buffer)
+			whois(nick, country, code, buffer)
 	except IOError:
 		pass # no database installed
 	return WEECHAT_RC_OK
