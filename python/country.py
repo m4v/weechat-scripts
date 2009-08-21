@@ -112,7 +112,8 @@ ip_database = ''
 def check_database():
 	"""Check if there's a database already installed."""
 	global ip_database
-	ip_database = os.path.join(get_script_dir(), database_file)
+	if not ip_database:
+		ip_database = os.path.join(get_script_dir(), database_file)
 	return os.path.isfile(ip_database)
 
 timeout = 1000*60
@@ -127,8 +128,7 @@ def update_database():
 	say("Downloading IP database...")
 	hook_download = weechat.hook_process(
 			"python -c \"\n"
-			"import urllib2, zipfile, os\n"
-			"from sys import stderr\n"
+			"import urllib2, zipfile, os, sys\n"
 			"try:\n"
 			"	temp = os.path.join('%(script_dir)s', 'temp.zip')\n"
 			"	zip = urllib2.urlopen('%(url)s', timeout=1)\n"
@@ -140,7 +140,7 @@ def update_database():
 			"	zip.extractall(path='%(script_dir)s')\n"
 			"	os.remove(temp)\n"
 			"except Exception, e:\n"
-			"	print >>stderr, e\n\"" %{'url':database_url, 'script_dir':script_dir},
+			"	print >>sys.stderr, e\n\"" %{'url':database_url, 'script_dir':script_dir},
 			timeout, 'update_database_cb', '')
 
 process_stderr = ''
@@ -159,6 +159,35 @@ def update_database_cb(data, command, rc, stdout, stderr):
 		else:
 			say('Success.')
 		hook_download = ''
+	return WEECHAT_RC_OK
+
+hook_get_ip = ''
+def get_ip_process(host):
+	global hook_get_ip
+	if hook_get_ip:
+		weechat.unhook(hook_get_ip)
+		hook_get_ip = ''
+	hook_get_ip = weechat.hook_process(
+			"python -c \"\n"
+			"import socket, sys\n"
+			"try:\n"
+			"	ip = socket.gethostbyname('%(host)s')\n"
+			"	print ip\n"
+			"except Exception, e:\n"
+			"	print >>sys.stderr, e\n\"" %{'host':host},
+			timeout, 'get_ip_process_cb', '')
+
+def get_ip_process_cb(data, command, rc, stdout, stderr):
+	global hook_get_ip, reply_wrapper
+	#debug("%s @ stderr: '%s', stdout: '%s'" %(rc, stderr.strip('\n'), stdout.strip('\n')))
+	if stdout:
+		code, country = search_in_database(stdout[:-1])
+		reply_wrapper(code, country)
+	if stderr:
+		reply_wrapper(*unknown)
+	if int(rc) >= 0:
+		hook_get_ip = ''
+		del reply_wrapper
 	return WEECHAT_RC_OK
 
 def is_ip(ip):
@@ -199,27 +228,22 @@ def get_host_by_nick(nick, buffer):
 			weechat.infolist_free(infolist)
 	return ''
 
-# FIXME resolving the domain might take a while! make sure it doesn't freeze weechat
-# FIXME catch "[Errno -5] No hay dirección asociada con el nombre de host" except
-def get_ip(host):
-	import socket
-	return socket.gethostbyname(host)
-
 def sum_ip(ip):
 	"""Converts the ip number from dot-decimal notation to decimal."""
 	L = map(int, ip.split('.'))
 	return L[0]*16777216 + L[1]*65536 + L[2]*256 + L[3]
 
-def search_in_database(n):
+unknown = ('--', 'unknown')
+def search_in_database(ip):
 	"""
-	search_in_database(ip_number) => (code, country)
-	ip_number must be in decimal notation, returns (None, None) if nothing found.
+	search_in_database(ip_number) => (code, country), returns ('--', 'unknown') if nothing found.
 	"""
 	import csv
 	global ip_database
-	if not ip_database:
-		return (None, None)
+	if not ip or not ip_database:
+		return unknown
 	try:
+		n = sum_ip(ip)
 		fd = open(ip_database)
 		reader = csv.reader(fd)
 		max = os.path.getsize(ip_database)
@@ -242,20 +266,27 @@ def search_in_database(n):
 			last_low, last_high = low, high
 	except StopIteration:
 		pass
-	return (None, None)
+	return unknown
 
-def get_country(host):
+def print_country(host, buffer, quiet=False, nick=''):
+	#debug('host: ' + host)
+	def reply_country(code, country):
+		if quiet and code == '--':
+			return
+		whois(nick or host, country, code, buffer)
 	if is_ip(host):
-		ip = host
+		# good, got an ip
+		code, country = search_in_database(host)
+	elif not is_host(host):
+		# probably a cloak
+		code, country = '--', 'cloaked'
 	else:
-		if is_host(host):
-			ip = get_ip(host)
-		else:
-			ip = None
-	if ip:
-		return search_in_database(sum_ip(ip))
-	else:
-		return (None, None)
+		# try to resolve uri
+		global reply_wrapper
+		reply_wrapper = reply_country
+		get_ip_process(host)
+		return
+	reply_country(code, country)
 
 ### cmd
 def cmd_country(data, buffer, args):
@@ -270,39 +301,29 @@ def cmd_country(data, buffer, args):
 		args = args[:args.find(' ')]
 	if args == 'update':
 		update_database()
-		return WEECHAT_RC_OK
-	#debug('args: %s' %args)
-	try:
-		if not is_host(args):
-			# maybe a nick
-			host = get_host_by_nick(args, buffer)
-			#debug('host: %s' %host)
-		else:
+	else:
+		if not check_database():
+			error("IP database not found. You must download a database with '/country update' before "
+					"using this script.", buffer=buffer)
+			return WEECHAT_RC_OK
+		#check if is a nick
+		host = get_host_by_nick(args, buffer)
+		if not host:
+			# not a nick
 			host = args
-		debug(host)
-		code, country = get_country(host)
-		whois(args, country, code, buffer)
-	except IOError, e:
-		error("IP database not found. You must download a database with '/country update' before "
-				"using this script.", buffer=buffer)
-		debug(e)
+		print_country(host, buffer)
 	return WEECHAT_RC_OK
 
 ### signal callback
 def whois_cb(data, signal, signal_data):
 	"""function for /WHOIS"""
-	if not get_config_boolean('show_in_whois'):
+	if not get_config_boolean('show_in_whois') or not check_database():
 		return WEECHAT_RC_OK
 	nick, user, host = signal_data.split()[3:6]
 	server = signal[:signal.find(',')]
 	#debug('%s | %s | %s' %(data, signal, signal_data))
-	try:
-		code, country = get_country(host)
-		if code:
-			buffer = weechat.buffer_search('irc', 'server.%s' %server)
-			whois(nick, country, code, buffer)
-	except IOError:
-		pass # no database installed
+	buffer = weechat.buffer_search('irc', 'server.%s' %server)
+	print_country(host, buffer, quiet=True, nick=nick)
 	return WEECHAT_RC_OK
 
 ### main
