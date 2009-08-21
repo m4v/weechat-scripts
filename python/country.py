@@ -85,7 +85,7 @@ def error(s, prefix=SCRIPT_NAME, buffer=''):
 def debug(s, prefix='debug', buffer=''):
 	weechat.prnt(buffer, '%s: %s' %(prefix, s))
 
-def whois(nick, country, code, buffer=''):
+def whois(nick, code, country, buffer=''):
 	"""Message formatted like a whois reply."""
 	weechat.prnt(buffer, '%s%s[%s%s%s] %s%s %s(%s%s%s)' %(
 			weechat.prefix('network'),
@@ -273,7 +273,7 @@ def print_country(host, buffer, quiet=False, nick=''):
 	def reply_country(code, country):
 		if quiet and code == '--':
 			return
-		whois(nick or host, country, code, buffer)
+		whois(nick or host, code, country, buffer)
 	if is_ip(host):
 		# good, got an ip
 		code, country = search_in_database(host)
