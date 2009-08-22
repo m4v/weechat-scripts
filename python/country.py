@@ -17,9 +17,26 @@
 ###
 
 ###
-# TODO
-# write some stuff
+# Prints user's country in whois/whowas replies (for WeeChat 0.3.*)
 #
+#   This script uses MaxMind's GeoLite database from
+#   http://www.maxmind.com/app/geolitecountry
+#
+#   Commands:
+#   * /country
+#     Prints country for a given ip, uri or nick. See /help country
+#
+#   Settings:
+#   * plugins.var.python.country.show_in_whois:
+#     If 'off' /whois or /whowas replies won't contain country information.
+#     Valid values: on, off
+#
+#   TODO:
+#   * Get timezone for a country and display local time for a user.
+#
+#   History:
+#   2009-08-21
+#   version 0.1: initial release.
 #
 ###
 
@@ -27,7 +44,7 @@ SCRIPT_NAME    = "country"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
 SCRIPT_VERSION = "0.1"
 SCRIPT_LICENSE = "GPL3"
-SCRIPT_DESC    = "Shows user's country in whois replies"
+SCRIPT_DESC    = "Prints user's country in whois replies"
 SCRIPT_COMMAND = "country"
 
 try:
@@ -102,6 +119,7 @@ def whois(nick, code, country, buffer=''):
 
 ### functions
 def get_script_dir():
+	"""Returns script's dir, creates it if needed."""
 	script_dir = weechat.info_get('weechat_dir', '')
 	script_dir = os.path.join(script_dir, 'country')
 	if not os.path.isdir(script_dir):
@@ -131,7 +149,7 @@ def update_database():
 			"import urllib2, zipfile, os, sys\n"
 			"try:\n"
 			"	temp = os.path.join('%(script_dir)s', 'temp.zip')\n"
-			"	zip = urllib2.urlopen('%(url)s', timeout=1)\n"
+			"	zip = urllib2.urlopen('%(url)s', timeout=10)\n"
 			"	fd = open(temp, 'w')\n"
 			"	fd.write(zip.read())\n"
 			"	fd.close()\n"
@@ -163,6 +181,8 @@ def update_database_cb(data, command, rc, stdout, stderr):
 
 hook_get_ip = ''
 def get_ip_process(host):
+	"""Resolves host to ip."""
+	# because getting the ip might take a while, we must hook a process so weechat doesn't hang.
 	global hook_get_ip
 	if hook_get_ip:
 		weechat.unhook(hook_get_ip)
@@ -180,14 +200,15 @@ def get_ip_process(host):
 def get_ip_process_cb(data, command, rc, stdout, stderr):
 	global hook_get_ip, reply_wrapper
 	#debug("%s @ stderr: '%s', stdout: '%s'" %(rc, stderr.strip('\n'), stdout.strip('\n')))
-	if stdout:
+	if stdout and reply_wrapper:
 		code, country = search_in_database(stdout[:-1])
 		reply_wrapper(code, country)
-	if stderr:
+		reply_wrapper = None
+	if stderr and reply_wrapper:
 		reply_wrapper(*unknown)
+		reply_wrapper = None
 	if int(rc) >= 0:
 		hook_get_ip = ''
-		del reply_wrapper
 	return WEECHAT_RC_OK
 
 def is_ip(ip):
@@ -236,7 +257,8 @@ def sum_ip(ip):
 unknown = ('--', 'unknown')
 def search_in_database(ip):
 	"""
-	search_in_database(ip_number) => (code, country), returns ('--', 'unknown') if nothing found.
+	search_in_database(ip_number) => (code, country)
+	returns ('--', 'unknown') if nothing found
 	"""
 	import csv
 	global ip_database
@@ -269,6 +291,9 @@ def search_in_database(ip):
 	return unknown
 
 def print_country(host, buffer, quiet=False, nick=''):
+	"""
+	Prints country for a given host, if quiet is True prints only if there's a match
+	"""
 	#debug('host: ' + host)
 	def reply_country(code, country):
 		if quiet and code == '--':
@@ -290,11 +315,9 @@ def print_country(host, buffer, quiet=False, nick=''):
 
 ### cmd
 def cmd_country(data, buffer, args):
-	"""
-	Shows country for a given ip, uri or nick.
-	"""
+	"""Shows country for a given ip, uri or nick."""
 	if not args:
-		weechat.command('/HELP %s' %SCRIPT_COMMAND)
+		weechat.command('', '/HELP %s' %SCRIPT_COMMAND)
 		return WEECHAT_RC_OK
 	if ' ' in args:
 		# picks the first argument only
@@ -329,8 +352,9 @@ def whois_cb(data, signal, signal_data):
 ### main
 if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
 		SCRIPT_DESC, '', ''):
-	weechat.hook_signal('*,irc_in2_311', 'whois_cb', cmd_country.__doc__)
-	weechat.hook_command('country', '', 'update | (nick|ip|uri)',
+	weechat.hook_signal('*,irc_in2_311', 'whois_cb', '') # /whois
+	weechat.hook_signal('*,irc_in2_314', 'whois_cb', '') # /whowas
+	weechat.hook_command('country', cmd_country.__doc__, 'update | (nick|ip|uri)',
 			"       update: Downloads/updates ip database with country codes.\n"
 			"nick, ip, uri: Gets country for a given ip, domain or nick.",
 			'update||%(nick)', 'cmd_country', '')
