@@ -35,6 +35,9 @@
 #   * Get timezone for a country and display local time for a user.
 #
 #   History:
+#   2009-08-24
+#   version 0.1.1: fixed python 2.5 compatibility
+#
 #   2009-08-21
 #   version 0.1: initial release.
 #
@@ -42,7 +45,7 @@
 
 SCRIPT_NAME    = "country"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.1"
+SCRIPT_VERSION = "0.1.1"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Prints user's country in whois replies"
 SCRIPT_COMMAND = "country"
@@ -138,7 +141,9 @@ timeout = 1000*60
 hook_download = ''
 def update_database():
 	"""Downloads and uncompress the database."""
-	global hook_download
+	global hook_download, ip_database
+	if not ip_database:
+		check_database()
 	if hook_download:
 		weechat.unhook(hook_download)
 		hook_download = ''
@@ -149,16 +154,27 @@ def update_database():
 			"import urllib2, zipfile, os, sys\n"
 			"try:\n"
 			"	temp = os.path.join('%(script_dir)s', 'temp.zip')\n"
-			"	zip = urllib2.urlopen('%(url)s', timeout=10)\n"
+			"	try:\n"
+			"		zip = urllib2.urlopen('%(url)s', timeout=10)\n"
+			"	except TypeError: # python2.5\n"
+			"		import socket\n"
+			"		socket.setdefaulttimeout(10)\n"
+			"		zip = urllib2.urlopen('%(url)s')\n"
 			"	fd = open(temp, 'w')\n"
 			"	fd.write(zip.read())\n"
 			"	fd.close()\n"
 			"	print 'Download complete, uncompressing...'\n"
 			"	zip = zipfile.ZipFile(temp)\n"
-			"	zip.extractall(path='%(script_dir)s')\n"
+			"	try:\n"
+			"		zip.extractall(path='%(script_dir)s')\n"
+			"	except AttributeError: # python2.5\n"
+			"		fd = open('%(ip_database)s', 'w')\n"
+			"		fd.write(zip.read('%(database_file)s'))\n"
+			"		fd.close()\n"
 			"	os.remove(temp)\n"
 			"except Exception, e:\n"
-			"	print >>sys.stderr, e\n\"" %{'url':database_url, 'script_dir':script_dir},
+			"	print >>sys.stderr, e\n\"" %{'url':database_url, 'script_dir':script_dir,
+				'ip_database':ip_database, 'database_file':database_file},
 			timeout, 'update_database_cb', '')
 
 process_stderr = ''
