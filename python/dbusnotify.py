@@ -36,23 +36,29 @@ def get_config_ignores(config):
 #def match_host(pattern, host):
 #	return fnmatch.fnmatch(host, pattern)
 
+def format_tags(s):
+	s = s.replace('<', '&lt;')
+	s = s.replace('>', '&gt;')
+	return s
+
 def notify_hilight(data, buffer, time, tags, display, hilight, prefix, msg ):
 	#debug(';'.join((data, buffer, time, tags, display, hilight, prefix, msg)))
 	if hilight is '1':
 		channel = weechat.buffer_get_string(buffer, 'short_name')
 		if not channel:
 			channel = weechat.buffer_get_string(buffer, 'name')
-		#FIXME replace < > by their html codes
+		msg = format_tags(msg)
 		dbus_notify(channel, '<b>%s</b>: %s' %(prefix, msg))
 	return WEECHAT_RC_OK
 
-def notify_priv(data, signal, message):
+def notify_priv(data, signal, msg):
 	#debug(','.join((data, signal, message)))
 	ignore = get_config_ignores('ignore_private')
 	for pattern in ignore:
-		if message.startswith(pattern):
+		if msg.startswith(pattern):
 			return WEECHAT_RC_OK
-	dbus_notify(*message.split('\t', 1))
+	msg = format_tags(msg)
+	dbus_notify(*msg.split('\t', 1))
 	return WEECHAT_RC_OK
 
 timestamp = 0
@@ -61,15 +67,15 @@ notify_msg = ''
 notify_title = ''
 def dbus_notify(channel, msg):
 	global notify_id, notify_title, notify_msg, timestamp
-	if ((now() - timestamp) < 10) and (channel == notify_title):
-		id = notify_id
-		msg = '%s<br>%s' %(notify_msg, msg)
-	else:
-		id = 0
 	try:
 		bus = dbus.SessionBus()
 		notify_object = bus.get_object('org.freedesktop.Notifications', '/org/freedesktop/Notifications')
 		notify = dbus.Interface(notify_object, 'org.freedesktop.Notifications')
+		if ((now() - timestamp) < 10) and (channel == notify_title):
+			id = notify_id
+			msg = '%s<br>%s' %(notify_msg, msg)
+		else:
+			id = 0
 		notify_id = notify.Notify('', id, '', channel, msg, '', {}, 50000)
 		notify_title = channel
 		notify_msg = msg
