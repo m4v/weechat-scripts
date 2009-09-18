@@ -59,8 +59,7 @@ except ImportError:
 	print "Get WeeChat now at: http://weechat.flashtux.org/"
 	import_ok = False
 try:
-	import pytz
-	import datetime
+	import pytz, datetime
 	pytz_module = True
 except:
 	pytz_module = False
@@ -105,8 +104,8 @@ def config_localtime_cb(data, option, value):
 	global pytz_module
 	if boolDict[value] and not pytz_module:
 		try:
-			import pytz
-			import datetime
+			global pytz, datetime
+			import pytz, datetime
 			pytz_module = True
 		except:
 			error(
@@ -424,7 +423,7 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
 	if not check_database():
 		say("IP database not found. You must download a database with '/country update' before "
 				"using this script.")
-	if not pytz_module and weechat.config_set_plugin('show_localtime') is 'on':
+	if not pytz_module and get_config_boolean('show_localtime'):
 		error(
 			"pytz module isn't installed. Localtime information disabled. "
 			"Get it from http://pytz.sourceforge.net or from your distro packages "
