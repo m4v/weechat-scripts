@@ -250,4 +250,7 @@ def say(s, prefix='', buffer=''):
 ### config
 boolDict = ValidValuesDict({'on':True, 'off':False}, 'off')
 
+### make weechat happy
+weechat.register('weeutils', '', __version__, 'GLP3', '', '', '')
+
 # vim:set shiftwidth=4 tabstop=4 noexpandtab textwidth=100:
