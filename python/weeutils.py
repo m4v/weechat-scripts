@@ -115,7 +115,7 @@ class Infolist(object):
 		self.fields = {}
 		self.cursor = 0 
 		if self.pointer == '':
-			raise Exception('Init failed %s' %self)
+			raise Exception('Infolist initialising failed %s' %self)
 	
 	def __repr__(self):
 		return "<infolist('%s', '%s', '%s') at %s>" \
