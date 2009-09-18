@@ -17,7 +17,7 @@
 ###
 
 ###
-# Prints user's country and localtime information in
+# Prints user's country and local time information in
 # whois/whowas replies (for WeeChat 0.3.*)
 #
 #   This script uses MaxMind's GeoLite database from
@@ -38,12 +38,12 @@
 #     If 'off' /whois or /whowas replies won't contain country information.
 #     Valid values: on, off
 #   * plugins.var.python.country.show_localtime:
-#     If 'off' timezone and localtime infomation won't be looked for.
+#     If 'off' timezone and local time infomation won't be looked for.
 #     Valid values: on, off
 #
 #   History:
 #   2009-09-17
-#   version 0.2: added timezone and localtime information.
+#   version 0.2: added timezone and local time information.
 #
 #   2009-08-24
 #   version 0.1.1: fixed python 2.5 compatibility
@@ -57,7 +57,7 @@ SCRIPT_NAME    = "country"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
 SCRIPT_VERSION = "0.2"
 SCRIPT_LICENSE = "GPL3"
-SCRIPT_DESC    = "Prints user's country and localtime in whois replies"
+SCRIPT_DESC    = "Prints user's country and local time in whois replies"
 SCRIPT_COMMAND = "country"
 
 try:
@@ -110,23 +110,6 @@ def get_config_boolean(config):
 	"""Gets our config value, returns a sane default if value is wrong."""
 	return boolDict[weechat.config_get_plugin(config)]
 
-def config_localtime_cb(data, option, value):
-	"""If user enables localtime information loads pytz module if needed. Outputs error mensaje and
-	disables localtime if module import fails."""
-	global pytz_module
-	if boolDict[value] and not pytz_module:
-		try:
-			global pytz, datetime
-			import pytz, datetime
-			pytz_module = True
-		except:
-			error(
-				"pytz module isn't installed. Localtime information disabled. "
-				"Get it from http://pytz.sourceforge.net or from your distro packages "
-				"(python-tz in Ubuntu/Debian)")
-			weechat.config_set_plugin('show_localtime', 'off')
-	return WEECHAT_RC_OK
-
 ### messages
 def say(s, prefix=SCRIPT_NAME, buffer=''):
 	weechat.prnt(buffer, '%s: %s' %(prefix, s))
@@ -153,7 +136,7 @@ def string_country(country, code):
 			color_chat, code, color_delimiter)
 
 def string_time(dt):
-	"""Format for localtime info string."""
+	"""Format for local time info string."""
 	color_delimiter = weechat.color('chat_delimiters')
 	color_chat = weechat.color('chat')
 	date = dt.strftime('%x %X %Z')
@@ -352,14 +335,14 @@ def search_in_database(ip):
 
 def print_country(host, buffer, quiet=False, broken=False, nick=''):
 	"""
-	Prints country and localtime for a given host, if quiet is True prints only if there's a match,
+	Prints country and local time for a given host, if quiet is True prints only if there's a match,
 	if broken is True reply will be split in two messages.
 	"""
 	#debug('host: ' + host)
 	def reply_country(code, country):
 		if quiet and code == '--':
 			return
-		if get_config_boolean('show_localtime') and code != '--':
+		if pytz_module and get_config_boolean('show_localtime') and code != '--':
 			dt = get_country_datetime(code)
 			if broken:
 				whois(nick or host, string_country(country, code), buffer)
@@ -393,7 +376,7 @@ def get_country_datetime(code):
 
 ### commands
 def cmd_country(data, buffer, args):
-	"""Shows country and localtime for a given ip, uri or nick."""
+	"""Shows country and local time for a given ip, uri or nick."""
 	if not args:
 		weechat.command('', '/HELP %s' %SCRIPT_COMMAND)
 		return WEECHAT_RC_OK
@@ -433,7 +416,7 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
 	weechat.hook_signal('*,irc_in2_314', 'whois_cb', '') # /whowas
 	weechat.hook_command('country', cmd_country.__doc__, 'update | (nick|ip|uri)',
 			"       update: Downloads/updates ip database with country codes.\n"
-			"nick, ip, uri: Gets country and localtime for a given ip, domain or nick.",
+			"nick, ip, uri: Gets country and local time for a given ip, domain or nick.",
 			'update||%(nick)', 'cmd_country', '')
 	# settings
 	for opt, val in settings:
@@ -444,10 +427,9 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
 				"using this script.")
 	if not pytz_module and get_config_boolean('show_localtime'):
 		error(
-			"pytz module isn't installed. Localtime information disabled. "
+			"pytz module isn't installed, local time information is DISABLED. "
 			"Get it from http://pytz.sourceforge.net or from your distro packages "
-			"(python-tz in Ubuntu/Debian)")
+			"(python-tz in Ubuntu/Debian).")
 		weechat.config_set_plugin('show_localtime', 'off')
-	weechat.hook_config('plugins.var.python.country.show_localtime', 'config_localtime_cb', '')
 
 # vim:set shiftwidth=4 tabstop=4 noexpandtab textwidth=100:
