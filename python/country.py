@@ -52,12 +52,18 @@ SCRIPT_COMMAND = "country"
 
 try:
 	import weechat
-	from weechat import WEECHAT_RC_OK
+	WEECHAT_RC_OK = weechat.WEECHAT_RC_OK
 	import_ok = True
 except ImportError:
 	print "This script must be run under WeeChat."
 	print "Get WeeChat now at: http://weechat.flashtux.org/"
 	import_ok = False
+try:
+	import pytz
+	import datetime
+	pytz_module = True
+except:
+	pytz_module = False
 
 import os
 
@@ -88,12 +94,27 @@ class ValidValuesDict(dict):
 			self._error_msg(key)
 			return dict.__getitem__(self, self.default)
 
-settings = (('show_in_whois', 'on'),)
+settings = (('show_in_whois', 'on'), ('show_localtime', 'on'))
 
 boolDict = ValidValuesDict({'on':True, 'off':False}, 'off')
 def get_config_boolean(config):
 	"""Gets our config value, returns a sane default if value is wrong."""
 	return boolDict[weechat.config_get_plugin(config)]
+
+def config_localtime_cb(data, option, value):
+	global pytz_module
+	if boolDict[value] and not pytz_module:
+		try:
+			import pytz
+			import datetime
+			pytz_module = True
+		except:
+			error(
+				"pytz module isn't installed. Localtime information disabled. "
+				"Get it from http://pytz.sourceforge.net or from your distro packages "
+				"(python-tz in Ubuntu/Debian)")
+			weechat.config_set_plugin('show_localtime', 'off')
+	return WEECHAT_RC_OK
 
 ### messages
 def say(s, prefix=SCRIPT_NAME, buffer=''):
@@ -105,20 +126,27 @@ def error(s, prefix=SCRIPT_NAME, buffer=''):
 def debug(s, prefix='debug', buffer=''):
 	weechat.prnt(buffer, '%s: %s' %(prefix, s))
 
-def whois(nick, code, country, buffer=''):
+def whois(nick, string, buffer=''):
 	"""Message formatted like a whois reply."""
-	weechat.prnt(buffer, '%s%s[%s%s%s] %s%s %s(%s%s%s)' %(
-			weechat.prefix('network'),
-			weechat.color('chat_delimiters'),
-			weechat.color('chat_nick'),
-			nick,
-			weechat.color('chat_delimiters'),
-			weechat.color('chat'),
-			country,
-			weechat.color('chat_delimiters'),
-			weechat.color('chat'),
-			code,
-			weechat.color('chat_delimiters')))
+	prefix_network = weechat.prefix('network')
+	color_delimiter = weechat.color('chat_delimiters')
+	color_nick = weechat.color('chat_nick')
+	weechat.prnt(buffer, '%s%s[%s%s%s] %s' %(prefix_network, color_delimiter, color_nick, nick,
+		color_delimiter, string))
+
+def string_country(country, code):
+	color_delimiter = weechat.color('chat_delimiters')
+	color_chat = weechat.color('chat')
+	return '%s%s %s(%s%s%s)' %(color_chat, country, color_delimiter,
+			color_chat, code, color_delimiter)
+
+def string_time(dt):
+	color_delimiter = weechat.color('chat_delimiters')
+	color_chat = weechat.color('chat')
+	date = dt.strftime('%x %X %Z')
+	tz = dt.strftime('UTC%z')
+	return '%s%s %s(%s%s%s)' %(color_chat, date, color_delimiter,
+			color_chat, tz, color_delimiter)
 
 ### functions
 def get_script_dir():
@@ -234,7 +262,7 @@ def is_ip(ip):
 		try:
 			for n in L:
 				n = int(n)
-				if not (n > 0 and n < 255):
+				if not (n >= 0 and n <= 255):
 					return False
 		except:
 			return False
@@ -306,7 +334,7 @@ def search_in_database(ip):
 		pass
 	return unknown
 
-def print_country(host, buffer, quiet=False, nick=''):
+def print_country(host, buffer, quiet=False, broken=False, nick=''):
 	"""
 	Prints country for a given host, if quiet is True prints only if there's a match
 	"""
@@ -314,22 +342,38 @@ def print_country(host, buffer, quiet=False, nick=''):
 	def reply_country(code, country):
 		if quiet and code == '--':
 			return
-		whois(nick or host, code, country, buffer)
+		if get_config_boolean('show_localtime') and code != '--':
+			dt = get_country_datetime(code)
+			if broken:
+				whois(nick or host, string_country(country, code), buffer)
+				whois(nick or host, string_time(dt), buffer)
+			else:
+				s = '%s - %s' %(string_country(country, code), string_time(dt))
+				whois(nick or host, s, buffer)
+		else:
+			whois(nick or host, string_country(country, code), buffer)
+
 	if is_ip(host):
 		# good, got an ip
 		code, country = search_in_database(host)
-	elif not is_host(host):
-		# probably a cloak
-		code, country = '--', 'cloaked'
-	else:
+	elif is_host(host):
 		# try to resolve uri
 		global reply_wrapper
 		reply_wrapper = reply_country
 		get_ip_process(host)
 		return
+	else:
+		# probably a cloak
+		code, country = '--', 'cloaked'
 	reply_country(code, country)
 
-### cmd
+### timezone
+def get_country_datetime(code):
+	tzname = pytz.country_timezones(code)[0]
+	tz = pytz.timezone(tzname)
+	return datetime.datetime.now(tz)
+
+### commands
 def cmd_country(data, buffer, args):
 	"""Shows country for a given ip, uri or nick."""
 	if not args:
@@ -348,12 +392,11 @@ def cmd_country(data, buffer, args):
 		#check if is a nick
 		host = get_host_by_nick(args, buffer)
 		if not host:
-			# not a nick
 			host = args
 		print_country(host, buffer)
 	return WEECHAT_RC_OK
 
-### signal callback
+### signal callbacks
 def whois_cb(data, signal, signal_data):
 	"""function for /WHOIS"""
 	if not get_config_boolean('show_in_whois') or not check_database():
@@ -362,7 +405,7 @@ def whois_cb(data, signal, signal_data):
 	server = signal[:signal.find(',')]
 	#debug('%s | %s | %s' %(data, signal, signal_data))
 	buffer = weechat.buffer_search('irc', 'server.%s' %server)
-	print_country(host, buffer, quiet=True, nick=nick)
+	print_country(host, buffer, quiet=True, broken=True, nick=nick)
 	return WEECHAT_RC_OK
 
 ### main
@@ -381,5 +424,12 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
 	if not check_database():
 		say("IP database not found. You must download a database with '/country update' before "
 				"using this script.")
+	if not pytz_module and weechat.config_set_plugin('show_localtime') is 'on':
+		error(
+			"pytz module isn't installed. Localtime information disabled. "
+			"Get it from http://pytz.sourceforge.net or from your distro packages "
+			"(python-tz in Ubuntu/Debian)")
+		weechat.config_set_plugin('show_localtime', 'off')
+	weechat.hook_config('plugins.var.python.country.show_localtime', 'config_localtime_cb', '')
 
 # vim:set shiftwidth=4 tabstop=4 noexpandtab textwidth=100:
