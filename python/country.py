@@ -17,10 +17,17 @@
 ###
 
 ###
-# Prints user's country in whois/whowas replies (for WeeChat 0.3.*)
+# Prints user's country and localtime information in
+# whois/whowas replies (for WeeChat 0.3.*)
 #
 #   This script uses MaxMind's GeoLite database from
 #   http://www.maxmind.com/app/geolitecountry
+#
+#   This script depends in pytz third party module for retrieving
+#   timezone information for a given country. Without it the local time
+#   for a user won't be displayed.
+#   Get it from http://pytz.sourceforge.net or from your distro packages,
+#   python-tz in Ubuntu/Debian
 #
 #   Commands:
 #   * /country
@@ -30,11 +37,14 @@
 #   * plugins.var.python.country.show_in_whois:
 #     If 'off' /whois or /whowas replies won't contain country information.
 #     Valid values: on, off
-#
-#   TODO:
-#   * Get timezone for a country and display local time for a user.
+#   * plugins.var.python.country.show_localtime:
+#     If 'off' timezone and localtime infomation won't be looked for.
+#     Valid values: on, off
 #
 #   History:
+#   2009-09-17
+#   version 0.2: added timezone and localtime information.
+#
 #   2009-08-24
 #   version 0.1.1: fixed python 2.5 compatibility
 #
@@ -45,9 +55,9 @@
 
 SCRIPT_NAME    = "country"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.1.1"
+SCRIPT_VERSION = "0.2"
 SCRIPT_LICENSE = "GPL3"
-SCRIPT_DESC    = "Prints user's country in whois replies"
+SCRIPT_DESC    = "Prints user's country and localtime in whois replies"
 SCRIPT_COMMAND = "country"
 
 try:
@@ -101,6 +111,8 @@ def get_config_boolean(config):
 	return boolDict[weechat.config_get_plugin(config)]
 
 def config_localtime_cb(data, option, value):
+	"""If user enables localtime information loads pytz module if needed. Outputs error mensaje and
+	disables localtime if module import fails."""
 	global pytz_module
 	if boolDict[value] and not pytz_module:
 		try:
@@ -134,12 +146,14 @@ def whois(nick, string, buffer=''):
 		color_delimiter, string))
 
 def string_country(country, code):
+	"""Format for country info string."""
 	color_delimiter = weechat.color('chat_delimiters')
 	color_chat = weechat.color('chat')
 	return '%s%s %s(%s%s%s)' %(color_chat, country, color_delimiter,
 			color_chat, code, color_delimiter)
 
 def string_time(dt):
+	"""Format for localtime info string."""
 	color_delimiter = weechat.color('chat_delimiters')
 	color_chat = weechat.color('chat')
 	date = dt.strftime('%x %X %Z')
@@ -241,6 +255,7 @@ def get_ip_process(host):
 			timeout, 'get_ip_process_cb', '')
 
 def get_ip_process_cb(data, command, rc, stdout, stderr):
+	"""Called when uri resolve finished."""
 	global hook_get_ip, reply_wrapper
 	#debug("%s @ stderr: '%s', stdout: '%s'" %(rc, stderr.strip('\n'), stdout.strip('\n')))
 	if stdout and reply_wrapper:
@@ -271,6 +286,8 @@ def is_ip(ip):
 
 def is_host(host):
 	"""A valid host must have at least one dot an no slashes."""
+	# This is a very poor check
+	# I will fix it when it fails
 	if '/' in host:
 		return False
 	elif '.' in host:
@@ -335,7 +352,8 @@ def search_in_database(ip):
 
 def print_country(host, buffer, quiet=False, broken=False, nick=''):
 	"""
-	Prints country for a given host, if quiet is True prints only if there's a match
+	Prints country and localtime for a given host, if quiet is True prints only if there's a match,
+	if broken is True reply will be split in two messages.
 	"""
 	#debug('host: ' + host)
 	def reply_country(code, country):
@@ -368,13 +386,14 @@ def print_country(host, buffer, quiet=False, broken=False, nick=''):
 
 ### timezone
 def get_country_datetime(code):
+	"""Get datetime object with country's timezone."""
 	tzname = pytz.country_timezones(code)[0]
 	tz = pytz.timezone(tzname)
 	return datetime.datetime.now(tz)
 
 ### commands
 def cmd_country(data, buffer, args):
-	"""Shows country for a given ip, uri or nick."""
+	"""Shows country and localtime for a given ip, uri or nick."""
 	if not args:
 		weechat.command('', '/HELP %s' %SCRIPT_COMMAND)
 		return WEECHAT_RC_OK
@@ -414,7 +433,7 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
 	weechat.hook_signal('*,irc_in2_314', 'whois_cb', '') # /whowas
 	weechat.hook_command('country', cmd_country.__doc__, 'update | (nick|ip|uri)',
 			"       update: Downloads/updates ip database with country codes.\n"
-			"nick, ip, uri: Gets country for a given ip, domain or nick.",
+			"nick, ip, uri: Gets country and localtime for a given ip, domain or nick.",
 			'update||%(nick)', 'cmd_country', '')
 	# settings
 	for opt, val in settings:
