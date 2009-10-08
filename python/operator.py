@@ -100,8 +100,7 @@ class Command(object):
 		if self.hook_pointer == '':
 			raise Exception, "hook_command failed"
 
-
-class CmdOperator(Command):
+class CommandOperator(Command):
 	def __init__(self, *args):
 		self.infos = Infos()
 		Command.__init__(self, *args)
@@ -113,75 +112,123 @@ class CmdOperator(Command):
 		self.channel = buffer['localvar_channel']
 		self.nick = self.infos.get('irc_nick', self.server)
 
+	def replace_vars(self, s):
+		if '$channel' in s:
+			s = s.replace('$channel', self.channel)
+		if '$nick' in s:
+			s = s.replace('$nick', self.nick)
+		return s
+
+	def get_config(self, config):
+		string = '%s_%s' %(self.server, config)
+		value = weechat.config_get_plugin(string)
+		if not value:
+			value = weechat.config_get_plugin(config)
+		return value
+
+	def get_op_cmd(self):
+		value = self.get_config('op_cmd')
+		if not value:
+			raise Exception, "No command defined for get op."
+		return self.replace_vars(value)
+
+	def get_deop_cmd(self):
+		value = self.get_config('deop_cmd')
+		if not value:
+			return '/deop'
+		return self.replace_vars(value)
+
 	def is_op(self):
 		try:
 			infolist = Infolist('irc_nick', args='%s,%s' %(self.server, self.channel))
 			for nick in infolist:
 				if nick['name'] == self.nick:
-					if nick['flags'] == 8:
+					if nick['flags'] & 8:
 						return True
 					else:
 						return False
 		except:
 			error('Not in a channel')
 
-	def get_op(self):
-		weechat.command('', '/msg chanserv op %s %s' %(self.channel, self.nick))
-
-	def drop_op(self):
-		weechat.command('', '/msg chanserv deop %s %s' %(self.channel, self.nick))
-
-	def kick(self, nick, reason, wait=False):
+	def run_cmd(self, cmd, wait=False):
 		if wait:
-			weechat.command(self.buffer, '/wait 1 /kick %s %s' %(nick, reason))
+			if wait is True:
+				wait = 1
+			debug('run with wait: %s' %cmd)
+			weechat.command(self.buffer, '/wait %s %s' %(wait, cmd))
 		else:
-			weechat.command(self.buffer, '/kick %s %s' %(nick, reason))
+			debug('run: %s' %cmd)
+			weechat.command(self.buffer, cmd)
 
-	def ban(self, nick, wait=False):
-		if wait:
-			weechat.command(self.buffer, '/wait 1 /ban %s' %nick)
-		else:
-			weechat.command(self.buffer, '/ban %s' %nick)
+	def get_op(self, **kwargs):
+		self.run_cmd(self.get_op_cmd(), **kwargs)
+
+	def drop_op(self, **kwargs):
+		self.run_cmd(self.get_deop_cmd(), **kwargs)
+
+	def kick(self, nick, reason, **kwargs):
+		cmd = '/kick %s %s' %(nick, reason)
+		self.run_cmd(cmd, **kwargs)
+
+	def ban(self, nick, **kwargs):
+		cmd = '/ban %s' %nick
+		self.run_cmd(cmd, **kwargs)
 
 	
-class Op(CmdOperator):
+class Op(CommandOperator):
 	def cmd(self, *args):
 		op = self.is_op()
-		if op is None:
-			return
-		if not op:
+		if op is False:
 			self.get_op()
 		return op
 
 
-class Deop(CmdOperator):
+class Deop(CommandOperator):
 	def cmd(self, *args):
 		op = self.is_op()
-		if op is None:
-			return
-		if op:
+		if op is True:
 			self.drop_op()
 		return op
 
 
-class Kick(CmdOperator):
+class CmdOp(Op):
+	op = None
+	def __call__(self, *args):
+		self._parse(*args)
+		self.op = Op.cmd(self, *args)
+		if self.op is None:
+			return WEECHAT_RC_OK
+		self.cmd(self, *args)
+		self.drop_op(wait=2)
+		return WEECHAT_RC_OK
+
+
+class Kick(CmdOp):
 	def cmd(self, *args):
-		op = Op.cmd(self, *args)
 		if ' ' in self.args:
 			nick, reason = self.args.split(' ', 1)
 		else:
 			nick, reason = self.args, 'Adiós'
-		self.kick(nick, reason, wait=not op)
+		self.kick(nick, reason, wait=not self.op)
 
 
-class Ban(CmdOperator):
+class Ban(CmdOp):
 	def cmd(self, *args):
-		op = Op.cmd(self, *args)
 		if ' ' in self.args:
 			nick = self.args[:self.args.find(' ')]
 		else:
 			nick = self.args
-		self.ban(nick, wait=not op)
+		self.ban(nick, wait=not self.op)
+
+
+class KickBan(CmdOp):
+	def cmd(self, *args):
+		if ' ' in self.args:
+			nick, reason = self.args.split(' ', 1)
+		else:
+			nick, reason = self.args, 'Adiós'
+		self.ban(nick, wait=not self.op)
+		self.kick(nick, reason, wait=2)
 
 
 # initialise commands
@@ -189,8 +236,9 @@ cmd_op = Op('oop', 'cmd_op')
 cmd_deop = Deop('odeop', 'cmd_deop')
 cmd_kick = Kick('okick', 'cmd_kick')
 cmd_ban = Ban('oban', 'cmd_ban')
+cmd_kban = KickBan('okickban', 'cmd_kban')
 
-command_list = (cmd_op, cmd_deop, cmd_kick, cmd_ban)
+command_list = (cmd_op, cmd_deop, cmd_kick, cmd_ban, cmd_kban)
 
 
 if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
