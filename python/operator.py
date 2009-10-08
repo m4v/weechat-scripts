@@ -26,14 +26,6 @@ SCRIPT_VERSION = "0.1"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = ""
 
-script_cmd_op     = 'oop'
-script_cmd_deop   = 'odeop'
-script_cmd_kick   = 'okick'
-script_cmd_ban    = 'oban'
-script_cmd_bk     = 'okickban'
-script_cmd_mute   = 'omute'
-script_cmd_remove = 'oremove'
-
 try:
 	import weechat
 	WEECHAT_RC_OK = weechat.WEECHAT_RC_OK
