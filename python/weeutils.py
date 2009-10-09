@@ -249,5 +249,8 @@ def say(s, prefix='', buffer=''):
 
 ### config
 boolDict = ValidValuesDict({'on':True, 'off':False}, 'off')
+def get_config_boolean(config):
+	"""Gets our config value, returns a sane default if value is wrong."""
+	return boolDict[weechat.config_get_plugin(config)]
 
 # vim:set shiftwidth=4 tabstop=4 noexpandtab textwidth=100:

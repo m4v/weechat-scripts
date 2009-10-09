@@ -42,6 +42,8 @@ try:
 except:
 	weeutils_module = False
 
+import getopt
+import fnmatch
 
 class Infos(object):
 	def get(self, key, arg=''):
@@ -100,10 +102,39 @@ class Command(object):
 		if self.hook_pointer == '':
 			raise Exception, "hook_command failed"
 
+
+class CommandQueue(object):
+	commands = []
+	wait = 0
+	def queue(self, buffer, cmd):
+		self.commands.append((buffer, cmd))
+
+	def run(self):
+		for buffer, cmd in self.commands:
+			if self.wait:
+				debug('running with wait(%s) %s' %(self.wait, cmd))
+				weechat.command(buffer, '/wait %s %s' %(self.wait, cmd))
+			else:
+				debug('running %s' %cmd)
+				weechat.command(buffer, cmd)
+			self.wait += 1
+		self.clear()
+
+	def clear(self):
+		self.commands = []
+		self.wait = 0
+
+
 class CommandOperator(Command):
+	queue = CommandQueue()
 	def __init__(self, *args):
 		self.infos = Infos()
 		Command.__init__(self, *args)
+
+	def __call__(self, *args):
+		Command.__call__(self, *args)
+		self.queue.run()
+		return WEECHAT_RC_OK
 
 	def _parse(self, *args):
 		Command._parse(self, *args)
@@ -150,15 +181,8 @@ class CommandOperator(Command):
 		except:
 			error('Not in a channel')
 
-	def run_cmd(self, cmd, wait=False):
-		if wait:
-			if wait is True:
-				wait = 1
-			debug('run with wait: %s' %cmd)
-			weechat.command(self.buffer, '/wait %s %s' %(wait, cmd))
-		else:
-			debug('run: %s' %cmd)
-			weechat.command(self.buffer, cmd)
+	def run_cmd(self, cmd, **kwargs):
+		self.queue.queue(self.buffer, cmd)
 
 	def get_op(self, **kwargs):
 		self.run_cmd(self.get_op_cmd(), **kwargs)
@@ -167,11 +191,17 @@ class CommandOperator(Command):
 		self.run_cmd(self.get_deop_cmd(), **kwargs)
 
 	def kick(self, nick, reason, **kwargs):
+		if not reason:
+			reason = 'bye'
 		cmd = '/kick %s %s' %(nick, reason)
 		self.run_cmd(cmd, **kwargs)
 
 	def ban(self, nick, **kwargs):
 		cmd = '/ban %s' %nick
+		self.run_cmd(cmd, **kwargs)
+
+	def unban(self, nick, **kwargs):
+		cmd = '/unban %s' %nick
 		self.run_cmd(cmd, **kwargs)
 
 	
@@ -192,14 +222,16 @@ class Deop(CommandOperator):
 
 
 class CmdOp(Op):
-	op = None
+	deop_hook = ''
 	def __call__(self, *args):
 		self._parse(*args)
-		self.op = Op.cmd(self, *args)
-		if self.op is None:
+		op = Op.cmd(self, *args)
+		if op is None:
 			return WEECHAT_RC_OK
 		self.cmd(self, *args)
-		self.drop_op(wait=2)
+		if get_config_boolean('deop_after_use'):
+			self.drop_op()
+		self.queue.run()
 		return WEECHAT_RC_OK
 
 
@@ -208,43 +240,100 @@ class Kick(CmdOp):
 		if ' ' in self.args:
 			nick, reason = self.args.split(' ', 1)
 		else:
-			nick, reason = self.args, 'Adiós'
-		self.kick(nick, reason, wait=not self.op)
+			nick, reason = self.args, ''
+		if nick != self.nick: # don't kick yourself
+			self.kick(nick, reason)
 
 
 class Ban(CmdOp):
+	banmask = []
+	def _parse(self, *args):
+		CmdOp._parse(self, *args)
+		args = self.args.split()
+		(opts, args) = getopt.gnu_getopt(args, 'hune', ('host', 'user', 'nick', 'exact'))
+		self.banmask = []
+		for k, v in opts:
+			if k in ('-h', '--host'):
+				self.banmask.append('host')
+			elif k in ('-u', '--user'):
+				self.banmask.append('user')
+			elif k in ('-n', '--nick'):
+				self.banmask.append('nick')
+			elif k in ('-e', '--exact'):
+				self.banmask = ['nick', 'user', 'host']
+				break
+		self.args = ' '.join(args)
+
+	def get_host(self, name):
+		for user in Infolist('irc_nick', args='%s,%s' %(self.server, self.channel)):
+			if user['name'] == name:
+				return user['host']
+
+	def make_banmask(self, name):
+		if not self.banmask:
+			return name
+		hostmask = self.get_host(name)
+		nick = user = host = '*'
+		if 'nick' in self.banmask:
+			nick = name
+		if 'user' in self.banmask:
+			user = hostmask[:hostmask.find('@')]
+		if 'host' in self.banmask:
+			host = hostmask[hostmask.find('@') + 1:]
+		banmask = '%s!%s@%s' %(nick, user, host)
+		return banmask
+	
+	def check_banmask(self, banmask):
+		# check banmask doesn't ban ourselves
+		hostmask = '%s!%s' %(self.nick, self.get_host(self.nick))
+		# XXX using fnmatch might give some troubles with nicks using []
+		# but I'm lazy
+		return not fnmatch.fnmatch(hostmask, banmask)
+
 	def cmd(self, *args):
 		if ' ' in self.args:
 			nick = self.args[:self.args.find(' ')]
 		else:
 			nick = self.args
-		self.ban(nick, wait=not self.op)
+		banmask = self.make_banmask(nick)
+		if self.check_banmask(banmask) and nick != self.nick:
+			self.ban(self.make_banmask(nick))
 
 
-class KickBan(CmdOp):
+class KickBan(Ban):
 	def cmd(self, *args):
 		if ' ' in self.args:
 			nick, reason = self.args.split(' ', 1)
 		else:
-			nick, reason = self.args, 'Adiós'
-		self.ban(nick, wait=not self.op)
-		self.kick(nick, reason, wait=2)
+			nick, reason = self.args, ''
+		banmask = self.make_banmask(nick)
+		if self.check_banmask(banmask) and nick != self.nick:
+			self.ban(banmask)
+			self.kick(nick, reason)
 
 
 # initialise commands
-cmd_op = Op('oop', 'cmd_op')
+cmd_op   = Op('oop', 'cmd_op')
 cmd_deop = Deop('odeop', 'cmd_deop')
 cmd_kick = Kick('okick', 'cmd_kick')
-cmd_ban = Ban('oban', 'cmd_ban')
+cmd_ban  = Ban('oban', 'cmd_ban')
 cmd_kban = KickBan('okickban', 'cmd_kban')
 
-command_list = (cmd_op, cmd_deop, cmd_kick, cmd_ban, cmd_kban)
 
 
 if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
 		SCRIPT_DESC, '', ''):
 	if weeutils_module:
-		map(lambda x: x.hook(), command_list)
+		for command in (cmd_op, cmd_deop, cmd_kick, cmd_ban, cmd_kban):
+			command.hook()
+		# settings
+		settings = (
+				('op_cmd', '/msg chanserv op $channel $nick'),
+				('deop_after_use', 'on'),
+				('deop_delay', '60'))
+		for opt, val in settings:
+			if not weechat.config_is_set_plugin(opt):
+					weechat.config_set_plugin(opt, val)
 	else:
 		weechat.prnt('', "%s%s: This scripts requires weeutils.py" %(weechat.prefix('error'), SCRIPT_NAME))
 		weechat.prnt('', '%s%s: Load failed' %(weechat.prefix('error'), SCRIPT_NAME))
