@@ -148,14 +148,23 @@ class CommandOperator(Command):
 			s = s.replace('$channel', self.channel)
 		if '$nick' in s:
 			s = s.replace('$nick', self.nick)
+		if '$server' in s:
+			s = s.replace('$server', self.server)
 		return s
 
 	def get_config(self, config):
-		string = '%s_%s' %(self.server, config)
+		string = '%s_%s_%s' %(self.server, self.channel, config)
 		value = weechat.config_get_plugin(string)
 		if not value:
-			value = weechat.config_get_plugin(config)
+			string = '%s_%s' %(self.server, config)
+			value = weechat.config_get_plugin(string)
+			if not value:
+				value = weechat.config_get_plugin(config)
 		return value
+
+	def get_config_boolean(self, config):
+		value = self.get_config(config)
+		return boolDict[value]
 
 	def get_op_cmd(self):
 		value = self.get_config('op_cmd')
@@ -171,13 +180,21 @@ class CommandOperator(Command):
 
 	def is_op(self):
 		try:
-			infolist = Infolist('irc_nick', args='%s,%s' %(self.server, self.channel))
-			for nick in infolist:
+			for nick in Infolist('irc_nick', args='%s,%s' %(self.server, self.channel)):
 				if nick['name'] == self.nick:
 					if nick['flags'] & 8:
 						return True
 					else:
 						return False
+		except:
+			error('Not in a channel')
+
+	def is_nick(self, nick):
+		try:
+			for user in Infolist('irc_nick', args='%s,%s' %(self.server, self.channel)):
+				if user['name'] == nick:
+					return True
+			return False
 		except:
 			error('Not in a channel')
 
@@ -220,6 +237,7 @@ class Deop(CommandOperator):
 			self.drop_op()
 		return op
 
+
 deop_callback = None
 deop_hook = ''
 class CmdOp(Op):
@@ -229,8 +247,8 @@ class CmdOp(Op):
 		if op is None:
 			return WEECHAT_RC_OK
 		self.cmd(self, *args)
-		if get_config_boolean('deop_after_use'):
-			delay = int(weechat.config_get_plugin('deop_delay'))
+		if self.get_config_boolean('deop_after_use'):
+			delay = int(self.get_config('deop_delay'))
 			if delay > 0:
 				global deop_hook, deop_callback
 				if deop_hook:
@@ -255,6 +273,26 @@ class Kick(CmdOp):
 			nick, reason = self.args, ''
 		if nick != self.nick: # don't kick yourself
 			self.kick(nick, reason)
+		else:
+			say('This script cowardly refuses to kick you (%s)' %nick, buffer=self.buffer)
+			self.queue.clear()
+
+
+class MultiKick(Kick):
+	def cmd(self, *args):
+		args = self.args.split()
+		nicks = []
+		debug('multikick: %s' %str(args))
+		while(args):
+			nick = args[0]
+			if nick[0] == ':' or not self.is_nick(nick):
+				break
+			nicks.append(args.pop(0))
+		debug('multikick: %s, %s' %(nicks, args))
+		reason = ' '.join(args).lstrip(':')
+		for nick in nicks:
+			self.args = '%s %s' %(nick, reason)
+			Kick.cmd(self, *args) # '%s %s' %(nick, reason))
 
 
 class Ban(CmdOp):
@@ -298,7 +336,8 @@ class Ban(CmdOp):
 	def check_banmask(self, banmask):
 		# check banmask doesn't ban ourselves
 		hostmask = '%s!%s' %(self.nick, self.get_host(self.nick))
-		# XXX using fnmatch might give some troubles with nicks using []
+		# XXX this check might break
+		# as fnmatch might give some troubles with nicks using []
 		# but I'm lazy
 		return not fnmatch.fnmatch(hostmask, banmask)
 
@@ -310,6 +349,9 @@ class Ban(CmdOp):
 		banmask = self.make_banmask(nick)
 		if self.check_banmask(banmask) and nick != self.nick:
 			self.ban(self.make_banmask(nick))
+		else:
+			say("This script cowardly refuses to ban you", buffer=self.buffer)
+			self.queue.clear()
 
 
 class KickBan(Ban):
@@ -322,12 +364,16 @@ class KickBan(Ban):
 		if self.check_banmask(banmask) and nick != self.nick:
 			self.ban(banmask)
 			self.kick(nick, reason)
+		else:
+			say("This script cowardly refuses to kickban you", buffer=self.buffer)
+			self.queue.clear()
 
 
 # initialise commands
 cmd_op   = Op('oop', 'cmd_op')
 cmd_deop = Deop('odeop', 'cmd_deop')
 cmd_kick = Kick('okick', 'cmd_kick')
+cmd_multi_kick = MultiKick('omkick', 'cmd_multi_kick')
 cmd_ban  = Ban('oban', 'cmd_ban')
 cmd_kban = KickBan('okickban', 'cmd_kban')
 
@@ -336,11 +382,13 @@ cmd_kban = KickBan('okickban', 'cmd_kban')
 if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
 		SCRIPT_DESC, '', ''):
 	if weeutils_module:
-		for command in (cmd_op, cmd_deop, cmd_kick, cmd_ban, cmd_kban):
+		# hook our Command classes
+		for command in (cmd_op, cmd_deop, cmd_kick, cmd_multi_kick, cmd_ban, cmd_kban):
 			command.hook()
 		# settings
 		settings = (
 				('op_cmd', '/msg chanserv op $channel $nick'),
+				('deop_cmd', '/deop'),
 				('deop_after_use', 'on'),
 				('deop_delay', '60'))
 		for opt, val in settings:
