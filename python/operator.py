@@ -220,9 +220,9 @@ class Deop(CommandOperator):
 			self.drop_op()
 		return op
 
-
+deop_callback = None
+deop_hook = ''
 class CmdOp(Op):
-	deop_hook = ''
 	def __call__(self, *args):
 		self._parse(*args)
 		op = Op.cmd(self, *args)
@@ -230,7 +230,19 @@ class CmdOp(Op):
 			return WEECHAT_RC_OK
 		self.cmd(self, *args)
 		if get_config_boolean('deop_after_use'):
-			self.drop_op()
+			delay = int(weechat.config_get_plugin('deop_delay'))
+			if delay > 0:
+				global deop_hook, deop_callback
+				if deop_hook:
+					weechat.unhook(deop_hook)
+				def callback(data, count):
+					cmd_deop(self.data, self.buffer, self.args)
+					deop_hook = ''
+					return WEECHAT_RC_OK
+				deop_callback = callback
+				deop_hook = weechat.hook_timer(delay * 1000, 0, 1, 'deop_callback', '')
+			else:
+				self.drop_op()
 		self.queue.run()
 		return WEECHAT_RC_OK
 
