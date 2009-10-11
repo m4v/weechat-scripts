@@ -24,7 +24,7 @@ SCRIPT_NAME    = "automode"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
 SCRIPT_VERSION = "0.1"
 SCRIPT_LICENSE = "GPL3"
-SCRIPT_DESC    = "simple script for auto op/voice my bots"
+SCRIPT_DESC    = "simple script for auto op/voice other users"
 
 try:
 	import weechat
@@ -48,19 +48,21 @@ def join_cb(data, signal, signal_data):
 	channel = channel.lstrip(':')
 	user = '%s:%s' %(host, channel)
 	auto_op = weechat.config_get_plugin('auto_op').split(',')
-	auto_voice = weechat.config_get_plugin('auto_voice').split(',')
 	for pattern in auto_op:
 		if fnmatch.fnmatch(user, pattern):
 			server = signal[:signal.find(',')]
 			buffer = weechat.buffer_search('', '%s.%s' %(server, channel))
 			if buffer:
 				weechat.command(buffer, '/op %s' %user[:user.find('!')])
+				return WEECHAT_RC_OK
+	auto_voice = weechat.config_get_plugin('auto_voice').split(',')
 	for pattern in auto_voice:
 		if fnmatch.fnmatch(user, pattern):
 			server = signal[:signal.find(',')]
 			buffer = weechat.buffer_search('', '%s.%s' %(server, channel))
 			if buffer:
 				weechat.command(buffer, '/voice %s' %user[:user.find('!')])
+				return WEECHAT_RC_OK
 	return WEECHAT_RC_OK
 
 if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
