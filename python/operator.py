@@ -353,6 +353,22 @@ class Ban(CmdOp):
 			say("This script cowardly refuses to ban you", buffer=self.buffer)
 			self.queue.clear()
 
+#TODO
+class MultiBan(Ban):
+	def cmd(self, *args):
+		args = self.args.split()
+		nicks = []
+		while(args):
+			nick = args[0]
+			if nick[0] == ':' or not self.is_nick(nick):
+				break
+			nicks.append(args.pop(0))
+		for nick in nicks:
+			self.args = nick
+			Ban.cmd(self, *args) # '%s %s' %(nick, reason))
+
+
+
 
 class KickBan(Ban):
 	def cmd(self, *args):
