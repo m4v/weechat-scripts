@@ -4,17 +4,15 @@ SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
 SCRIPT_VERSION = "0.1"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = ""
-#SCRIPT_COMMAND = "egrep"
 
 try:
-	import weechat
-	from weechat import WEECHAT_RC_OK
+	import weechat, time
+	WEECHAT_RC_OK = weechat.WEECHAT_RC_OK
 	import_ok = True
 except:
 	import_ok = False
-import dbus, time#, fnmatch
 
-now = time.time
+now = lambda: int(time.time())
 
 def debug(s, prefix='debug'):
 	"""Debug msg"""
@@ -22,6 +20,12 @@ def debug(s, prefix='debug'):
 
 def error(s, prefix=SCRIPT_NAME, buffer=''):
 	weechat.prnt(buffer, '%s%s: %s' %(weechat.prefix('error'), prefix, s))
+
+try:
+	import dbus
+except:
+	error('Failed to import dbus, is the dbus module installed?')
+	import_ok = False
 
 settings = (('ignore_private', ''),)
 #		('ignore_hilight', ''))
@@ -153,7 +157,7 @@ def enable():
 			weechat.hook_print('', '', '', 1, 'notify_hilight', ''),
 			weechat.hook_signal('weechat_pv', 'notify_priv', ''),
 			]
-	debug(notify_hooks)
+	#debug(notify_hooks)
 
 def disable():
 	global notify_hooks
