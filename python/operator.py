@@ -24,7 +24,7 @@ SCRIPT_NAME    = "operator"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
 SCRIPT_VERSION = "0.1"
 SCRIPT_LICENSE = "GPL3"
-SCRIPT_DESC    = ""
+SCRIPT_DESC    = "Automated kick/bans commands and generally help an operator's task"
 
 try:
 	import weechat
@@ -61,18 +61,18 @@ class Buffer(object):
 class CommandQueue(object):
 	commands = []
 	wait = 0
-	def queue(self, buffer, cmd):
-		self.commands.append((buffer, cmd))
+	def queue(self, buffer, cmd, wait=1):
+		self.commands.append((buffer, cmd, wait))
 
 	def run(self):
-		for buffer, cmd in self.commands:
+		for buffer, cmd, wait in self.commands:
 			if self.wait:
 				debug('running with wait(%s) %s' %(self.wait, cmd))
 				weechat.command(buffer, '/wait %s %s' %(self.wait, cmd))
 			else:
 				debug('running %s' %cmd)
 				weechat.command(buffer, cmd)
-			self.wait += 1
+			self.wait += wait
 		self.clear()
 
 	def clear(self):
@@ -153,11 +153,12 @@ class CommandOperator(Command):
 		except:
 			error('Not in a channel')
 
-	def run_cmd(self, cmd, **kwargs):
-		self.queue.queue(self.buffer, cmd)
+	def run_cmd(self, cmd, wait=1, **kwargs):
+		self.queue.queue(self.buffer, cmd, wait)
 
 	def get_op(self, **kwargs):
-		self.run_cmd(self.get_op_cmd(), **kwargs)
+		# wait 2 seconds before sending more comands
+		self.run_cmd(self.get_op_cmd(), wait=2, **kwargs)
 
 	def drop_op(self, **kwargs):
 		self.run_cmd(self.get_deop_cmd(), **kwargs)
@@ -300,16 +301,16 @@ class Ban(CmdOp):
 	def get_host(self, name):
 		for user in Infolist('irc_nick', args='%s,%s' %(self.server, self.channel)):
 			if user['name'] == name:
-				return user['host']
+				return '%s!%s' % (name, user['host'])
 
 	def make_banmask(self, hostmask):
 		if not hostmask or not self.banmask:
 			return hostmask
 		nick = user = host = '*'
 		if 'nick' in self.banmask:
-			nick = name
+			nick = hostmask[:hostmask.find('!')]
 		if 'user' in self.banmask:
-			user = hostmask[:hostmask.find('@')]
+			user = hostmask.split('!',1)[1].split('@')[0]
 		if 'host' in self.banmask:
 			host = hostmask[hostmask.find('@') + 1:]
 		banmask = '%s!%s@%s' %(nick, user, host)
@@ -336,19 +337,16 @@ class Ban(CmdOp):
 		if banmasks:
 			self.ban(*banmasks)
 
+
+class UnBan(Ban):
+	def cmd(self, *args):
+		args = self.args.split()
+		self.unban(*args)
+
+
 class MergedBan(Ban):
 	unban = False
 	__doc__ = Ban.__doc__
-	def cmd(self, *args):
-		args = self.args.split()
-		banmasks = []
-#		debug('args: %s' %(args, ))
-		for host in args:
-			host = self.get_host(host)
-			mask = self.make_banmask(host)
-			banmasks.append(mask)
-		self.ban(*banmasks)
-
 	def ban(self, *args, **kwargs):
 		c = self.unban and '-' or '+'
 		# do 4 bans per command
@@ -358,12 +356,6 @@ class MergedBan(Ban):
 			cmd = '/mode %s%s %s' %(c, 'b'*len(slice), hosts)
 			self.run_cmd(cmd, **kwargs)
 
-class UnBan(MergedBan):
-	unban = True
-	def cmd(self, *args):
-		args = self.args.split()
-		self.ban(*args)
-
 class KickBan(Ban):
 	invert = False
 	def cmd(self, *args):
@@ -371,13 +363,15 @@ class KickBan(Ban):
 			nick, reason = self.args.split(' ', 1)
 		else:
 			nick, reason = self.args, ''
-		banmask = self.make_banmask(nick)
-		if self.invert:
-			self.kick(nick, reason)
-			self.ban(banmask)
-		else:
-			self.ban(banmask)
-			self.kick(nick, reason)
+		hostmask = self.get_host(nick)
+		if hostmask:
+			banmask = self.make_banmask(hostmask)
+			if self.invert:
+				self.kick(nick, reason)
+				self.ban(banmask)
+			else:
+				self.ban(banmask)
+				self.kick(nick, reason)
 
 # config callbacks
 def enable_multiple_kicks_conf_cb(data, config, value):
@@ -433,7 +427,7 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
 		else:
 			cmd_ban  = Ban('oban', 'cmd_ban')
 		cmd_unban  = UnBan('ounban', 'cmd_unban')
-		cmd_kban = KickBan('okickban', 'cmd_kban')
+		cmd_kban = KickBan('okban', 'cmd_kban')
 		if get_config_boolean('invert_kickban_order'):
 			cmd_kban.invert = True
 		weechat.hook_config('plugins.var.python.%s.enable_multiple_kicks' %SCRIPT_NAME, 'enable_multiple_kicks_conf_cb', '')
