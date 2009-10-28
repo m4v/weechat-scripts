@@ -58,51 +58,6 @@ class Buffer(object):
 		return weechat.buffer_get_string(self.pointer, key)
 
 
-class Command(object):
-	"""
-	WeeChat command class.
-	
-	[define usage template]
-
-	detailed help here
-	"""
-	command = None
-	completion = ''
-	callback = None
-	hook_pointer = None
-#	def __call__(self, data, buffer, args):
-#		pass
-
-	def __init__(self, command=None, callback=None):
-		if command:
-			self.command = command
-		if callback:
-			self.callback = callback
-	
-	def __call__(self, *args):
-		self._parse(*args)
-		self.cmd(self, *args)
-		return WEECHAT_RC_OK
-
-	def _parse(self, data, buffer, args):
-		self.buffer = buffer
-		self.data = data
-		self.args = args
-
-	def cmd(self, data, buffer, args):
-		pass
-
-	def hook(self, command=None, callback=None):
-		command = command or self.command
-		callback = callback or self.callback
-		assert command, callback
-		assert not self.hook_pointer
-		description, usage, help = '', '', '' #[ s for s in map(str.strip, self.__doc__.split("\n")) if s ]
-		self.hook_pointer = weechat.hook_command(command, description, usage, help, self.completion, callback, '')
-		if self.hook_pointer == '':
-			raise Exception, "hook_command failed"
-
-
 class CommandQueue(object):
 	commands = []
 	wait = 0
@@ -213,17 +168,26 @@ class CommandOperator(Command):
 		cmd = '/kick %s %s' %(nick, reason)
 		self.run_cmd(cmd, **kwargs)
 
-	def ban(self, nick, **kwargs):
-		cmd = '/ban %s' %nick
+	def ban(self, *args, **kwargs):
+		cmd = '/ban %s' %' '.join(args)
 		self.run_cmd(cmd, **kwargs)
 
-	def unban(self, nick, **kwargs):
-		cmd = '/unban %s' %nick
+	def unban(self, *args, **kwargs):
+		cmd = '/unban %s' %' '.join(args)
 		self.run_cmd(cmd, **kwargs)
 
-	
+
+manual_op = False
 class Op(CommandOperator):
+	"""
+	Gives you op
+	"""
 	def cmd(self, *args):
+		global manual_op
+		manual_op = True
+		self.op()
+	
+	def op(self):
 		op = self.is_op()
 		if op is False:
 			self.get_op()
@@ -231,6 +195,9 @@ class Op(CommandOperator):
 
 
 class Deop(CommandOperator):
+	"""
+	Drops op
+	"""
 	def cmd(self, *args):
 		op = self.is_op()
 		if op is True:
@@ -238,23 +205,27 @@ class Deop(CommandOperator):
 		return op
 
 
-deop_callback = None
 deop_hook = ''
+deop_callback = None
 class CmdOp(Op):
 	def __call__(self, *args):
 		self._parse(*args)
-		op = Op.cmd(self, *args)
+		op = self.op()
+		global manual_op
 		if op is None:
 			return WEECHAT_RC_OK
+		elif op is False:
+			manual_op = False
 		self.cmd(self, *args)
-		if self.get_config_boolean('deop_after_use'):
+		# don't deop if we used /oop before
+		if not manual_op and self.get_config_boolean('deop_after_use'):
 			delay = int(self.get_config('deop_delay'))
 			if delay > 0:
 				global deop_hook, deop_callback
 				if deop_hook:
 					weechat.unhook(deop_hook)
 				def callback(data, count):
-					cmd_deop(self.data, self.buffer, self.args)
+					cmd_deop('', self.buffer, self.args)
 					deop_hook = ''
 					return WEECHAT_RC_OK
 				deop_callback = callback
@@ -266,6 +237,9 @@ class CmdOp(Op):
 
 
 class Kick(CmdOp):
+	"""Kicks nick, gets op if needed.
+
+	<nick> [<reason>]"""
 	def cmd(self, *args):
 		if ' ' in self.args:
 			nick, reason = self.args.split(' ', 1)
@@ -279,6 +253,12 @@ class Kick(CmdOp):
 
 
 class MultiKick(Kick):
+	"""Kicks nicks, gets op if needed.
+
+	<nick> [<nick> ...] [:] [<reason>]
+	
+	  nick: asdasd
+	reason: asdasd"""
 	def cmd(self, *args):
 		args = self.args.split()
 		nicks = []
@@ -296,6 +276,13 @@ class MultiKick(Kick):
 
 
 class Ban(CmdOp):
+	"""
+	Bans users
+
+	nick [nick ..] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]
+
+	TODO
+	"""
 	banmask = []
 	def _parse(self, *args):
 		CmdOp._parse(self, *args)
@@ -319,10 +306,9 @@ class Ban(CmdOp):
 			if user['name'] == name:
 				return user['host']
 
-	def make_banmask(self, name):
-		if not self.banmask:
-			return name
-		hostmask = self.get_host(name)
+	def make_banmask(self, hostmask):
+		if not hostmask or not self.banmask:
+			return hostmask
 		nick = user = host = '*'
 		if 'nick' in self.banmask:
 			nick = name
@@ -335,42 +321,61 @@ class Ban(CmdOp):
 	
 	def check_banmask(self, banmask):
 		# check banmask doesn't ban ourselves
-		hostmask = '%s!%s' %(self.nick, self.get_host(self.nick))
+		hostmask = '%s!%s' %(self.nick, self.get_host(self.nick)) # XXX should be cached
 		# XXX this check might break
 		# as fnmatch might give some troubles with nicks using []
 		# but I'm lazy
 		return not fnmatch.fnmatch(hostmask, banmask)
 
 	def cmd(self, *args):
-		if ' ' in self.args:
-			nick = self.args[:self.args.find(' ')]
-		else:
-			nick = self.args
-		banmask = self.make_banmask(nick)
-		if self.check_banmask(banmask) and nick != self.nick:
-			self.ban(self.make_banmask(nick))
-		else:
-			say("This script cowardly refuses to ban you", buffer=self.buffer)
-			self.queue.clear()
+		args = self.args.split()
+		banmasks = []
+		for arg in args:
+			mask = arg
+			if not is_hostmask(arg):
+				hostmask = self.get_host(arg)
+				if hostmask:
+					mask = self.make_banmask(hostmask)
+			if self.check_banmask(mask):
+				banmasks.append(mask)
+			else:
+				say("This script cowardly refuses to ban you with '%s'" %mask, buffer=self.buffer)
+		if banmasks:
+			self.ban(*banmasks)
 
-#TODO
-class MultiBan(Ban):
+class MergedBan(Ban):
+	unban = False
+	__doc__ = Ban.__doc__
 	def cmd(self, *args):
 		args = self.args.split()
-		nicks = []
-		while(args):
-			nick = args[0]
-			if nick[0] == ':' or not self.is_nick(nick):
-				break
-			nicks.append(args.pop(0))
-		for nick in nicks:
-			self.args = nick
-			Ban.cmd(self, *args) # '%s %s' %(nick, reason))
+		banmasks = []
+#		debug('args: %s' %(args, ))
+		for host in args:
+			host = self.get_host(host)
+			mask = self.make_banmask(host)
+			if self.check_banmask(mask):
+				banmasks.append(mask)
+			else:
+				say("This script cowardly refuses to ban you with '%s'" %mask, buffer=self.buffer)
+		self.ban(*banmasks)
 
+	def ban(self, *args, **kwargs):
+		c = self.unban and '-' or '+'
+		# do 4 bans per command
+		for n in range(0, len(args), 4):
+			slice = args[n:n+4]
+			hosts = ' '.join(slice)
+			cmd = '/mode %s%s %s' %(c, 'b'*len(slice), hosts)
+			self.run_cmd(cmd, **kwargs)
 
-
+class UnBan(MergedBan):
+	unban = True
+	def cmd(self, *args):
+		args = self.args.split()
+		self.ban(*args)
 
 class KickBan(Ban):
+	invert = False
 	def cmd(self, *args):
 		if ' ' in self.args:
 			nick, reason = self.args.split(' ', 1)
@@ -378,38 +383,76 @@ class KickBan(Ban):
 			nick, reason = self.args, ''
 		banmask = self.make_banmask(nick)
 		if self.check_banmask(banmask) and nick != self.nick:
-			self.ban(banmask)
-			self.kick(nick, reason)
+			if self.invert:
+				self.kick(nick, reason)
+				self.ban(banmask)
+			else:
+				self.ban(banmask)
+				self.kick(nick, reason)
 		else:
 			say("This script cowardly refuses to kickban you", buffer=self.buffer)
 			self.queue.clear()
 
+# config callbacks
+def enable_multiple_kicks_conf_cb(data, config, value):
+	global cmd_kick
+	cmd_kick.unhook()
+	if boolDict[value]:
+		cmd_kick = MultiKick('okick', 'cmd_kick')
+	else:
+		cmd_kick = Kick('okick', 'cmd_kick')
+	return WEECHAT_RC_OK
 
-# initialise commands
-cmd_op   = Op('oop', 'cmd_op')
-cmd_deop = Deop('odeop', 'cmd_deop')
-cmd_kick = Kick('okick', 'cmd_kick')
-cmd_multi_kick = MultiKick('omkick', 'cmd_multi_kick')
-cmd_ban  = Ban('oban', 'cmd_ban')
-cmd_kban = KickBan('okickban', 'cmd_kban')
+def merge_bans_conf_cb(data, config, value):
+	global cmd_ban
+	cmd_ban.unhook()
+	if boolDict[value]:
+		cmd_ban  = MergedBan('oban', 'cmd_ban')
+	else:
+		cmd_ban = Ban('okick', 'cmd_kick')
+	return WEECHAT_RC_OK
 
-
+def invert_kickban_order_conf_cb(data, config, value):
+	global cmd_kban
+	if boolDict[value]:
+		cmd_kban.invert = True
+	else:
+		cmd_kban.invert = False
+	return WEECHAT_RC_OK
 
 if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
 		SCRIPT_DESC, '', ''):
 	if weeutils_module:
-		# hook our Command classes
-		for command in (cmd_op, cmd_deop, cmd_kick, cmd_multi_kick, cmd_ban, cmd_kban):
-			command.hook()
 		# settings
 		settings = (
 				('op_cmd', '/msg chanserv op $channel $nick'),
 				('deop_cmd', '/deop'),
 				('deop_after_use', 'on'),
-				('deop_delay', '60'))
+				('deop_delay', '300'),
+				('enable_multiple_kicks', 'off'),
+				('merge_bans', 'on'),
+				('invert_kickban_order', 'off'))
 		for opt, val in settings:
 			if not weechat.config_is_set_plugin(opt):
 					weechat.config_set_plugin(opt, val)
+		# hook our Command classes
+		cmd_op   = Op('oop', 'cmd_op')
+		cmd_deop = Deop('odeop', 'cmd_deop')
+		if get_config_boolean('enable_multiple_kicks'):
+			cmd_kick = MultiKick('okick', 'cmd_kick')
+		else:
+			cmd_kick = Kick('okick', 'cmd_kick')
+		if get_config_boolean('merge_bans'):
+			cmd_ban  = MergedBan('oban', 'cmd_ban')
+		else:
+			cmd_ban  = Ban('oban', 'cmd_ban')
+		cmd_unban  = UnBan('ounban', 'cmd_unban')
+		cmd_kban = KickBan('okickban', 'cmd_kban')
+		if get_config_boolean('invert_kickban_order'):
+			cmd_kban.invert = True
+		weechat.hook_config('plugins.var.python.%s.enable_multiple_kicks' %SCRIPT_NAME, 'enable_multiple_kicks_conf_cb', '')
+		weechat.hook_config('plugins.var.python.%s.merge_bans' %SCRIPT_NAME, 'merge_bans_conf_cb', '')
+		weechat.hook_config('plugins.var.python.%s.invert_kickban_order' %SCRIPT_NAME, 'invert_kickban_order_conf_cb', '')
 	else:
 		weechat.prnt('', "%s%s: This scripts requires weeutils.py" %(weechat.prefix('error'), SCRIPT_NAME))
 		weechat.prnt('', '%s%s: Load failed' %(weechat.prefix('error'), SCRIPT_NAME))
