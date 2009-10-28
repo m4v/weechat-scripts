@@ -245,11 +245,7 @@ class Kick(CmdOp):
 			nick, reason = self.args.split(' ', 1)
 		else:
 			nick, reason = self.args, ''
-		if nick != self.nick: # don't kick yourself
-			self.kick(nick, reason)
-		else:
-			say('This script cowardly refuses to kick you (%s)' %nick, buffer=self.buffer)
-			self.queue.clear()
+		self.kick(nick, reason)
 
 
 class MultiKick(Kick):
@@ -336,10 +332,7 @@ class Ban(CmdOp):
 				hostmask = self.get_host(arg)
 				if hostmask:
 					mask = self.make_banmask(hostmask)
-			if self.check_banmask(mask):
-				banmasks.append(mask)
-			else:
-				say("This script cowardly refuses to ban you with '%s'" %mask, buffer=self.buffer)
+			banmasks.append(mask)
 		if banmasks:
 			self.ban(*banmasks)
 
@@ -353,10 +346,7 @@ class MergedBan(Ban):
 		for host in args:
 			host = self.get_host(host)
 			mask = self.make_banmask(host)
-			if self.check_banmask(mask):
-				banmasks.append(mask)
-			else:
-				say("This script cowardly refuses to ban you with '%s'" %mask, buffer=self.buffer)
+			banmasks.append(mask)
 		self.ban(*banmasks)
 
 	def ban(self, *args, **kwargs):
@@ -382,16 +372,12 @@ class KickBan(Ban):
 		else:
 			nick, reason = self.args, ''
 		banmask = self.make_banmask(nick)
-		if self.check_banmask(banmask) and nick != self.nick:
-			if self.invert:
-				self.kick(nick, reason)
-				self.ban(banmask)
-			else:
-				self.ban(banmask)
-				self.kick(nick, reason)
+		if self.invert:
+			self.kick(nick, reason)
+			self.ban(banmask)
 		else:
-			say("This script cowardly refuses to kickban you", buffer=self.buffer)
-			self.queue.clear()
+			self.ban(banmask)
+			self.kick(nick, reason)
 
 # config callbacks
 def enable_multiple_kicks_conf_cb(data, config, value):
