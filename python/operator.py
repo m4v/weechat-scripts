@@ -168,6 +168,8 @@ class Infolist(object):
 
 class Command(object):
     """Class for hook WeeChat commands."""
+    help = ("WeeChat command.", "[define usage template]", "detailed help here")
+
     def __init__(self, command, callback, completion=''):
         self.command = command
         self.callback = callback
@@ -187,7 +189,7 @@ class Command(object):
 
     def _parse_doc(self):
         """Parsing of the command help strings."""
-        desc, usage, help = self.help()
+        desc, usage, help = self.help
         # format fix for help
         help = help.strip('\n').splitlines()
         if help:
@@ -209,10 +211,6 @@ class Command(object):
     def cmd(self):
         """This method is called when the command is run, override this."""
         pass
-
-    def help(self):
-        """Override this."""
-        return "WeeChat command.", "[define usage template]", "detailed help here"
 
     def hook(self):
         assert self.command and self.callback
@@ -411,13 +409,12 @@ class CommandNeedsOp(CommandOperator):
 ### Operator Commands ###
 manual_op = False
 class Op(CommandOperator):
-    def help(self):
-        return ("Asks operator status.", "",
-        """
-        The command used for ask op is defined globally in plugins.var.python.%(name)s.op_cmd,
-        it can be defined per server or per channel in:
-           plugins.var.python.%(name)s.'server_name'.op_cmd
-           plugins.var.python.%(name)s.'server_name'.'channel_name'.op_cmd""" %{'name':SCRIPT_NAME})
+    help = ("Asks operator status.", "",
+            """
+            The command used for ask op is defined globally in plugins.var.python.%(name)s.op_cmd,
+            it can be defined per server or per channel in:
+              plugins.var.python.%(name)s.'server_name'.op_cmd
+              plugins.var.python.%(name)s.'server_name'.'channel_name'.op_cmd""" %{'name':SCRIPT_NAME})
 
     def cmd(self):
         global manual_op
@@ -426,16 +423,14 @@ class Op(CommandOperator):
 
 
 class Deop(CommandOperator):
-    def help(self):
-        return ("Drops operator status.", "", "")
+    help = ("Drops operator status.", "", "")
 
     def cmd(self):
         self.drop_op()
 
 
 class Kick(CommandNeedsOp):
-    def help(self):
-        return ("Kicks nick. Request operator status if needed.", "<nick> [<reason>]", "")
+    help = ("Kicks nick. Request operator status if needed.", "<nick> [<reason>]", "")
 
     def _cmd(self, args=None):
         if not args:
@@ -454,13 +449,12 @@ class Kick(CommandNeedsOp):
 
 
 class MultiKick(Kick):
-    def help(self):
-        return ("Kicks nicks, can be more than one. Request operator status if needed.",
-                "<nick> [<nick> ...] [:] [<reason>]",
-                """
-                Note: Is not needed, but use ':' as a separator between nicks and the reason.
-                      Otherwise, if there's a nick in the channel matching the reason it will
-                      be kicked.""")
+    help = ("Kicks nicks, can be more than one. Request operator status if needed.",
+            "<nick> [<nick> ...] [:] [<reason>]",
+            """
+            Note: Is not needed, but use ':' as a separator between nicks and the reason.
+                  Otherwise, if there's a nick in the channel matching the reason it will
+                  be kicked.""")
 
     def _cmd(self, args=None):
         if not args:
@@ -482,21 +476,20 @@ class MultiKick(Kick):
 
 
 class Ban(CommandNeedsOp):
-    def help(self):
-        return ("Bans users. Request operator status if needed.",
-                "<nick> [<nick> ..] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]",
-                """
-                Banmask options:
-                    -h --host: Use *!*@hostname banmask
-                    -n --nick: Use nick!*@* banmask
-                    -u --user: Use *!user@* banmask
-                   -e --exact: Use exact hostmask, same as using --nick --user --host
-                               simultaneously.
+    help = ("Bans users. Request operator status if needed.",
+            "<nick> [<nick> ..] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]",
+            """
+            Banmask options:
+                -h --host: Use *!*@hostname banmask
+                -n --nick: Use nick!*@* banmask
+                -u --user: Use *!user@* banmask
+                -e --exact: Use exact hostmask, same as using --nick --user --host
+                            simultaneously.
 
-                If no banmask options are supplied, uses configured defaults.
+            If no banmask options are supplied, uses configured defaults.
 
-                Example:
-                /oban troll --user --host : will use a *!user@hostname banmask.""")
+            Example:
+            /oban troll --user --host : will use a *!user@hostname banmask.""")
 
     banmask = []
     valid_banmask = ValidValues('nick', 'user', 'host', 'exact')
@@ -585,10 +578,9 @@ class MergedBan(Ban):
 
 
 class KickBan(Ban, Kick):
-    def help(self):
-        return ("Kickban user. Request operator status if needed.",
-                "<nick> [<reason>] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]",
-                "Combines /okick and /oban commands.")
+    help = ("Kickban user. Request operator status if needed.",
+            "<nick> [<reason>] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]",
+            "Combines /okick and /oban commands.")
 
     invert = False
     def _cmd(self):
