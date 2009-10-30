@@ -19,19 +19,105 @@
 ###
 #  Helper script for IRC operators
 #
+#   Inspired by auto_bleh.pl (irssi) and chanserv.py (xchat) scripts
+#
+#
+#
+#   Commands:
+#   * /oop  : Request op
+#   * /odeop: Drops op
+#   * /okick: Kicks user (or users)
+#   * /oban : Applies a ban
+#   * /okban: Bans and kicks a user
+#
+#
+#   Settings:
+#     Most configs (unless noted otherwise) can be defined for a server or a channel in particular
+#     Define 'option' per server with
+#     /set plugins.var.python.operator.'option'.'server_name'
+#     or per channel
+#     /set plugins.var.python.operator.'option'.'server_name'.'#channel_name'
+#
+#   * plugins.var.python.operator.op_cmd:
+#     Here you define the command the script must run for request op, normally
+#     is a /msg to a bot, like chanserv in freenode or Q in quakenet.
+#     It accepts the special vars $server, $channel and $nick
+#
+#     Examples:
+#     /set plugins.var.python.operator.op_cmd "/msg chanserv op $channel $nick"
+#     (globally for all servers, like freenode and oftc)
+#     /set plugins.var.python.operator.op_cmd.quakenet "/msg q op $channel $nick"
+#     (for quakenet only)
+#
+#   * plugins.var.python.operator.deop_cmd:
+#     Same as op_cmd but just deops, really not needed since /deop works anywhere
+#     It accepts the special vars $server, $channel and $nick
+#
+#   * plugins.var.python.operator.deop_after_use:
+#     Enables auto-deop'ing after using any of the ban or kick commands.
+#     Note that if you got op manually (like with /oop) then the script won't deop you
+#     Valid values 'on', 'off'
+#
+#   * plugins.var.python.operator.deop_delay:
+#     Time it must pass (without using any commands) before auto-deop, in seconds.
+#
+#   * plugins.var.python.operator.default_banmask:
+#     List of keywords separated by comas. Defines default banmask, when using /oban or /okban
+#     You can use several keywords for build a banmask, each keyword defines which part of the
+#     user's hostmask you want to match in the banmask.
+#     Valid keywords are: nick, user, host, exact
+#
+#     Examples:
+#     /set plugins.var.python.operator.default_banmask host (bans with *!*@host)
+#     /set plugins.var.python.operator.default_banmask host,user (bans with *!user@host)
+#     /set plugins.var.python.operator.default_banmask exact
+#     (bans with nick!user@host, same as using 'nick,user,host')
+#
+#   * plugins.var.python.operator.kick_reason:
+#     Default kick reason if none was given in the command.
+#
+#   * plugins.var.python.operator.enable_multiple_kick:
+#     Enables kicking multiple users with /okick command
+#     Be careful with this as you can kick somebody by accident if
+#     you're not careful when writting the kick reason
+#     Valid values 'on', 'off'
+#
+#     This config is global and can't be defined per server or channel
+#
+#   * plugins.var.python.operator.merge_bans:
+#     Only if you want to reduce flooding when applying several bans and
+#     if the IRC server supports it. Every 4 bans will be merged in a
+#     single command. Valid values 'on', 'off'
+#
+#     This config is global and can't be defined per server or channel
+#
+#   * plugins.var.python.operator.invert_kickban_order:
+#     /okban bans first, then kicks, this invert the order.
+#     Valid values 'on', 'off'
+#
+#     This config is global and can't be defined per server or channel
+#
+#
 #  TODO for v1.0
 #  * wait until got op before sending commands
 #  * implement freenode's remove and mute commands
 #  * unban command
 #  * command for switch channel moderation on/off
 #  * implement ban with channel forward
+#  * Add unittests
 #
 #  TODO for later
-#  * bans expire time
-#  * bantracker (keeps a record of ban and kicks)
-#  * user tracker (for ban even when they already /part)
+#  * ban expire time
+#  * user tracker (for ban even when they already /part'ed)
 #  * ban by gecos
+#  * bantracker (keeps a record of ban and kicks) (?)
 #  * smart banmask (?)
+#  * multiple-channel ban (?)
+#
+#
+#   History:
+#   2009-
+#   version 0.1: Initial release
 ###
 
 SCRIPT_NAME    = "operator"
@@ -52,6 +138,7 @@ except ImportError:
 
 import getopt
 
+### messages
 def debug(s, prefix='', buffer=''):
     """Debug msg"""
     weechat.prnt(buffer, 'debug:\t%s %s' %(prefix, s))
@@ -64,37 +151,48 @@ def say(s, prefix='', buffer=''):
     """Normal msg"""
     weechat.prnt(buffer, '%s\t%s' %(prefix, s))
 
-class BoolDict(dict):
-    def __init__(self):
-        self['on'] = True
-        self['off'] = False
-
-    def __getitem__(self, key):
-        try:
-            return dict.__getitem__(self, key)
-        except KeyError:
-            error("'%s' is an invalid value, allowed: 'on', 'off'. Fix it." %key)
-            raise KeyError
-
-class ValidValues(list):
-    def __init__(self, *args):
-        self.extend(args)
-
-    def __getitem__(self, key):
-        if key not in self:
-            error("'%s' is an invalid value, allowed: %s. Fix it." %(key, self))
-            raise KeyError
-        return key
-
-boolDict = BoolDict()
-
-def get_config_boolean(config, default=None):
-    value = weechat.config_get_plugin(config)
+### config and value validation
+boolDict = {'on':True, 'off':False}
+def get_config_boolean(config, get_function=None):
+    if get_function and callable(get_function):
+        value = get_function(config)
+    else:
+        value = weechat.config_get_plugin(config)
     try:
         return boolDict[value]
     except KeyError:
-        error("Error while fetching config '%s'. Using default." %config)
-        return settings[config]
+        default = settings[config]
+        error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
+        error("'%s' is invalid, allowed: 'on', 'off'" %value)
+        return boolDict[default]
+
+def get_config_int(config, get_function=None):
+    if get_function and callable(get_function):
+        value = get_function(config)
+    else:
+        value = weechat.config_get_plugin(config)
+    try:
+        return int(value)
+    except ValueError:
+        default = settings[config]
+        error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
+        error("'%s' is not a number." %value)
+        return int(default)
+
+valid_banmask = set(('nick', 'user', 'host', 'exact'))
+def get_config_banmask(config='default_banmask', get_function=None):
+    if get_function and callable(get_function):
+        value = get_function(config)
+    else:
+        value = weechat.config_get_plugin(config)
+    values = value.split(',')
+    for value in values:
+        if value not in valid_banmask:
+            default = settings[config]
+            error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
+            error("'%s' is an invalid value, allowed: %s." %(value, ', '.join(valid_banmask)))
+            return default
+    return values
 
 
 ### irc utils
@@ -178,12 +276,13 @@ class Command(object):
         self.hook()
 
     def __call__(self, *args):
+        """Called by WeeChat when /command is used."""
         self.parse_args(*args)
         self.cmd()
         return WEECHAT_RC_OK
 
     def parse_args(self, data, buffer, args):
-        """Do arg parsing here."""
+        """Do argument parsing here."""
         self.buffer = buffer
         self.args = args
 
@@ -229,6 +328,7 @@ class Command(object):
 
 ### Script Classes
 class CommandQueue(object):
+    """Class that manages and executes the script's commands to WeeChat."""
     commands = []
     wait = 0
     def queue(self, buffer, cmd, wait=1):
@@ -236,10 +336,11 @@ class CommandQueue(object):
         debug('queue cmd:%s' %(cmd, ))
         self.commands.append(cmd)
 
+    # it happened once and it wasn't pretty
     def safe_check(f):
         def abort_if_too_many_commands(self):
-            if len(self.commands) > 10:
-                error("Too many commands in queue, must be a bug!")
+            if len(self.commands) > 20:
+                error("Limit of 20 commands in queue reached, must be a bug!")
                 error("last 10 commnads:")
                 for cmd in self.commands[-10:]:
                     error(str(cmd))
@@ -267,8 +368,10 @@ class CommandQueue(object):
 weechat_commands = CommandQueue()
 
 class CommandOperator(Command):
+    """Base class for our commands, with config and general functions."""
     infolist = None
     def __call__(self, *args):
+        """Called by WeeChat when /command is used."""
         debug("command __call__ args: %s" %(args,))
         self.parse_args(*args)
         self.cmd()
@@ -293,22 +396,20 @@ class CommandOperator(Command):
         return s
 
     def get_config(self, config):
-        string = '%s.%s.%s' %(self.server, self.channel, config)
+        string = '%s.%s.%s' %(config, self.server, self.channel)
         value = weechat.config_get_plugin(string)
         if not value:
-            string = '%s.%s' %(self.server, config)
+            string = '%s.%s' %(config, self.server)
             value = weechat.config_get_plugin(string)
             if not value:
                 value = weechat.config_get_plugin(config)
         return value
 
     def get_config_boolean(self, config):
-        value = self.get_config(config)
-        try:
-            return boolDict[value]
-        except:
-            error("Error while fetching config '%s'. Using default." %config)
-            return settings[config]
+        return get_config_boolean(config, self.get_config)
+
+    def get_config_int(self, config):
+        return get_config_int(config, self.get_config)
 
     def _nick_infolist(self):
         # reuse the same infolist instead of creating it many times
@@ -348,33 +449,29 @@ class CommandOperator(Command):
     def queue(self, cmd, wait=1):
         weechat_commands.queue(self.buffer, cmd, wait)
 
-    def get_op_cmd(self):
-        value = self.get_config('op_cmd')
-        if not value:
-            raise Exception, "No command defined for get op."
-        return self.replace_vars(value)
-
-    def get_deop_cmd(self):
-        value = self.get_config('deop_cmd')
-        if not value:
-            return '/deop'
-        return self.replace_vars(value)
-
     def get_op(self):
         op = self.is_op()
         if op is False:
-            self.queue(self.get_op_cmd())
+            value = self.get_config('op_cmd')
+            if not value:
+                raise Exception, "No command defined for get op."
+            self.queue(self.replace_vars(value))
         return op
 
     def drop_op(self):
         op = self.is_op()
         if op is True:
-            self.queue(self.get_deop_cmd())
+            value = self.get_config('deop_cmd')
+            if not value:
+                value = '/deop'
+            self.queue(self.replace_vars(value))
 
 
 deop_hook = ''
 deop_callback = None
+manual_op = False
 class CommandNeedsOp(CommandOperator):
+    """Base class for all the commands that requires op status for work."""
     def cmd(self, *args):
         op = self.get_op()
         global manual_op
@@ -382,10 +479,12 @@ class CommandNeedsOp(CommandOperator):
             return WEECHAT_RC_OK
         elif op is False:
             manual_op = False
+        else:
+            manual_op = True
         self._cmd(*args)
         # don't deop if we weren't auto-op'ed
         if not manual_op and self.get_config_boolean('deop_after_use'):
-            delay = int(self.get_config('deop_delay'))
+            delay = self.get_config_int('deop_delay')
             if delay > 0:
                 global deop_hook, deop_callback
                 if deop_hook:
@@ -407,18 +506,15 @@ class CommandNeedsOp(CommandOperator):
 
 
 ### Operator Commands ###
-manual_op = False
 class Op(CommandOperator):
     help = ("Asks operator status.", "",
             """
             The command used for ask op is defined globally in plugins.var.python.%(name)s.op_cmd,
             it can be defined per server or per channel in:
-              plugins.var.python.%(name)s.'server_name'.op_cmd
-              plugins.var.python.%(name)s.'server_name'.'channel_name'.op_cmd""" %{'name':SCRIPT_NAME})
+              plugins.var.python.%(name)s.op_cmd.'server_name'
+              plugins.var.python.%(name)s.op_cmd.'server_name'.'channel_name'""" %{'name':SCRIPT_NAME})
 
     def cmd(self):
-        global manual_op
-        manual_op = True
         self.get_op()
 
 
@@ -492,7 +588,6 @@ class Ban(CommandNeedsOp):
             /oban troll --user --host : will use a *!user@hostname banmask.""")
 
     banmask = []
-    valid_banmask = ValidValues('nick', 'user', 'host', 'exact')
     def parse_args(self, *args):
         CommandNeedsOp.parse_args(self, *args)
         args = self.args.split()
@@ -513,15 +608,7 @@ class Ban(CommandNeedsOp):
         self.args = ' '.join(args)
 
     def get_default_banmask(self):
-        value = self.get_config('default_banmask')
-        values = value.split(',')
-        for value in values:
-            try:
-                self.valid_banmask[value]
-            except KeyError:
-                error("Error while fetching default banmask. Using default.")
-                return settings['default_banmask']
-        return values
+        return get_config_banmask(get_function=self.get_config)
 
     def make_banmask(self, hostmask):
         if not self.banmask:
@@ -554,7 +641,7 @@ class Ban(CommandNeedsOp):
         cmd = '/ban %s' %' '.join(args)
         self.queue(cmd)
 
-
+# FIXME really not very usefull
 class UnBan(Ban):
     def _cmd(self):
         args = self.args.split()
@@ -640,7 +727,7 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
             'default_banmask': 'host',
             'kick_reason': 'bye.',
             'enable_multiple_kick': 'off',
-            'merge_bans': 'on',
+            'merge_bans': 'off',
             'invert_kickban_order': 'off'}
 
     for opt, val in settings.iteritems():
@@ -657,9 +744,9 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
         cmd_kick = Kick('okick', 'cmd_kick')
 
     if get_config_boolean('merge_bans'):
-        cmd_ban  = MergedBan('oban', 'cmd_ban')
+        cmd_ban = MergedBan('oban', 'cmd_ban')
     else:
-        cmd_ban  = Ban('oban', 'cmd_ban')
+        cmd_ban = Ban('oban', 'cmd_ban')
 
     # FIXME unban cmd disabled as is not very usefull atm
     #cmd_unban  = UnBan('ounban', 'cmd_unban')
