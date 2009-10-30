@@ -23,6 +23,8 @@
 #  * unban command
 #  * implement freenode's remove and mute commands
 #  * command for switch channel moderation on/off
+#  * default kick reason config option
+#  * wait until got op before sending commands
 #  
 #  TODO for later
 #  * bans expire time
@@ -150,8 +152,7 @@ class CommandOperator(Command):
 		self.queue.queue(self.buffer, cmd, wait)
 
 	def get_op(self, **kwargs):
-		# wait 2 seconds before sending more comands
-		self.run_cmd(self.get_op_cmd(), wait=2, **kwargs)
+		self.run_cmd(self.get_op_cmd(), **kwargs)
 
 	def drop_op(self, **kwargs):
 		self.run_cmd(self.get_deop_cmd(), **kwargs)
@@ -173,9 +174,14 @@ class CommandOperator(Command):
 
 manual_op = False
 class Op(CommandOperator):
-	"""
-	Gives you op
-	"""
+	def help(self):
+		return ("Asks operator status by using the configured command.", "",
+		"""
+		The command it's defined globally in plugins.var.python.%(name)s.op_cmd
+		   It can be defined per server or per channel:
+		    per server: plugins.var.python.%(name)s.'server_name'.op_cmd
+		   per channel: plugins.var.python.%(name)s.'server_name'.'channel_name'.op_cmd""" %{'name':SCRIPT_NAME})
+
 	def cmd(self, *args):
 		global manual_op
 		manual_op = True
@@ -189,9 +195,9 @@ class Op(CommandOperator):
 
 
 class Deop(CommandOperator):
-	"""
-	Drops op
-	"""
+	def help(self):
+		return ("Drops operator status.", "", "")
+
 	def cmd(self, *args):
 		op = self.is_op()
 		if op is True:
@@ -231,9 +237,9 @@ class CmdOp(Op):
 
 
 class Kick(CmdOp):
-	"""Kicks nick, gets op if needed.
+	def help(self):
+		return ("Kicks nick. Request operator status if needed.", "<nick> [<reason>]", "")
 
-	<nick> [<reason>]"""
 	def cmd(self, *args):
 		if ' ' in self.args:
 			nick, reason = self.args.split(' ', 1)
@@ -243,12 +249,10 @@ class Kick(CmdOp):
 
 
 class MultiKick(Kick):
-	"""Kicks nicks, gets op if needed.
-
-	<nick> [<nick> ...] [:] [<reason>]
-	
-	  nick: asdasd
-	reason: asdasd"""
+	def help(self):
+		return ("Kicks nicks, can be more than one. Request operator status if needed.",
+				"<nick> [<nick> ...] [:] [<reason>]",
+				"It's recommended to use ':' as a separator between the nicks and the reason.")
 	def cmd(self, *args):
 		args = self.args.split()
 		nicks = []
@@ -266,13 +270,11 @@ class MultiKick(Kick):
 
 
 class Ban(CmdOp):
-	"""
-	Bans users
+	def help(self):
+		return ("Bans users. Request operator status if needed.",
+				"<nick> [<nick> ..] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]",
+				"TODO detailed help")
 
-	nick [nick ..] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]
-
-	TODO
-	"""
 	banmask = []
 	def _parse(self, *args):
 		CmdOp._parse(self, *args)
@@ -344,7 +346,6 @@ class UnBan(Ban):
 
 class MergedBan(Ban):
 	unban = False
-	__doc__ = Ban.__doc__
 	def ban(self, *args, **kwargs):
 		c = self.unban and '-' or '+'
 		# do 4 bans per command
@@ -354,16 +355,22 @@ class MergedBan(Ban):
 			cmd = '/mode %s%s %s' %(c, 'b'*len(slice), hosts)
 			self.run_cmd(cmd, **kwargs)
 
+
 class KickBan(Ban):
+	def help(self):
+		return ("Kickban user. Request operator status if needed.",
+				"<nick> [<reason>] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]",
+				"TODO detailed help")
+
 	invert = False
 	def cmd(self, *args):
-		if ' ' in self.args:
+			if ' ' in self.args:
 			nick, reason = self.args.split(' ', 1)
 		else:
 			nick, reason = self.args, ''
 		hostmask = self.get_host(nick)
 		if hostmask:
-			banmask = self.make_banmask(hostmask)
+				banmask = self.make_banmask(hostmask)
 			if self.invert:
 				self.kick(nick, reason)
 				self.ban(banmask)
@@ -372,7 +379,7 @@ class KickBan(Ban):
 				self.kick(nick, reason)
 
 # config callbacks
-def enable_multiple_kicks_conf_cb(data, config, value):
+def enable_multiple_kick_conf_cb(data, config, value):
 	global cmd_kick
 	cmd_kick.unhook()
 	if boolDict[value]:
@@ -408,7 +415,7 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
 				('deop_after_use', 'on'),
 				('deop_delay', '300'),
 				('default_banmask', 'host'),
-				('enable_multiple_kicks', 'off'),
+				('enable_multiple_kick', 'off'),
 				('merge_bans', 'on'),
 				('invert_kickban_order', 'off'))
 		for opt, val in settings:
@@ -418,7 +425,7 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
 		# hook our Command classes
 		cmd_op   = Op('oop', 'cmd_op')
 		cmd_deop = Deop('odeop', 'cmd_deop')
-		if get_config_boolean('enable_multiple_kicks'):
+		if get_config_boolean('enable_multiple_kick'):
 			cmd_kick = MultiKick('okick', 'cmd_kick')
 		else:
 			cmd_kick = Kick('okick', 'cmd_kick')
@@ -432,7 +439,7 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
 		if get_config_boolean('invert_kickban_order'):
 			cmd_kban.invert = True
 
-		weechat.hook_config('plugins.var.python.%s.enable_multiple_kicks' %SCRIPT_NAME, 'enable_multiple_kicks_conf_cb', '')
+		weechat.hook_config('plugins.var.python.%s.enable_multiple_kick' %SCRIPT_NAME, 'enable_multiple_kick_conf_cb', '')
 		weechat.hook_config('plugins.var.python.%s.merge_bans' %SCRIPT_NAME, 'merge_bans_conf_cb', '')
 		weechat.hook_config('plugins.var.python.%s.invert_kickban_order' %SCRIPT_NAME, 'invert_kickban_order_conf_cb', '')
 	else:

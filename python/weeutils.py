@@ -17,7 +17,7 @@
 ###
 
 ###
-#   WeeChat Python Classes
+#   Python Classes and Functions for WeeChat 0.3
 #
 #   TODO
 #
@@ -48,8 +48,18 @@ def say(s, prefix='', buffer=''):
 
 ### config
 def get_config_boolean(config):
-    """Gets our config value, returns a sane default if value is wrong."""
+    """Gets our config value, returns False if value is wrong."""
     return boolDict[weechat.config_get_plugin(config)]
+
+def get_config_valid_values(config, values, default=None):
+    s = weechat.config_get_plugin(config)
+    if s in values:
+        return s
+    else:
+        error("'%s' is an invalid option value, allowed: %s. Defaulting to '%s'" \
+                %(s, ', '.join(map(repr, values)), default))
+        return default
+
 
 ### irc utils
 def is_hostmask(s):
@@ -83,6 +93,7 @@ class ValidValuesDict(dict):
             # user set a bad value
             self._error_msg(key)
             return dict.__getitem__(self, self.default)
+
 
 boolDict = ValidValuesDict({'on':True, 'off':False}, 'off')
 
@@ -293,26 +304,18 @@ class Command(object):
         self.args = args
 
     def _parse_doc(self):
-        if not self.__doc__:
-            return "WeeChat command class.", "[define usage template]", "detailed help here"
-        doc = self.__doc__.strip().split('\n\n')
-        doc = map(lambda x: x.lstrip('\t'), doc) #strip leading tabs
-        desc = usage = help = ''
-        if len(doc) >= 3:
-            desc = doc.pop(0)
-            usage = doc.pop(0)
-            doc = '\n\n'.join(doc)
-            help = doc
-        elif len(doc) == 2:
-            desc = doc.pop(0)
-            usage = doc.pop(0)
-        elif len(doc) == 1:
-            desc = doc.pop(0)
+        desc, usage, help = self.help()
+        help = help.strip('\n')
+        # strip leading tabs
+        help = '\n'.join(map(lambda s: s.lstrip('\t'), help.splitlines()))
         return desc, usage, help
 
     def cmd(self, data, buffer, args):
-        """This method the called when the command is run, override this in your script."""
+        """This method is called when the command is run, override this in your script."""
         pass
+
+    def help(self):
+        return "WeeChat command class.", "[define usage template]", "detailed help here"
 
     def hook(self):
         assert self.command and self.callback
