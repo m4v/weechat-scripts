@@ -20,12 +20,12 @@
 #  Helper script for IRC operators
 #
 #  TODO for v1.0
-#  * unban command
-#  * implement freenode's remove and mute commands
-#  * command for switch channel moderation on/off
 #  * wait until got op before sending commands
+#  * implement freenode's remove and mute commands
+#  * unban command
+#  * command for switch channel moderation on/off
 #  * implement ban with channel forward
-#  
+#
 #  TODO for later
 #  * bans expire time
 #  * bantracker (keeps a record of ban and kicks)
@@ -41,562 +41,578 @@ SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Helper script for IRC operators"
 
 try:
-	import weechat
-	WEECHAT_RC_OK = weechat.WEECHAT_RC_OK
-	#WEECHAT_RC_ERROR = weechat.WEECHAT_RC_ERROR
-	import_ok = True
+    import weechat
+    WEECHAT_RC_OK = weechat.WEECHAT_RC_OK
+    #WEECHAT_RC_ERROR = weechat.WEECHAT_RC_ERROR
+    import_ok = True
 except ImportError:
-	print "This script must be run under WeeChat."
-	print "Get WeeChat now at: http://weechat.flashtux.org/"
-	import_ok = False
+    print "This script must be run under WeeChat."
+    print "Get WeeChat now at: http://weechat.flashtux.org/"
+    import_ok = False
 
 import getopt
 
 def debug(s, prefix='', buffer=''):
-	"""Debug msg"""
-	weechat.prnt(buffer, 'debug:\t%s %s' %(prefix, s))
+    """Debug msg"""
+    weechat.prnt(buffer, 'debug:\t%s %s' %(prefix, s))
 
 def error(s, prefix='', buffer=''):
-	"""Error msg"""
-	weechat.prnt(buffer, '%s%s %s' %(weechat.prefix('error'), prefix, s))
+    """Error msg"""
+    weechat.prnt(buffer, '%s%s %s' %(weechat.prefix('error'), prefix, s))
 
 def say(s, prefix='', buffer=''):
-	"""Normal msg"""
-	weechat.prnt(buffer, '%s\t%s' %(prefix, s))
+    """Normal msg"""
+    weechat.prnt(buffer, '%s\t%s' %(prefix, s))
 
 class BoolDict(dict):
-	def __init__(self):
-		self['on'] = True
-		self['off'] = False
+    def __init__(self):
+        self['on'] = True
+        self['off'] = False
 
-	def __getitem__(self, key):
-		try:
-			return dict.__getitem__(self, key)
-		except KeyError:
-			error("'%s' is an invalid value, allowed: 'on', 'off'. Fix it." %key)
-			raise KeyError
+    def __getitem__(self, key):
+        try:
+            return dict.__getitem__(self, key)
+        except KeyError:
+            error("'%s' is an invalid value, allowed: 'on', 'off'. Fix it." %key)
+            raise KeyError
 
 class ValidValues(list):
-	def __init__(self, *args):
-		self.extend(args)
+    def __init__(self, *args):
+        self.extend(args)
 
-	def __getitem__(self, key):
-		if key not in self:
-			error("'%s' is an invalid value, allowed: %s. Fix it." %(key, self))
-			raise KeyError
-		return key
+    def __getitem__(self, key):
+        if key not in self:
+            error("'%s' is an invalid value, allowed: %s. Fix it." %(key, self))
+            raise KeyError
+        return key
 
 boolDict = BoolDict()
 
 def get_config_boolean(config, default=None):
-	"""Gets our config value, returns False if value is wrong."""
-	value = weechat.config_get_plugin(config)
-	try:
-		return boolDict[value]
-	except KeyError:
-		error("Error while fetching config '%s'. Using default." %config)
-		return settings[config]
+    """Gets our config value, returns False if value is wrong."""
+    value = weechat.config_get_plugin(config)
+    try:
+        return boolDict[value]
+    except KeyError:
+        error("Error while fetching config '%s'. Using default." %config)
+        return settings[config]
 
 ### irc utils
 def is_hostmask(s):
-	"""Returns whether or not the string s is a valid User hostmask."""
-	n = s.find('!')
-	m = s.find('@')
-	if n < m-1 and n >= 1 and m >= 3 and len(s) > m+1:
-		return True
-	else:
-		return False
+    """Returns whether or not the string s is a valid User hostmask."""
+    n = s.find('!')
+    m = s.find('@')
+    if n < m-1 and n >= 1 and m >= 3 and len(s) > m+1:
+        return True
+    else:
+        return False
 
 ### WeeChat Classes
 class Infolist(object):
-	"""Class for reading WeeChat's infolists."""
+    """Class for reading WeeChat's infolists."""
 
-	fields = {
-			'name':'string',
-			'host':'string',
-			'flags':'integer',
-			}
+    fields = {
+            'name':'string',
+            'host':'string',
+            'flags':'integer',
+            }
 
-	__slots__ = ('pointer', 'cursor')
-	def __init__(self, name, args=''):
-		self.cursor = 0
-		self.pointer = weechat.infolist_get(name, '', args)
-		if self.pointer == '':
-			raise Exception('Infolist initialising failed')
+    __slots__ = ('pointer', 'cursor')
+    def __init__(self, name, args=''):
+        self.cursor = 0
+        self.pointer = weechat.infolist_get(name, '', args)
+        if self.pointer == '':
+            raise Exception('Infolist initialising failed')
 
-	def __del__(self):
-		"""Purge infolist if is no longer referenced."""
-		self.free()
+    def __del__(self):
+        """Purge infolist if is no longer referenced."""
+        self.free()
 
-	def __getitem__(self, name):
-		"""Implement the evaluation of self[name]."""
-		type = self.fields[name]
-		return getattr(self, 'get_%s' %type)(name)
+    def __getitem__(self, name):
+        """Implement the evaluation of self[name]."""
+        type = self.fields[name]
+        return getattr(self, 'get_%s' %type)(name)
 
-	def get_string(self, name):
-		return weechat.infolist_string(self.pointer, name)
+    def get_string(self, name):
+        return weechat.infolist_string(self.pointer, name)
 
-	def get_integer(self, name):
-		return weechat.infolist_integer(self.pointer, name)
+    def get_integer(self, name):
+        return weechat.infolist_integer(self.pointer, name)
 
-	def next(self):
-		self.cursor = weechat.infolist_next(self.pointer)
-		return self.cursor
+    def next(self):
+        self.cursor = weechat.infolist_next(self.pointer)
+        return self.cursor
 
-	def prev(self):
-		self.cursor = weechat.infolist_prev(self.pointer)
-		return self.cursor
+    def prev(self):
+        self.cursor = weechat.infolist_prev(self.pointer)
+        return self.cursor
 
-	def free(self):
-		if self.pointer:
-			weechat.infolist_free(self.pointer)
-			self.pointer = ''
+    def free(self):
+        if self.pointer:
+            weechat.infolist_free(self.pointer)
+            self.pointer = ''
 
 
 class Command(object):
-	"""Class for hook WeeChat commands."""
+    """Class for hook WeeChat commands."""
 
-	__slots__ = ('pointer', 'command', 'callback', 'completion', 'buffer', 'args')
-	def __init__(self, command, callback, completion=''):
-		self.command = command
-		self.callback = callback
-		self.completion = completion
-		self.pointer = ''
-		self.hook()
+    __slots__ = ('pointer', 'command', 'callback', 'completion', 'buffer', 'args')
+    def __init__(self, command, callback, completion=''):
+        self.command = command
+        self.callback = callback
+        self.completion = completion
+        self.pointer = ''
+        self.hook()
 
-	def __call__(self, *args):
-		self._parse_args(*args)
-		self.cmd()
-		return WEECHAT_RC_OK
+    def __call__(self, *args):
+        self._parse_args(*args)
+        self.cmd()
+        return WEECHAT_RC_OK
 
-	def _parse_args(self, data, buffer, args):
-		self.buffer = buffer
-		self.args = args
+    def _parse_args(self, data, buffer, args):
+        self.buffer = buffer
+        self.args = args
 
-	def _parse_doc(self):
-		desc, usage, help = self.help()
-		help = help.strip('\n')
-		# strip leading tabs
-		help = '\n'.join(map(lambda s: s.lstrip('\t'), help.splitlines()))
-		return desc, usage, help
+    def _parse_doc(self):
+        desc, usage, help = self.help()
+        # format fix for help
+        help = help.strip('\n').splitlines()
+        if help:
+            n = 0
+            for c in help[0]:
+                if c in ' \t':
+                    n += 1
+                else:
+                    break
 
-	def cmd(self):
-		"""This method is called when the command is run, override this."""
-		pass
+            def trim(s):
+                return s[n:]
 
-	def help(self):
-		"""Override this."""
-		return "WeeChat command.", "[define usage template]", "detailed help here"
+            help = '\n'.join(map(trim, help))
+        else:
+            help = ''
+        return desc, usage, help
 
-	def hook(self):
-		assert self.command and self.callback
-		assert not self.pointer, "There's already a hook pointer, unhook first"
-		desc, usage, help = self._parse_doc()
-		self.pointer = weechat.hook_command(self.command, desc, usage, help, self.completion,
-				self.callback, '')
-		if self.pointer == '':
-			raise Exception, "hook_command failed"
+    def cmd(self):
+        """This method is called when the command is run, override this."""
+        pass
 
-	def unhook(self):
-		if self.pointer:
-			weechat.unhook(self.pointer)
-			self.pointer = ''
+    def help(self):
+        """Override this."""
+        return "WeeChat command.", "[define usage template]", "detailed help here"
+
+    def hook(self):
+        assert self.command and self.callback
+        assert not self.pointer, "There's already a hook pointer, unhook first"
+        desc, usage, help = self._parse_doc()
+        self.pointer = weechat.hook_command(self.command, desc, usage, help, self.completion,
+                self.callback, '')
+        if self.pointer == '':
+            raise Exception, "hook_command failed"
+
+    def unhook(self):
+        if self.pointer:
+            weechat.unhook(self.pointer)
+            self.pointer = ''
 
 ### Script Classes
 class CommandQueue(object):
-	commands = []
-	wait = 0
-	def queue(self, buffer, cmd, wait=1):
-		self.commands.append((buffer, cmd, wait))
+    commands = []
+    wait = 0
+    def queue(self, buffer, cmd, wait=1):
+        self.commands.append((buffer, cmd, wait))
 
-	def run(self):
-		for buffer, cmd, wait in self.commands:
-			if self.wait:
-				#debug('running with wait(%s) %s' %(self.wait, cmd))
-				weechat.command(buffer, '/wait %s %s' %(self.wait, cmd))
-			else:
-				#debug('running %s' %cmd)
-				weechat.command(buffer, cmd)
-			self.wait += wait
-		self.clear()
+    def run(self):
+        for buffer, cmd, wait in self.commands:
+            if self.wait:
+                #debug('running with wait(%s) %s' %(self.wait, cmd))
+                weechat.command(buffer, '/wait %s %s' %(self.wait, cmd))
+            else:
+                #debug('running %s' %cmd)
+                weechat.command(buffer, cmd)
+            self.wait += wait
+        self.clear()
 
-	def clear(self):
-		self.commands = []
-		self.wait = 0
+    def clear(self):
+        self.commands = []
+        self.wait = 0
 
 
 weechat_commands = CommandQueue()
 
 class CommandOperator(Command):
-	def __call__(self, *args):
-		Command.__call__(self, *args)
-		weechat_commands.run()
-		return WEECHAT_RC_OK
+    def __call__(self, *args):
+        Command.__call__(self, *args)
+        weechat_commands.run()
+        return WEECHAT_RC_OK
 
-	def _parse_args(self, *args):
-		Command._parse_args(self, *args)
-		self.server = weechat.buffer_get_string(self.buffer, 'localvar_server')
-		self.channel = weechat.buffer_get_string(self.buffer, 'localvar_channel')
-		self.nick = weechat.info_get('irc_nick', self.server)
+    def _parse_args(self, *args):
+        Command._parse_args(self, *args)
+        self.server = weechat.buffer_get_string(self.buffer, 'localvar_server')
+        self.channel = weechat.buffer_get_string(self.buffer, 'localvar_channel')
+        self.nick = weechat.info_get('irc_nick', self.server)
 
-	def replace_vars(self, s):
-		if '$channel' in s:
-			s = s.replace('$channel', self.channel)
-		if '$nick' in s:
-			s = s.replace('$nick', self.nick)
-		if '$server' in s:
-			s = s.replace('$server', self.server)
-		return s
+    def replace_vars(self, s):
+        if '$channel' in s:
+            s = s.replace('$channel', self.channel)
+        if '$nick' in s:
+            s = s.replace('$nick', self.nick)
+        if '$server' in s:
+            s = s.replace('$server', self.server)
+        return s
 
-	def get_config(self, config):
-		string = '%s_%s_%s' %(self.server, self.channel, config)
-		value = weechat.config_get_plugin(string)
-		if not value:
-			string = '%s_%s' %(self.server, config)
-			value = weechat.config_get_plugin(string)
-			if not value:
-				value = weechat.config_get_plugin(config)
-		return value
+    def get_config(self, config):
+        string = '%s_%s_%s' %(self.server, self.channel, config)
+        value = weechat.config_get_plugin(string)
+        if not value:
+            string = '%s_%s' %(self.server, config)
+            value = weechat.config_get_plugin(string)
+            if not value:
+                value = weechat.config_get_plugin(config)
+        return value
 
-	def get_config_boolean(self, config):
-		value = self.get_config(config)
-		try:
-			return boolDict[value]
-		except:
-			error("Error while fetching config '%s'. Using default." %config)
-			return settings[config]
-	
-	def _nick_infolist(self):
-		return Infolist('irc_nick', '%s,%s' %(self.server, self.channel))
+    def get_config_boolean(self, config):
+        value = self.get_config(config)
+        try:
+            return boolDict[value]
+        except:
+            error("Error while fetching config '%s'. Using default." %config)
+            return settings[config]
 
-	def is_op(self):
-		try:
-			nicks = self._nick_infolist()
-			while nicks.next():
-				if nicks['name'] == self.nick:
-					if nicks['flags'] & 8:
-						return True
-					else:
-						return False
-		except:
-			error('Not in a IRC channel.')
+    def _nick_infolist(self):
+        return Infolist('irc_nick', '%s,%s' %(self.server, self.channel))
 
-	def is_nick(self, nick):
-		nicks = self._nick_infolist()
-		while nicks.next():
-			if nicks['name'] == nick:
-				return True
-		return False
-	
-	def get_host(self, name):
-		nicks = self._nick_infolist()
-		while nicks.next():
-			if nicks['name'] == name:
-				return '%s!%s' % (name, nicks['host'])
+    def is_op(self):
+        try:
+            nicks = self._nick_infolist()
+            while nicks.next():
+                if nicks['name'] == self.nick:
+                    if nicks['flags'] & 8:
+                        return True
+                    else:
+                        return False
+        except:
+            error('Not in a IRC channel.')
 
-	def queue(self, cmd, wait=1):
-		weechat_commands.queue(self.buffer, cmd, wait)
-	
-	def get_op_cmd(self):
-		value = self.get_config('op_cmd')
-		if not value:
-			raise Exception, "No command defined for get op."
-		return self.replace_vars(value)
-	
-	def get_deop_cmd(self):
-		value = self.get_config('deop_cmd')
-		if not value:
-			return '/deop'
-		return self.replace_vars(value)
-	
-	def get_op(self):
-		op = self.is_op()
-		if op is False:
-			self.queue(self.get_op_cmd())
-		return op
-	
-	def drop_op(self):
-		op = self.is_op()
-		if op is True:
-			self.queue(self.get_deop_cmd())
+    def is_nick(self, nick):
+        nicks = self._nick_infolist()
+        while nicks.next():
+            if nicks['name'] == nick:
+                return True
+        return False
+
+    def get_host(self, name):
+        nicks = self._nick_infolist()
+        while nicks.next():
+            if nicks['name'] == name:
+                return '%s!%s' % (name, nicks['host'])
+
+    def queue(self, cmd, wait=1):
+        weechat_commands.queue(self.buffer, cmd, wait)
+
+    def get_op_cmd(self):
+        value = self.get_config('op_cmd')
+        if not value:
+            raise Exception, "No command defined for get op."
+        return self.replace_vars(value)
+
+    def get_deop_cmd(self):
+        value = self.get_config('deop_cmd')
+        if not value:
+            return '/deop'
+        return self.replace_vars(value)
+
+    def get_op(self):
+        op = self.is_op()
+        if op is False:
+            self.queue(self.get_op_cmd())
+        return op
+
+    def drop_op(self):
+        op = self.is_op()
+        if op is True:
+            self.queue(self.get_deop_cmd())
 
 
 deop_hook = ''
 deop_callback = None
 class CommandNeedsOp(CommandOperator):
-	def __call__(self, *args):
-		self._parse_args(*args)
-		op = self.get_op()
-		global manual_op
-		if op is None:
-			return WEECHAT_RC_OK
-		elif op is False:
-			manual_op = False
-		self.cmd()
-		# don't deop if we weren't auto-op'ed
-		if not manual_op and self.get_config_boolean('deop_after_use'):
-			delay = int(self.get_config('deop_delay'))
-			if delay > 0:
-				global deop_hook, deop_callback
-				if deop_hook:
-					weechat.unhook(deop_hook)
-				def callback(data, count):
-					cmd_deop('', self.buffer, self.args)
-					deop_hook = ''
-					return WEECHAT_RC_OK
-				deop_callback = callback
-				deop_hook = weechat.hook_timer(delay * 1000, 0, 1, 'deop_callback', '')
-			else:
-				self.drop_op()
-		weechat_commands.run()
-		return WEECHAT_RC_OK
+    def __call__(self, *args):
+        self._parse_args(*args)
+        op = self.get_op()
+        global manual_op
+        if op is None:
+            return WEECHAT_RC_OK
+        elif op is False:
+            manual_op = False
+        self.cmd()
+        # don't deop if we weren't auto-op'ed
+        if not manual_op and self.get_config_boolean('deop_after_use'):
+            delay = int(self.get_config('deop_delay'))
+            if delay > 0:
+                global deop_hook, deop_callback
+                if deop_hook:
+                    weechat.unhook(deop_hook)
+
+                def callback(data, count):
+                    cmd_deop('', self.buffer, self.args)
+                    deop_hook = ''
+                    return WEECHAT_RC_OK
+
+                deop_callback = callback
+                deop_hook = weechat.hook_timer(delay * 1000, 0, 1, 'deop_callback', '')
+            else:
+                self.drop_op()
+        weechat_commands.run()
+        return WEECHAT_RC_OK
 
 
 ### Operator Commands ###
 manual_op = False
 class Op(CommandOperator):
-	def help(self):
-		return ("Asks operator status.", "",
-		"""
-		The command used for ask op is defined globally in plugins.var.python.%(name)s.op_cmd, 
-		it can be defined per server or per channel in:
-		   plugins.var.python.%(name)s.'server_name'.op_cmd
-		   plugins.var.python.%(name)s.'server_name'.'channel_name'.op_cmd""" %{'name':SCRIPT_NAME})
+    def help(self):
+        return ("Asks operator status.", "",
+        """
+        The command used for ask op is defined globally in plugins.var.python.%(name)s.op_cmd,
+        it can be defined per server or per channel in:
+           plugins.var.python.%(name)s.'server_name'.op_cmd
+           plugins.var.python.%(name)s.'server_name'.'channel_name'.op_cmd""" %{'name':SCRIPT_NAME})
 
-	def cmd(self):
-		global manual_op
-		manual_op = True
-		self.get_op()
-	
+    def cmd(self):
+        global manual_op
+        manual_op = True
+        self.get_op()
+
 
 class Deop(CommandOperator):
-	def help(self):
-		return ("Drops operator status.", "", "")
+    def help(self):
+        return ("Drops operator status.", "", "")
 
-	def cmd(self):
-		self.drop_op()
+    def cmd(self):
+        self.drop_op()
 
 
 class Kick(CommandNeedsOp):
-	def help(self):
-		return ("Kicks nick. Request operator status if needed.", "<nick> [<reason>]", "")
+    def help(self):
+        return ("Kicks nick. Request operator status if needed.", "<nick> [<reason>]", "")
 
-	def cmd(self):
-		if ' ' in self.args:
-			nick, reason = self.args.split(' ', 1)
-		else:
-			nick, reason = self.args, ''
-		self.kick(nick, reason)
-	
-	def kick(self, nick, reason):
-		if not reason:
-			reason = self.get_config('kick_reason')
-		cmd = '/kick %s %s' %(nick, reason)
-		self.queue(cmd)
+    def cmd(self):
+        if ' ' in self.args:
+            nick, reason = self.args.split(' ', 1)
+        else:
+            nick, reason = self.args, ''
+        self.kick(nick, reason)
+
+    def kick(self, nick, reason):
+        if not reason:
+            reason = self.get_config('kick_reason')
+        cmd = '/kick %s %s' %(nick, reason)
+        self.queue(cmd)
 
 
 class MultiKick(Kick):
-	def help(self):
-		return ("Kicks nicks, can be more than one. Request operator status if needed.",
-				"<nick> [<nick> ...] [:] [<reason>]",
-				"It's recommended to use ':' as a separator between the nicks and the reason.")
-	def cmd(self):
-		args = self.args.split()
-		nicks = []
-		#debug('multikick: %s' %str(args))
-		while(args):
-			nick = args[0]
-			if nick[0] == ':' or not self.is_nick(nick):
-				break
-			nicks.append(args.pop(0))
-		#debug('multikick: %s, %s' %(nicks, args))
-		reason = ' '.join(args).lstrip(':')
-		for nick in nicks:
-			self.args = '%s %s' %(nick, reason)
-			Kick.cmd(self) # '%s %s' %(nick, reason))
+    def help(self):
+        return ("Kicks nicks, can be more than one. Request operator status if needed.",
+                "<nick> [<nick> ...] [:] [<reason>]",
+                "It's recommended to use ':' as a separator between the nicks and the reason.")
+    def cmd(self):
+        args = self.args.split()
+        nicks = []
+        #debug('multikick: %s' %str(args))
+        while(args):
+            nick = args[0]
+            if nick[0] == ':' or not self.is_nick(nick):
+                break
+            nicks.append(args.pop(0))
+        #debug('multikick: %s, %s' %(nicks, args))
+        reason = ' '.join(args).lstrip(':')
+        for nick in nicks:
+            self.args = '%s %s' %(nick, reason)
+            Kick.cmd(self) # '%s %s' %(nick, reason))
 
 
 class Ban(CommandNeedsOp):
-	def help(self):
-		return ("Bans users. Request operator status if needed.",
-				"<nick> [<nick> ..] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]",
-				"TODO detailed help")
+    def help(self):
+        return ("Bans users. Request operator status if needed.",
+                "<nick> [<nick> ..] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]",
+                "TODO detailed help")
 
-	banmask = []
-	valid_banmask = ValidValues('nick', 'user', 'host', 'exact')
-	def _parse_args(self, *args):
-		CommandNeedsOp._parse_args(self, *args)
-		args = self.args.split()
-		(opts, args) = getopt.gnu_getopt(args, 'hune', ('host', 'user', 'nick', 'exact'))
-		self.banmask = []
-		for k, v in opts:
-			if k in ('-h', '--host'):
-				self.banmask.append('host')
-			elif k in ('-u', '--user'):
-				self.banmask.append('user')
-			elif k in ('-n', '--nick'):
-				self.banmask.append('nick')
-			elif k in ('-e', '--exact'):
-				self.banmask = ['nick', 'user', 'host']
-				break
-		if not self.banmask:
-			self.banmask = self.get_default_banmask()
-		self.args = ' '.join(args)
+    banmask = []
+    valid_banmask = ValidValues('nick', 'user', 'host', 'exact')
+    def _parse_args(self, *args):
+        CommandNeedsOp._parse_args(self, *args)
+        args = self.args.split()
+        (opts, args) = getopt.gnu_getopt(args, 'hune', ('host', 'user', 'nick', 'exact'))
+        self.banmask = []
+        for k, v in opts:
+            if k in ('-h', '--host'):
+                self.banmask.append('host')
+            elif k in ('-u', '--user'):
+                self.banmask.append('user')
+            elif k in ('-n', '--nick'):
+                self.banmask.append('nick')
+            elif k in ('-e', '--exact'):
+                self.banmask = ['nick', 'user', 'host']
+                break
+        if not self.banmask:
+            self.banmask = self.get_default_banmask()
+        self.args = ' '.join(args)
 
-	def get_default_banmask(self):
-		value = self.get_config('default_banmask')
-		values = value.split(',')
-		for value in values:
-			try:
-				self.valid_banmask[value]
-			except KeyError:
-				error("Error while fetching default banmask. Using default.")
-				return settings['default_banmask']
-		return values
+    def get_default_banmask(self):
+        value = self.get_config('default_banmask')
+        values = value.split(',')
+        for value in values:
+            try:
+                self.valid_banmask[value]
+            except KeyError:
+                error("Error while fetching default banmask. Using default.")
+                return settings['default_banmask']
+        return values
 
-	def make_banmask(self, hostmask):
-		if not self.banmask:
-			# FIXME this will not be safe with MergedBan
-			return hostmask[:hostmask.find('!')] 
-		nick = user = host = '*'
-		if 'nick' in self.banmask:
-			nick = hostmask[:hostmask.find('!')]
-		if 'user' in self.banmask:
-			user = hostmask.split('!',1)[1].split('@')[0]
-		if 'host' in self.banmask:
-			host = hostmask[hostmask.find('@') + 1:]
-		banmask = '%s!%s@%s' %(nick, user, host)
-		return banmask
-	
-	def cmd(self):
-		args = self.args.split()
-		banmasks = []
-		for arg in args:
-			mask = arg
-			if not is_hostmask(arg):
-				hostmask = self.get_host(arg)
-				if hostmask:
-					mask = self.make_banmask(hostmask)
-			banmasks.append(mask)
-		if banmasks:
-			self.ban(*banmasks)
-	
-	def ban(self, *args):
-		cmd = '/ban %s' %' '.join(args)
-		self.queue(cmd)
+    def make_banmask(self, hostmask):
+        if not self.banmask:
+            # FIXME this will not be safe with MergedBan
+            return hostmask[:hostmask.find('!')]
+        nick = user = host = '*'
+        if 'nick' in self.banmask:
+            nick = hostmask[:hostmask.find('!')]
+        if 'user' in self.banmask:
+            user = hostmask.split('!',1)[1].split('@')[0]
+        if 'host' in self.banmask:
+            host = hostmask[hostmask.find('@') + 1:]
+        banmask = '%s!%s@%s' %(nick, user, host)
+        return banmask
+
+    def cmd(self):
+        args = self.args.split()
+        banmasks = []
+        for arg in args:
+            mask = arg
+            if not is_hostmask(arg):
+                hostmask = self.get_host(arg)
+                if hostmask:
+                    mask = self.make_banmask(hostmask)
+            banmasks.append(mask)
+        if banmasks:
+            self.ban(*banmasks)
+
+    def ban(self, *args):
+        cmd = '/ban %s' %' '.join(args)
+        self.queue(cmd)
 
 
 class UnBan(Ban):
-	def cmd(self):
-		args = self.args.split()
-		self.unban(*args)
-	
-	def unban(self, *args):
-		cmd = '/unban %s' %' '.join(args)
-		self.queue(cmd)
+    def cmd(self):
+        args = self.args.split()
+        self.unban(*args)
+
+    def unban(self, *args):
+        cmd = '/unban %s' %' '.join(args)
+        self.queue(cmd)
 
 
 class MergedBan(Ban):
-	unban = False
-	def ban(self, *args):
-		c = self.unban and '-' or '+'
-		# do 4 bans per command
-		for n in range(0, len(args), 4):
-			slice = args[n:n+4]
-			hosts = ' '.join(slice)
-			cmd = '/mode %s%s %s' %(c, 'b'*len(slice), hosts)
-			self.queue(cmd)
+    unban = False
+    def ban(self, *args):
+        c = self.unban and '-' or '+'
+        # do 4 bans per command
+        for n in range(0, len(args), 4):
+            slice = args[n:n+4]
+            hosts = ' '.join(slice)
+            cmd = '/mode %s%s %s' %(c, 'b'*len(slice), hosts)
+            self.queue(cmd)
 
 
 class KickBan(Ban, Kick):
-	def help(self):
-		return ("Kickban user. Request operator status if needed.",
-				"<nick> [<reason>] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]",
-				"TODO detailed help")
+    def help(self):
+        return ("Kickban user. Request operator status if needed.",
+                "<nick> [<reason>] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]",
+                "TODO detailed help")
 
-	invert = False
-	def cmd(self):
-		if ' ' in self.args:
-			nick, reason = self.args.split(' ', 1)
-		else:
-			nick, reason = self.args, ''
-		hostmask = self.get_host(nick)
-		if hostmask:
-			banmask = self.make_banmask(hostmask)
-			if self.invert:
-				self.kick(nick, reason)
-				self.ban(banmask)
-			else:
-				self.ban(banmask)
-				self.kick(nick, reason)
+    invert = False
+    def cmd(self):
+        if ' ' in self.args:
+            nick, reason = self.args.split(' ', 1)
+        else:
+            nick, reason = self.args, ''
+        hostmask = self.get_host(nick)
+        if hostmask:
+            banmask = self.make_banmask(hostmask)
+            if self.invert:
+                self.kick(nick, reason)
+                self.ban(banmask)
+            else:
+                self.ban(banmask)
+                self.kick(nick, reason)
 
 
 ### config callbacks ###
 def enable_multiple_kick_conf_cb(data, config, value):
-	global cmd_kick
-	cmd_kick.unhook()
-	if boolDict[value]:
-		cmd_kick = MultiKick('okick', 'cmd_kick')
-	else:
-		cmd_kick = Kick('okick', 'cmd_kick')
-	return WEECHAT_RC_OK
+    global cmd_kick
+    cmd_kick.unhook()
+    if boolDict[value]:
+        cmd_kick = MultiKick('okick', 'cmd_kick')
+    else:
+        cmd_kick = Kick('okick', 'cmd_kick')
+    return WEECHAT_RC_OK
 
 def merge_bans_conf_cb(data, config, value):
-	global cmd_ban
-	cmd_ban.unhook()
-	if boolDict[value]:
-		cmd_ban  = MergedBan('oban', 'cmd_ban')
-	else:
-		cmd_ban = Ban('okick', 'cmd_kick')
-	return WEECHAT_RC_OK
+    global cmd_ban
+    cmd_ban.unhook()
+    if boolDict[value]:
+        cmd_ban  = MergedBan('oban', 'cmd_ban')
+    else:
+        cmd_ban = Ban('okick', 'cmd_kick')
+    return WEECHAT_RC_OK
 
 def invert_kickban_order_conf_cb(data, config, value):
-	global cmd_kban
-	if boolDict[value]:
-		cmd_kban.invert = True
-	else:
-		cmd_kban.invert = False
-	return WEECHAT_RC_OK
+    global cmd_kban
+    if boolDict[value]:
+        cmd_kban.invert = True
+    else:
+        cmd_kban.invert = False
+    return WEECHAT_RC_OK
 
 
 ### Register Script and set configs ###
 if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
-		SCRIPT_DESC, '', ''):
+        SCRIPT_DESC, '', ''):
 
-	# settings
-	settings = {
-			'op_cmd': '/msg chanserv op $channel $nick',
-			'deop_cmd': '/deop',
-			'deop_after_use': 'on',
-			'deop_delay': '300',
-			'default_banmask': 'host',
-			'kick_reason': 'bye.',
-			'enable_multiple_kick': 'off',
-			'merge_bans': 'on',
-			'invert_kickban_order': 'off'}
+    # settings
+    settings = {
+            'op_cmd': '/msg chanserv op $channel $nick',
+            'deop_cmd': '/deop',
+            'deop_after_use': 'on',
+            'deop_delay': '300',
+            'default_banmask': 'host',
+            'kick_reason': 'bye.',
+            'enable_multiple_kick': 'off',
+            'merge_bans': 'on',
+            'invert_kickban_order': 'off'}
 
-	for opt, val in settings.iteritems():
-		if not weechat.config_is_set_plugin(opt):
-				weechat.config_set_plugin(opt, val)
+    for opt, val in settings.iteritems():
+        if not weechat.config_is_set_plugin(opt):
+                weechat.config_set_plugin(opt, val)
 
-	# hook our commands
-	cmd_op   = Op('oop', 'cmd_op')
-	cmd_deop = Deop('odeop', 'cmd_deop')
-	if get_config_boolean('enable_multiple_kick'):
-		cmd_kick = MultiKick('okick', 'cmd_kick')
-	else:
-		cmd_kick = Kick('okick', 'cmd_kick')
-	if get_config_boolean('merge_bans'):
-		cmd_ban  = MergedBan('oban', 'cmd_ban')
-	else:
-		cmd_ban  = Ban('oban', 'cmd_ban')
-	# FIXME unban cmd disabled as is not very usefull atm
-	#cmd_unban  = UnBan('ounban', 'cmd_unban')
-	cmd_kban = KickBan('okban', 'cmd_kban')
-	if get_config_boolean('invert_kickban_order'):
-		cmd_kban.invert = True
+    # hook our commands
+    cmd_op   = Op('oop', 'cmd_op')
+    cmd_deop = Deop('odeop', 'cmd_deop')
+    if get_config_boolean('enable_multiple_kick'):
+        cmd_kick = MultiKick('okick', 'cmd_kick')
+    else:
+        cmd_kick = Kick('okick', 'cmd_kick')
+    if get_config_boolean('merge_bans'):
+        cmd_ban  = MergedBan('oban', 'cmd_ban')
+    else:
+        cmd_ban  = Ban('oban', 'cmd_ban')
+    # FIXME unban cmd disabled as is not very usefull atm
+    #cmd_unban  = UnBan('ounban', 'cmd_unban')
+    cmd_kban = KickBan('okban', 'cmd_kban')
+    if get_config_boolean('invert_kickban_order'):
+        cmd_kban.invert = True
 
-	weechat.hook_config('plugins.var.python.%s.enable_multiple_kick' %SCRIPT_NAME, 'enable_multiple_kick_conf_cb', '')
-	weechat.hook_config('plugins.var.python.%s.merge_bans' %SCRIPT_NAME, 'merge_bans_conf_cb', '')
-	weechat.hook_config('plugins.var.python.%s.invert_kickban_order' %SCRIPT_NAME, 'invert_kickban_order_conf_cb', '')
+    weechat.hook_config('plugins.var.python.%s.enable_multiple_kick' %SCRIPT_NAME, 'enable_multiple_kick_conf_cb', '')
+    weechat.hook_config('plugins.var.python.%s.merge_bans' %SCRIPT_NAME, 'merge_bans_conf_cb', '')
+    weechat.hook_config('plugins.var.python.%s.invert_kickban_order' %SCRIPT_NAME, 'invert_kickban_order_conf_cb', '')
 
+# vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
