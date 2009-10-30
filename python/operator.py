@@ -20,7 +20,6 @@
 #  Helper script for IRC operators
 #
 #  TODO for v1.0
-#  * add default banmask config
 #  * unban command
 #  * implement freenode's remove and mute commands
 #  * command for switch channel moderation on/off
@@ -290,6 +289,8 @@ class Ban(CmdOp):
 			elif k in ('-e', '--exact'):
 				self.banmask = ['nick', 'user', 'host']
 				break
+		if not self.banmask:
+			self.banmask = self.get_default_banmask()
 		self.args = ' '.join(args)
 
 	def get_host(self, name):
@@ -297,9 +298,20 @@ class Ban(CmdOp):
 			if user['name'] == name:
 				return '%s!%s' % (name, user['host'])
 
+	def get_default_banmask(self):
+		value = self.get_config('default_banmask')
+		values = value.split(',')
+		valid_values = ('nick', 'user', 'host', 'exact')
+		for value in values:
+			if value not in valid_values:
+				error("'%s' is and invalid option for 'default_banmask', allowed: %s."
+						%(value, ', '.join(map(repr, valid_values))))
+				return []
+		return values
+
 	def make_banmask(self, hostmask):
-		if not hostmask or not self.banmask:
-			return hostmask
+		if not self.banmask:
+			return hostmask[:hostmask.find('!')]
 		nick = user = host = '*'
 		if 'nick' in self.banmask:
 			nick = hostmask[:hostmask.find('!')]
@@ -395,6 +407,7 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
 				('deop_cmd', '/deop'),
 				('deop_after_use', 'on'),
 				('deop_delay', '300'),
+				('default_banmask', 'host'),
 				('enable_multiple_kicks', 'off'),
 				('merge_bans', 'on'),
 				('invert_kickban_order', 'off'))
