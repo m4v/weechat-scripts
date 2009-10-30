@@ -118,12 +118,18 @@ class Infolist(object):
             'flags':'integer',
             }
 
-    __slots__ = ('pointer', 'cursor')
     def __init__(self, name, args=''):
         self.cursor = 0
         self.pointer = weechat.infolist_get(name, '', args)
         if self.pointer == '':
             raise Exception('Infolist initialising failed')
+
+    def __len__(self):
+        """True False evaluation."""
+        if self.pointer:
+            return 1
+        else:
+            return 0
 
     def __del__(self):
         """Purge infolist if is no longer referenced."""
@@ -148,6 +154,12 @@ class Infolist(object):
         self.cursor = weechat.infolist_prev(self.pointer)
         return self.cursor
 
+    def reset(self):
+        """Moves cursor to beginning of infolist."""
+        if self.cursor == 1: # only if we aren't in the beginning already
+            while self.prev():
+                pass
+
     def free(self):
         if self.pointer:
             weechat.infolist_free(self.pointer)
@@ -156,8 +168,6 @@ class Infolist(object):
 
 class Command(object):
     """Class for hook WeeChat commands."""
-
-    __slots__ = ('pointer', 'command', 'callback', 'completion', 'buffer', 'args')
     def __init__(self, command, callback, completion=''):
         self.command = command
         self.callback = callback
@@ -166,11 +176,11 @@ class Command(object):
         self.hook()
 
     def __call__(self, *args):
-        self._parse_args(*args)
+        self.parse_args(*args)
         self.cmd()
         return WEECHAT_RC_OK
 
-    def _parse_args(self, data, buffer, args):
+    def parse_args(self, data, buffer, args):
         """Do arg parsing here."""
         self.buffer = buffer
         self.args = args
@@ -224,15 +234,29 @@ class CommandQueue(object):
     commands = []
     wait = 0
     def queue(self, buffer, cmd, wait=1):
-        self.commands.append((buffer, cmd, wait))
+        cmd = (buffer, cmd, wait)
+        debug('queue cmd:%s' %(cmd, ))
+        self.commands.append(cmd)
 
+    def safe_check(f):
+        def abort_if_too_many_commands(self):
+            if len(self.commands) > 10:
+                error("Too many commands in queue, must be a bug!")
+                error("last 10 commnads:")
+                for cmd in self.commands[-10:]:
+                    error(str(cmd))
+                self.clear()
+            else:
+                f(self)
+        return abort_if_too_many_commands
+
+    @safe_check
     def run(self):
         for buffer, cmd, wait in self.commands:
+            debug('running cmd:%s wait:%s' %(cmd, self.wait))
             if self.wait:
-                #debug('running with wait(%s) %s' %(self.wait, cmd))
                 weechat.command(buffer, '/wait %s %s' %(self.wait, cmd))
             else:
-                #debug('running %s' %cmd)
                 weechat.command(buffer, cmd)
             self.wait += wait
         self.clear()
@@ -245,14 +269,18 @@ class CommandQueue(object):
 weechat_commands = CommandQueue()
 
 class CommandOperator(Command):
-    __slots__ = ('channel', 'nick', 'server')
+    infolist = None
     def __call__(self, *args):
-        Command.__call__(self, *args)
+        debug("command __call__ args: %s" %(args,))
+        self.parse_args(*args)
+        self.cmd()
         weechat_commands.run()
+        self.infolist = None
         return WEECHAT_RC_OK
 
-    def _parse_args(self, *args):
-        Command._parse_args(self, *args)
+    def parse_args(self, data, buffer, args):
+        self.buffer = buffer
+        self.args = args
         self.server = weechat.buffer_get_string(self.buffer, 'localvar_server')
         self.channel = weechat.buffer_get_string(self.buffer, 'localvar_channel')
         self.nick = weechat.info_get('irc_nick', self.server)
@@ -267,10 +295,10 @@ class CommandOperator(Command):
         return s
 
     def get_config(self, config):
-        string = '%s_%s_%s' %(self.server, self.channel, config)
+        string = '%s.%s.%s' %(self.server, self.channel, config)
         value = weechat.config_get_plugin(string)
         if not value:
-            string = '%s_%s' %(self.server, config)
+            string = '%s.%s' %(self.server, config)
             value = weechat.config_get_plugin(string)
             if not value:
                 value = weechat.config_get_plugin(config)
@@ -285,9 +313,14 @@ class CommandOperator(Command):
             return settings[config]
 
     def _nick_infolist(self):
-        # TODO reuse the same infolist instead of creating it many times
-        # per command call (like in MultiKick)
-        return Infolist('irc_nick', '%s,%s' %(self.server, self.channel))
+        # reuse the same infolist instead of creating it many times
+        # per __call__() (like in MultiKick)
+        if not self.infolist:
+            self.infolist =  Infolist('irc_nick', '%s,%s' %(self.server, self.channel))
+            return self.infolist
+        else:
+            self.infolist.reset()
+            return self.infolist
 
     def is_op(self):
         try:
@@ -344,15 +377,14 @@ class CommandOperator(Command):
 deop_hook = ''
 deop_callback = None
 class CommandNeedsOp(CommandOperator):
-    def __call__(self, *args):
-        self._parse_args(*args)
+    def cmd(self, *args):
         op = self.get_op()
         global manual_op
         if op is None:
             return WEECHAT_RC_OK
         elif op is False:
             manual_op = False
-        self.cmd()
+        self._cmd(*args)
         # don't deop if we weren't auto-op'ed
         if not manual_op and self.get_config_boolean('deop_after_use'):
             delay = int(self.get_config('deop_delay'))
@@ -370,8 +402,10 @@ class CommandNeedsOp(CommandOperator):
                 deop_hook = weechat.hook_timer(delay * 1000, 0, 1, 'deop_callback', '')
             else:
                 self.drop_op()
-        weechat_commands.run()
-        return WEECHAT_RC_OK
+
+    def _cmd(self, *args):
+        """Commands in this method will be run while user is with op status."""
+        pass
 
 
 ### Operator Commands ###
@@ -403,18 +437,18 @@ class Kick(CommandNeedsOp):
     def help(self):
         return ("Kicks nick. Request operator status if needed.", "<nick> [<reason>]", "")
 
-    def cmd(self, args=None):
+    def _cmd(self, args=None):
         if not args:
             args = self.args
         if ' ' in args:
             nick, reason = args.split(' ', 1)
         else:
             nick, reason = args, ''
+        if not reason:
+            reason = self.get_config('kick_reason')
         self.kick(nick, reason)
 
     def kick(self, nick, reason):
-        if not reason:
-            reason = self.get_config('kick_reason')
         cmd = '/kick %s %s' %(nick, reason)
         self.queue(cmd)
 
@@ -427,7 +461,8 @@ class MultiKick(Kick):
                 Note: Is not needed, but use ':' as a separator between nicks and the reason.
                       Otherwise, if there's a nick in the channel matching the reason it will
                       be kicked.""")
-    def cmd(self, args=None):
+
+    def _cmd(self, args=None):
         if not args:
             args = self.args
         args = args.split()
@@ -440,8 +475,10 @@ class MultiKick(Kick):
             nicks.append(args.pop(0))
         #debug('multikick: %s, %s' %(nicks, args))
         reason = ' '.join(args).lstrip(':')
+        if not reason:
+            reason = self.get_config('kick_reason')
         for nick in nicks:
-            Kick.cmd(self, '%s %s' %(nick, reason))
+            self.kick(nick, reason)
 
 
 class Ban(CommandNeedsOp):
@@ -463,8 +500,8 @@ class Ban(CommandNeedsOp):
 
     banmask = []
     valid_banmask = ValidValues('nick', 'user', 'host', 'exact')
-    def _parse_args(self, *args):
-        CommandNeedsOp._parse_args(self, *args)
+    def parse_args(self, *args):
+        CommandNeedsOp.parse_args(self, *args)
         args = self.args.split()
         (opts, args) = getopt.gnu_getopt(args, 'hune', ('host', 'user', 'nick', 'exact'))
         self.banmask = []
@@ -507,7 +544,7 @@ class Ban(CommandNeedsOp):
         banmask = '%s!%s@%s' %(nick, user, host)
         return banmask
 
-    def cmd(self):
+    def _cmd(self):
         args = self.args.split()
         banmasks = []
         for arg in args:
@@ -526,7 +563,7 @@ class Ban(CommandNeedsOp):
 
 
 class UnBan(Ban):
-    def cmd(self):
+    def _cmd(self):
         args = self.args.split()
         self.unban(*args)
 
@@ -554,7 +591,7 @@ class KickBan(Ban, Kick):
                 "Combines /okick and /oban commands.")
 
     invert = False
-    def cmd(self):
+    def _cmd(self):
         if ' ' in self.args:
             nick, reason = self.args.split(' ', 1)
         else:
@@ -621,16 +658,20 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
     # hook our commands
     cmd_op   = Op('oop', 'cmd_op')
     cmd_deop = Deop('odeop', 'cmd_deop')
+
     if get_config_boolean('enable_multiple_kick'):
         cmd_kick = MultiKick('okick', 'cmd_kick')
     else:
         cmd_kick = Kick('okick', 'cmd_kick')
+
     if get_config_boolean('merge_bans'):
         cmd_ban  = MergedBan('oban', 'cmd_ban')
     else:
         cmd_ban  = Ban('oban', 'cmd_ban')
+
     # FIXME unban cmd disabled as is not very usefull atm
     #cmd_unban  = UnBan('ounban', 'cmd_unban')
+
     cmd_kban = KickBan('okban', 'cmd_kban')
     if get_config_boolean('invert_kickban_order'):
         cmd_kban.invert = True
