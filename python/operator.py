@@ -17,14 +17,25 @@
 ###
 
 ###
+#  Helper script for IRC operators
 #
+#  TODO for v1.0
+#  * add default banmask config
+#  * unban command
+#  * implement freenode's remove and mute commands
+#  * command for switch channel moderation on/off
+#  
+#  TODO for later
+#  * bans expire time
+#  * bantracker (keeps a record of ban and kicks)
+#  * user tracker (for ban even when they already parted)
 ###
 
 SCRIPT_NAME    = "operator"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
 SCRIPT_VERSION = "0.1"
 SCRIPT_LICENSE = "GPL3"
-SCRIPT_DESC    = "Automated kick/bans commands and generally help an operator's task"
+SCRIPT_DESC    = "Helper script for IRC operators"
 
 try:
 	import weechat
@@ -43,19 +54,7 @@ except:
 	weeutils_module = False
 
 import getopt
-import fnmatch
-
-class Infos(object):
-	def get(self, key, arg=''):
-		return weechat.info_get(key, arg)
-
-
-class Buffer(object):
-	def __init__(self, pointer):
-		self.pointer = pointer
-
-	def __getitem__(self, key):
-		return weechat.buffer_get_string(self.pointer, key)
+#import fnmatch
 
 
 class CommandQueue(object):
@@ -67,10 +66,10 @@ class CommandQueue(object):
 	def run(self):
 		for buffer, cmd, wait in self.commands:
 			if self.wait:
-				debug('running with wait(%s) %s' %(self.wait, cmd))
+				#debug('running with wait(%s) %s' %(self.wait, cmd))
 				weechat.command(buffer, '/wait %s %s' %(self.wait, cmd))
 			else:
-				debug('running %s' %cmd)
+				#debug('running %s' %cmd)
 				weechat.command(buffer, cmd)
 			self.wait += wait
 		self.clear()
@@ -82,10 +81,6 @@ class CommandQueue(object):
 
 class CommandOperator(Command):
 	queue = CommandQueue()
-	def __init__(self, *args):
-		self.infos = Infos()
-		Command.__init__(self, *args)
-
 	def __call__(self, *args):
 		Command.__call__(self, *args)
 		self.queue.run()
@@ -93,10 +88,9 @@ class CommandOperator(Command):
 
 	def _parse(self, *args):
 		Command._parse(self, *args)
-		buffer = Buffer(self.buffer)
-		self.server = buffer['localvar_server']
-		self.channel = buffer['localvar_channel']
-		self.nick = self.infos.get('irc_nick', self.server)
+		self.server = weechat.buffer_get_string(self.buffer, 'localvar_server')
+		self.channel = weechat.buffer_get_string(self.buffer, 'localvar_channel')
+		self.nick = weechat.info_get('irc_nick', self.server)
 
 	def replace_vars(self, s):
 		if '$channel' in s:
@@ -259,13 +253,13 @@ class MultiKick(Kick):
 	def cmd(self, *args):
 		args = self.args.split()
 		nicks = []
-		debug('multikick: %s' %str(args))
+		#debug('multikick: %s' %str(args))
 		while(args):
 			nick = args[0]
 			if nick[0] == ':' or not self.is_nick(nick):
 				break
 			nicks.append(args.pop(0))
-		debug('multikick: %s, %s' %(nicks, args))
+		#debug('multikick: %s, %s' %(nicks, args))
 		reason = ' '.join(args).lstrip(':')
 		for nick in nicks:
 			self.args = '%s %s' %(nick, reason)
@@ -316,14 +310,6 @@ class Ban(CmdOp):
 		banmask = '%s!%s@%s' %(nick, user, host)
 		return banmask
 	
-	def check_banmask(self, banmask):
-		# check banmask doesn't ban ourselves
-		hostmask = '%s!%s' %(self.nick, self.get_host(self.nick)) # XXX should be cached
-		# XXX this check might break
-		# as fnmatch might give some troubles with nicks using []
-		# but I'm lazy
-		return not fnmatch.fnmatch(hostmask, banmask)
-
 	def cmd(self, *args):
 		args = self.args.split()
 		banmasks = []
@@ -415,6 +401,7 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
 		for opt, val in settings:
 			if not weechat.config_is_set_plugin(opt):
 					weechat.config_set_plugin(opt, val)
+
 		# hook our Command classes
 		cmd_op   = Op('oop', 'cmd_op')
 		cmd_deop = Deop('odeop', 'cmd_deop')
@@ -426,10 +413,12 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
 			cmd_ban  = MergedBan('oban', 'cmd_ban')
 		else:
 			cmd_ban  = Ban('oban', 'cmd_ban')
-		cmd_unban  = UnBan('ounban', 'cmd_unban')
+		# FIXME unban cmd disabled as is not very usefull atm
+		#cmd_unban  = UnBan('ounban', 'cmd_unban')
 		cmd_kban = KickBan('okban', 'cmd_kban')
 		if get_config_boolean('invert_kickban_order'):
 			cmd_kban.invert = True
+
 		weechat.hook_config('plugins.var.python.%s.enable_multiple_kicks' %SCRIPT_NAME, 'enable_multiple_kicks_conf_cb', '')
 		weechat.hook_config('plugins.var.python.%s.merge_bans' %SCRIPT_NAME, 'merge_bans_conf_cb', '')
 		weechat.hook_config('plugins.var.python.%s.invert_kickban_order' %SCRIPT_NAME, 'invert_kickban_order_conf_cb', '')
