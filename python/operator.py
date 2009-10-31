@@ -27,8 +27,8 @@
 #   * /oop  : Request op
 #   * /odeop: Drops op
 #   * /okick: Kicks user (or users)
-#   * /oban : Applies a ban
-#   * /okban: Bans and kicks a user
+#   * /oban : Apply bans
+#   * /okban: Kicks and bans user (or users)
 #
 #
 #   Settings:
@@ -79,28 +79,31 @@
 #   * plugins.var.python.operator.enable_multiple_kick:
 #     Enables kicking multiple users with /okick command
 #     Be careful with this as you can kick somebody by accident if
-#     you're not careful when writting the kick reason
+#     you're not careful when writting the kick reason.
+#   
+#     This also applies to /okban command, multiple kickbans would be posible.
 #     Valid values 'on', 'off'
 #
-#     This config is global and can't be defined per server or channel
+#     This config is global and can't be defined per server or channel.
 #
 #   * plugins.var.python.operator.merge_bans:
 #     Only if you want to reduce flooding when applying several bans and
 #     if the IRC server supports it. Every 4 bans will be merged in a
 #     single command. Valid values 'on', 'off'
 #
-#     This config is global and can't be defined per server or channel
+#     This config is global and can't be defined per server or channel.
 #
 #   * plugins.var.python.operator.invert_kickban_order:
-#     /okban bans first, then kicks, this invert the order.
+#     /okban kicks first, then bans, this inverts the order.
 #     Valid values 'on', 'off'
 #
-#     This config is global and can't be defined per server or channel
+#     This config is global and can't be defined per server or channel.
 #
 #
 #  TODO
-#  * implement freenode's remove and mute commands
-#  * unban command
+#  * implement freenode's remove and mute commands (!)
+#  * unban command (!)
+#  * add completions (!)
 #  * command for switch channel moderation on/off
 #  * implement ban with channel forward
 #  * ban expire time
@@ -257,6 +260,7 @@ class Infolist(object):
 
     def free(self):
         if self.pointer:
+            debug('Freeing Infolist')
             weechat.infolist_free(self.pointer)
             self.pointer = ''
 
@@ -418,7 +422,7 @@ class CommandQueue(object):
                 f(self)
         return abort_if_too_many_commands
 
-    #@safe_check
+    @safe_check
     def run(self):
         while self.commands:
             pack = self.commands.pop(0)
@@ -442,11 +446,11 @@ class CommandOperator(Command):
     def __call__(self, *args):
         """Called by WeeChat when /command is used."""
         debug("command __call__ args: %s" %(args,))
-        self.parse_args(*args)
-        self.cmd()
-        weechat_queue.run()
-        self.infolist = None
-        return WEECHAT_RC_OK
+        self.parse_args(*args)  # argument parsing
+        self.cmd()              # call our command and queue messages for WeeChat
+        weechat_queue.run()     # run queued messages
+        self.infolist = None    # free irc_nick infolist
+        return WEECHAT_RC_OK    # make WeeChat happy
 
     def parse_args(self, data, buffer, args):
         self.buffer = buffer
@@ -484,7 +488,8 @@ class CommandOperator(Command):
         # reuse the same infolist instead of creating it many times
         # per __call__() (like in MultiKick)
         if not self.infolist:
-            self.infolist =  Infolist('irc_nick', '%s,%s' %(self.server, self.channel))
+            debug('Creating Infolist')
+            self.infolist = Infolist('irc_nick', '%s,%s' %(self.server, self.channel))
             return self.infolist
         else:
             self.infolist.reset()
@@ -616,7 +621,7 @@ class Kick(CommandNeedsOp):
 
 class MultiKick(Kick):
     help = ("Kicks nicks, can be more than one. Request operator status if needed.",
-            "<nick> [<nick> ...] [:] [<reason>]",
+            "<nick> [<nick> ..] [:] [<reason>]",
             """
             Note: Is not needed, but use ':' as a separator between nicks and the reason.
                   Otherwise, if there's a nick in the channel matching the reason it will
@@ -711,7 +716,8 @@ class Ban(CommandNeedsOp):
         cmd = '/ban %s' %' '.join(args)
         self.queue(cmd, **kwargs)
 
-# FIXME really not very usefull
+
+# FIXME really not very useful yet
 class UnBan(Ban):
     def _cmd(self):
         args = self.args.split()
@@ -746,9 +752,11 @@ class KickBan(Ban, Kick):
         else:
             nick, reason = self.args, ''
         hostmask = self.get_host(nick)
+        if not reason:
+            reason = self.get_config('kick_reason')
         if hostmask:
             banmask = self.make_banmask(hostmask)
-            if self.invert:
+            if not self.invert:
                 self.kick(nick, reason, wait=0)
                 self.ban(banmask)
             else:
@@ -756,14 +764,45 @@ class KickBan(Ban, Kick):
                 self.kick(nick, reason)
 
 
+class MultiKickBan(KickBan):
+    help = ("Kickban user. Request operator status if needed.",
+            "<nick> [<nick> ..] [:] [<reason>] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]",
+            "Combines /okick and /oban commands.")
+
+    def _cmd(self):
+        args = self.args.split()
+        nicks = []
+        while(args):
+            nick = args[0]
+            if nick[0] == ':' or not self.is_nick(nick):
+                break
+            nicks.append(args.pop(0))
+        reason = ' '.join(args).lstrip(':')
+        if not reason:
+            reason = self.get_config('kick_reason')
+        for nick in nicks:
+            hostmask = self.get_host(nick)
+            if hostmask:
+                banmask = self.make_banmask(hostmask)
+                if not self.invert:
+                    self.kick(nick, reason, wait=0)
+                    self.ban(banmask)
+                else:
+                    self.ban(banmask, wait=0)
+                    self.kick(nick, reason)
+
+
 ### config callbacks ###
 def enable_multiple_kick_conf_cb(data, config, value):
-    global cmd_kick
+    global cmd_kick, cmd_kban
     cmd_kick.unhook()
+    cmd_kban.unhook()
     if boolDict[value]:
         cmd_kick = MultiKick('okick', 'cmd_kick')
+        cmd_kban = MultiKickBan('okban', 'cmd_kban')
     else:
         cmd_kick = Kick('okick', 'cmd_kick')
+        cmd_kban = KickBan('okban', 'cmd_kban')
     return WEECHAT_RC_OK
 
 def merge_bans_conf_cb(data, config, value):
@@ -810,23 +849,25 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
 
     if get_config_boolean('enable_multiple_kick'):
         cmd_kick = MultiKick('okick', 'cmd_kick')
+        cmd_kban = MultiKickBan('okban', 'cmd_kban')
     else:
         cmd_kick = Kick('okick', 'cmd_kick')
+        cmd_kban = KickBan('okban', 'cmd_kban')
 
     if get_config_boolean('merge_bans'):
         cmd_ban = MergedBan('oban', 'cmd_ban')
     else:
         cmd_ban = Ban('oban', 'cmd_ban')
 
-    # FIXME unban cmd disabled as is not very usefull atm
+    # FIXME unban cmd disabled as is not very useful atm
     #cmd_unban  = UnBan('ounban', 'cmd_unban')
 
-    cmd_kban = KickBan('okban', 'cmd_kban')
     if get_config_boolean('invert_kickban_order'):
         cmd_kban.invert = True
 
     weechat.hook_config('plugins.var.python.%s.enable_multiple_kick' %SCRIPT_NAME, 'enable_multiple_kick_conf_cb', '')
     weechat.hook_config('plugins.var.python.%s.merge_bans' %SCRIPT_NAME, 'merge_bans_conf_cb', '')
     weechat.hook_config('plugins.var.python.%s.invert_kickban_order' %SCRIPT_NAME, 'invert_kickban_order_conf_cb', '')
+
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
