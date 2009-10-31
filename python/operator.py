@@ -202,7 +202,7 @@ def get_config_banmask(config='default_banmask', get_function=None):
             error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
             error("'%s' is an invalid value, allowed: %s." %(value, ', '.join(valid_banmask)))
             return default
-    debug("default banmask: %s" %values)
+    #debug("default banmask: %s" %values)
     return values
 
 
@@ -275,7 +275,7 @@ class Infolist(object):
 
     def free(self):
         if self.pointer:
-            debug('Freeing Infolist')
+            #debug('Freeing Infolist')
             weechat.infolist_free(self.pointer)
             self.pointer = ''
 
@@ -407,7 +407,7 @@ class CommandQueue(object):
         #debug('queue: wait %s' %wait)
         pack = getattr(self, type)(cmd, wait=self.wait, **kwargs)
         self.wait += wait
-        debug('queue: %s' %pack)
+        #debug('queue: %s' %pack)
         self.commands.append(pack)
 
     # it happened once and it wasn't pretty
@@ -424,7 +424,7 @@ class CommandQueue(object):
     def run(self):
         while self.commands:
             pack = self.commands.pop(0)
-            debug('running: %s' %pack)
+            #debug('running: %s' %pack)
             if not pack():
                 return
         self.wait = 0
@@ -442,7 +442,7 @@ def queue_continue_cb(data, signal, signal_data):
     signal = signal_data.split(' ', 1)[1].strip()
     if signal == data:
         # we got op'ed
-        debug("We got op")
+        #debug("We got op")
         weechat.unhook(hook_signal)
         weechat.unhook(hook_timeout)
         hook_signal = hook_timeout = None
@@ -463,12 +463,12 @@ class CommandOperator(Command):
     infolist = None
     def __call__(self, *args):
         """Called by WeeChat when /command is used."""
-        debug("command __call__ args: %s" %(args, ))
+        #debug("command __call__ args: %s" %(args, ))
         self.parse_args(*args)  # argument parsing
         self.cmd()              # call our command and queue messages for WeeChat
         weechat_queue.run()     # run queued messages
         self.infolist = None    # free irc_nick infolist
-        debug("exiting __call__")
+        #debug("exiting __call__")
         return WEECHAT_RC_OK    # make WeeChat happy
 
     def parse_args(self, data, buffer, args):
@@ -507,7 +507,7 @@ class CommandOperator(Command):
         # reuse the same infolist instead of creating it many times
         # per __call__() (like in MultiKick)
         if not self.infolist:
-            debug('Creating Infolist')
+            #debug('Creating Infolist')
             self.infolist = Infolist('irc_nick', '%s,%s' %(self.server, self.channel))
             return self.infolist
         else:
@@ -628,7 +628,7 @@ class BanObject(object):
         #return "<BanObject(%s, %s, %s)>" %(self.banmask, self.hostmask, self.time)
         return "Banmask:'%s' Hostmask:'%s' Date: %s" %(self.banmask,
                 self.hostmask, time.strftime('%d/%m/%y %H:%M', time.localtime(self.time)))
-                #FIXME date string isn't locale aware!
+                #XXX change date string to something more meanfull
 
 
 class BanList(object):
@@ -639,7 +639,7 @@ class BanList(object):
 
     def add_ban(self, server, channel, banmask, hostmask):
         ban = BanObject(banmask, hostmask, int(time.time()))
-        debug("adding ban: %s" %ban)
+        #debug("adding ban: %s" %ban)
         key = (server, channel)
         if key in self.bans:
             self.bans[key][banmask] = ban
@@ -655,7 +655,7 @@ class BanList(object):
             return
         bans = self.bans[key]
         if banmask in bans:
-            debug("removing ban: %s" %banmask)
+            #debug("removing ban: %s" %banmask)
             del bans[banmask]
 
     def hostmask_match(self, server, channel, hostmask):
@@ -668,7 +668,8 @@ class BanList(object):
                 elif hostmask_pattern_match(ban.banmask, hostmask):
                     ban_list.append(ban)
                 else:
-                    debug("not match: '%s' '%s'" %(hostmask, ban.banmask))
+                    pass
+                    #debug("not match: '%s' '%s'" %(hostmask, ban.banmask))
             return ban_list
         except KeyError:
             return []
@@ -868,7 +869,7 @@ class UnBan(Ban):
                 hostmask = self.get_host(arg)
                 bans = self.search_bans(hostmask)
                 if bans:
-                    debug('found %s' %(bans, ))
+                    #debug('found %s' %(bans, ))
                     banmasks.extend([ban.banmask for ban in bans])
         if banmasks:
             self.remove_ban(*banmasks)
@@ -895,7 +896,7 @@ class Mute(Ban):
                 if self.get_config_boolean('enable_mute'):
                     return mute_function(self, *args, **kwargs)
                 else:
-                    debug('Mute is disabled, falling back to ban')
+                    #debug('Mute is disabled, falling back to ban')
                     ban_function = getattr(Ban, function_name)
                     return ban_function(self, *args, **kwargs)
             return new_method
