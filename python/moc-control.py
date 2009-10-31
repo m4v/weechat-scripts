@@ -20,6 +20,15 @@
 #
 # History:
 #
+# 2009-10-26, Benjamin Neff <info@benjaminneff.ch>:
+#     version 1.7.3: - Bugfix ( "/me" --> "output_nothing" ) 2
+# 2009-10-25, Benjamin Neff <info@benjaminneff.ch>:
+#     version 1.7.2: - Fix if moc isn't running
+# 2009-10-24, Benjamin Neff <info@benjaminneff.ch>:
+#     version 1.7.1: - Bugfix ( "/me" --> "output_nothing" )
+# 2009-10-16, Benjamin Neff <info@benjaminneff.ch>:
+#     version 1.7: - AvgBitrate bug
+#                  - format Time
 # 2009-09-15, Benjamin Neff <info@benjaminneff.ch>:
 #     version 1.6: - bugfixing ;-)
 #                  - hook_config
@@ -30,7 +39,7 @@
 
 SCRIPT_NAME    = "moc-control"
 SCRIPT_AUTHOR  = "SuperTux88 (Benjamin Neff) <info@benjaminneff.ch>"
-SCRIPT_VERSION = "1.6"
+SCRIPT_VERSION = "1.7.3"
 SCRIPT_LICENSE = "GPL2"
 SCRIPT_DESC    = "moc control and now playing script for Weechat"
 
@@ -58,9 +67,10 @@ except ImportError, message:
 infobar        = {}
 output         = {}
 
-STATUS_PLAYING = 'PLAY'
-STATUS_PAUSED  = 'PAUSE'
-STATUS_STOPPED = 'STOP'
+STATUS_NOT_RUNNING = 'NOT_RUNNING'
+STATUS_PLAYING     = 'PLAY'
+STATUS_PAUSED      = 'PAUSE'
+STATUS_STOPPED     = 'STOP'
 
 def load_settings(data, option, value):
     """load all settings"""
@@ -70,13 +80,15 @@ def load_settings(data, option, value):
     output['format']   = _load_setting('output_format', '/me is listening to %C04%title%%C %artist%%album%::: %C07%file%%C ::: %cTime%/%tTime% @ %bitrate%')
     output['artist']   = _load_setting('output_format_artist', '- %C03%artist%%C ')
     output['album']    = _load_setting('output_format_album', '(%C12%album%%C) ')
-    output['nothing']  = _load_setting('output_nothing', 'is listening to nothing')
+    output['nothing']  = _load_setting('output_nothing', '/me is listening to nothing')
 
     #update config for 1.6 (i|o|ot -> +/me)
     if weechat.config_is_set_plugin('output_type'):
         if weechat.config_get_plugin('output_type') == 'ot':
             weechat.config_set_plugin('output_format', "/me " + output['format'])
+            weechat.config_set_plugin('output_nothing', "/me " + output['nothing'])
             output['format'] = "/me " + output['format']
+            output['nothing'] = "/me " + output['nothing']
         weechat.config_unset_plugin('output_type')
 
     return weechat.WEECHAT_RC_OK
@@ -174,6 +186,8 @@ def moc_command(data, buffer, args):
 
 def moc_infobar_update(data, buffer, args):
     """Callback for the bar item"""
+    if _get_status() == STATUS_NOT_RUNNING:
+        return 'moc is not running'
     if _get_status() == STATUS_STOPPED:
         return 'moc is not currently playing'
     else:
@@ -200,7 +214,8 @@ def moc_now_playing(buffer):
     """print now playing"""
     format = ''
 
-    if _get_status() == STATUS_STOPPED:
+    status = _get_status()
+    if status == STATUS_STOPPED or status == STATUS_NOT_RUNNING:
         format = output['nothing']
     else:
         song = _get_song_info()
@@ -249,8 +264,8 @@ def _format_np(np, song, npType):
 def _get_song_info():
     """Get the song information from moc"""
     song = {}
-    song['TotalTime'] = '?:??'
     song['TotalSec'] = '??'
+    song['AvgBitrate'] = '???Kbps'
 
     info = _execute_command('mocp -i')
     for line in info.split('\n'):
@@ -265,7 +280,33 @@ def _get_song_info():
     if song['File'].find("://") < 0:
         song['File'] = os.path.basename(song['File'])
 
+    if song['TotalSec'] == '??':
+        song['TotalTime'] = '?:??'
+    else:
+        if song['TotalTime'].find("m") > 0:
+            song['TotalTime'] = _format_seconds(song['TotalSec'])
+
+    if song['CurrentTime'].find("m") > 0:
+        song['CurrentTime'] = _format_seconds(song['CurrentSec'])
+
     return song
+
+def _format_seconds(s):
+    """return the formated time"""
+    s = int(s)
+    temp = float()
+    temp = float(s) / (60 * 60 * 24)
+    d = int(temp)
+    temp = (temp - d) * 24
+    h = int(temp)
+    temp = (temp - h) * 60
+    m = int(temp)
+    temp = (temp - m) * 60
+    sec = temp
+    if d > 0:
+        return "%id %i:%02i:%02i" % (d, h, m, sec)
+    else:
+        return "%i:%02i:%02i" % (h, m, sec)
 
 def _get_status():
     """return the Status of moc"""
@@ -277,7 +318,10 @@ def _execute_command(cmd):
     proc = subprocess.Popen(cmd, shell = True, stderr = PIPE, stdout = PIPE, close_fds = True)
     error = proc.stderr.read()
     if error != '':
-        weechat.prnt('', error)
+        for line in error.split('\n'):
+            if line == 'FATAL_ERROR: The server is not running':
+                return STATUS_NOT_RUNNING
+            
     output = proc.stdout.read()
     proc.wait()
     return output
