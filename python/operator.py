@@ -916,7 +916,7 @@ def merge_bans_conf_cb(data, config, value):
         cmd_ban    = MergedBan('oban', 'cmd_ban')
         cmd_unban  = MergedUnBan('ounban', 'cmd_unban')
     else:
-        cmd_ban    = Ban('okick', 'cmd_kick')
+        cmd_ban    = Ban('oban', 'cmd_ban')
         cmd_unban  = UnBan('ounban', 'cmd_unban')
     return WEECHAT_RC_OK
 
@@ -949,22 +949,22 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
         if not weechat.config_is_set_plugin(opt):
                 weechat.config_set_plugin(opt, val)
 
-    # hook our commands
-    cmd_op   = Op('oop', 'cmd_op')
-    cmd_deop = Deop('odeop', 'cmd_deop')
-
+    # hook /oop /odeop
+    cmd_op         = Op('oop', 'cmd_op')
+    cmd_deop       = Deop('odeop', 'cmd_deop')
+    # hook /okick /okban
     if get_config_boolean('enable_multiple_kick'):
-        cmd_kick = MultiKick('okick', 'cmd_kick')
-        cmd_kban = MultiKickBan('okban', 'cmd_kban')
+        cmd_kick   = MultiKick('okick', 'cmd_kick')
+        cmd_kban   = MultiKickBan('okban', 'cmd_kban')
     else:
-        cmd_kick = Kick('okick', 'cmd_kick')
-        cmd_kban = KickBan('okban', 'cmd_kban')
-
+        cmd_kick   = Kick('okick', 'cmd_kick')
+        cmd_kban   = KickBan('okban', 'cmd_kban')
+    # hook /oban /ounban
     if get_config_boolean('merge_bans'):
-        cmd_ban = MergedBan('oban', 'cmd_ban')
+        cmd_ban    = MergedBan('oban', 'cmd_ban')
         cmd_unban  = MergedUnBan('ounban', 'cmd_unban')
     else:
-        cmd_ban = Ban('oban', 'cmd_ban')
+        cmd_ban    = Ban('oban', 'cmd_ban')
         cmd_unban  = UnBan('ounban', 'cmd_unban')
 
     if get_config_boolean('invert_kickban_order'):
