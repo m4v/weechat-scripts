@@ -398,9 +398,10 @@ class CommandQueue(object):
                         str(self.wait)))
 
 
-    def queue(self, cmd, type='Normal', **kwargs):
+    def queue(self, cmd, type='Normal', wait=1, **kwargs):
+        debug('queue: wait %s' %wait)
         pack = getattr(self, type)(cmd, wait=self.wait, **kwargs)
-        self.wait += 1
+        self.wait += wait
         debug('queue: %s' %pack)
         self.commands.append(pack)
 
@@ -608,9 +609,9 @@ class Kick(CommandNeedsOp):
             reason = self.get_config('kick_reason')
         self.kick(nick, reason)
 
-    def kick(self, nick, reason):
+    def kick(self, nick, reason, **kwargs):
         cmd = '/kick %s %s' %(nick, reason)
-        self.queue(cmd)
+        self.queue(cmd, **kwargs)
 
 
 class MultiKick(Kick):
@@ -706,9 +707,9 @@ class Ban(CommandNeedsOp):
         if banmasks:
             self.ban(*banmasks)
 
-    def ban(self, *args):
+    def ban(self, *args, **kwargs):
         cmd = '/ban %s' %' '.join(args)
-        self.queue(cmd)
+        self.queue(cmd, **kwargs)
 
 # FIXME really not very usefull
 class UnBan(Ban):
@@ -748,10 +749,10 @@ class KickBan(Ban, Kick):
         if hostmask:
             banmask = self.make_banmask(hostmask)
             if self.invert:
-                self.kick(nick, reason)
+                self.kick(nick, reason, wait=0)
                 self.ban(banmask)
             else:
-                self.ban(banmask)
+                self.ban(banmask, wait=0)
                 self.kick(nick, reason)
 
 
