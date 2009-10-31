@@ -872,6 +872,36 @@ class UnBan(Ban):
         self.queue(cmd)
 
 
+class Mute(Ban):
+    help = ("Mute users. Request operator status if needed.",
+            Ban.help[1],
+            "Use /ounban <nick> for remove the mute.")
+    # I need a way for disable mute per network, since networks that not recognise /mode +q will do
+    # nasty stuff with the channel modes, but I can't do it in the Ban class because then KickBan
+    # will mute instead of banning, hence this decorator
+    def ban_fallback(function_name):
+        def decorator(mute_function):
+            def new_method(self, *args, **kwargs):
+                if self.get_config_boolean('enable_mute'):
+                    return mute_function(self, *args, **kwargs)
+                else:
+                    debug('Mute is disabled, falling back to ban')
+                    ban_function = getattr(Ban, function_name)
+                    return ban_function(self, *args, **kwargs)
+            return new_method
+        return decorator
+
+    @ban_fallback('add_ban')
+    def add_ban(self, banmask, hostmask=None):
+        # add '%' to banmask so /ounban can remove it
+        operator_banlist.add_ban(self.server, self.channel, '%' + banmask, hostmask)
+
+    @ban_fallback('ban')
+    def ban(self, *banmask, **kwargs):
+        cmd = '/mode +%s %s' %('q'*len(banmask), ' '.join(banmask))
+        self.queue(cmd, **kwargs)
+
+
 class MergedBan(Ban):
     unban = False
     def ban(self, *args):
@@ -1000,6 +1030,7 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
             'kick_reason': 'bye.',
             'enable_multiple_kick': 'off',
             'merge_bans': 'off',
+            'enable_mute': 'off',
             'invert_kickban_order': 'off'}
 
     for opt, val in settings.iteritems():
@@ -1023,6 +1054,8 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
     else:
         cmd_ban    = Ban('oban', 'cmd_ban')
         cmd_unban  = UnBan('ounban', 'cmd_unban')
+
+    cmd_mute = Mute('omute', 'cmd_mute')
 
     if get_config_boolean('invert_kickban_order'):
         cmd_kban.invert = True
