@@ -701,7 +701,10 @@ class Kick(CommandNeedsOp):
         self.kick(nick, reason)
 
     def kick(self, nick, reason, **kwargs):
-        cmd = '/kick %s %s' %(nick, reason)
+        if self.get_config_boolean('remove_over_kick'):
+            cmd = '/quote remove %s %s :%s' %(self.channel, nick, reason)
+        else:
+            cmd = '/kick %s %s' %(nick, reason)
         self.queue(cmd, **kwargs)
 
 
@@ -993,6 +996,7 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
             'deop_after_use': 'on',
             'deop_delay': '180',
             'default_banmask': 'host',
+            'remove_over_kick': 'off',
             'kick_reason': 'bye.',
             'enable_multiple_kick': 'off',
             'merge_bans': 'off',
