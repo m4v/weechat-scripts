@@ -23,11 +23,12 @@
 #
 #
 #   Commands:
-#   * /oop  : Request op
-#   * /odeop: Drops op
-#   * /okick: Kicks user (or users)
-#   * /oban : Apply bans
-#   * /okban: Kicks and bans user (or users)
+#   * /oop   : Request op
+#   * /odeop : Drops op
+#   * /okick : Kicks user (or users)
+#   * /oban  : Apply bans
+#   * /ounban: Remove bans
+#   * /okban : Kicks and bans user (or users)
 #
 #
 #   Settings:
@@ -86,8 +87,8 @@
 #     This config is global and can't be defined per server or channel.
 #
 #   * plugins.var.python.operator.merge_bans:
-#     Only if you want to reduce flooding when applying several bans and
-#     if the IRC server supports it. Every 4 bans will be merged in a
+#     Only if you want to reduce flooding when applying (or removing) several bans and
+#     _if_ the IRC server supports it. Every 4 bans will be merged in a
 #     single command. Valid values 'on', 'off'
 #
 #     This config is global and can't be defined per server or channel.
@@ -100,7 +101,6 @@
 #
 #
 #  TODO
-#  * unban command (!)
 #  * implement freenode's remove and mute commands (!)
 #  * ban expire time
 #  * add completions
