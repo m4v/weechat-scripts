@@ -191,6 +191,7 @@ def get_config_banmask(config='default_banmask', get_function=None):
             error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
             error("'%s' is an invalid value, allowed: %s." %(value, ', '.join(valid_banmask)))
             return default
+    debug("default banmask: %s" %values)
     return values
 
 
@@ -679,7 +680,7 @@ class Ban(CommandNeedsOp):
             elif k in ('-n', '--nick'):
                 self.banmask.append('nick')
             elif k in ('-e', '--exact'):
-                self.banmask = ['nick', 'user', 'host']
+                self.banmask = ['exact']
                 break
         if not self.banmask:
             self.banmask = self.get_default_banmask()
@@ -689,9 +690,9 @@ class Ban(CommandNeedsOp):
         return get_config_banmask(get_function=self.get_config)
 
     def make_banmask(self, hostmask):
-        if not self.banmask:
-            # FIXME this will not be safe with MergedBan
-            return hostmask[:hostmask.find('!')]
+        assert self.banmask # really, if there isn't any banmask by now there's something wrong
+        if 'exact' in self.banmask:
+            return hostmask
         nick = user = host = '*'
         if 'nick' in self.banmask:
             nick = hostmask[:hostmask.find('!')]
