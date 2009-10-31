@@ -135,7 +135,7 @@ except ImportError:
     print "Get WeeChat now at: http://weechat.flashtux.org/"
     import_ok = False
 
-import getopt
+import getopt, time, fnmatch
 
 ### messages
 def debug(s, prefix='', buffer=''):
@@ -205,6 +205,10 @@ def is_hostmask(s):
     else:
         return False
 
+def hostmask_pattern_match(pattern, hostmask):
+    # FIXME fnmatch is not a good option for hostmaks matching
+    # I should replace it with a regexp, but I'm lazy now
+    return fnmatch.fnmatch(hostmask, pattern)
 
 ### WeeChat Classes
 class Infolist(object):
@@ -527,6 +531,9 @@ class CommandOperator(Command):
     def queue(self, cmd, **kwargs):
         weechat_queue.queue(cmd, buffer=self.buffer, **kwargs)
 
+    def queue_clear(self):
+        weechat_queue.clear()
+
     def get_op(self):
         op = self.is_op()
         if op is False:
@@ -583,6 +590,58 @@ def deop_callback(buffer, count):
     cmd_deop('', buffer, '')
     del deop_hook[buffer]
     return WEECHAT_RC_OK
+
+class BanObject(object):
+    def __init__(self, banmask, hostmask, time):
+        self.banmask = banmask
+        self.hostmask = hostmask
+        self.time = time
+
+    def __str__(self):
+        return "<BanObject(%s, %s, %s)>" %(self.banmask, self.hostmask, self.time)
+
+
+class BanList(object):
+    """Keeps a list of our bans for quick look up."""
+    bans = {}
+    def add_ban(self, server, channel, banmask, hostmask):
+        ban = BanObject(banmask, hostmask, int(time.time()))
+        debug("adding ban: %s" %ban)
+        key = (server, channel)
+        if key in self.bans:
+            self.bans[key][banmask] = ban
+        else:
+            self.bans[key] = { banmask:ban }
+
+    def remove_ban(self, server, channel, banmask=None, hostmask=None):
+        key = (server, channel)
+        if key not in self.bans:
+            return
+        if banmask is None:
+            del self.bans[key]
+            return
+        bans = self.bans[key]
+        if banmask in bans:
+            debug("removing ban: %s" %banmask)
+            del bans[banmask]
+
+    def hostmask_match(self, server, channel, hostmask):
+        try:
+            bans = self.bans[(server, channel)]
+            ban_list = []
+            for ban in bans.itervalues():
+                if ban.hostmask == hostmask:
+                    ban_list.append(ban)
+                elif hostmask_pattern_match(ban.banmask, hostmask):
+                    ban_list.append(ban)
+                else:
+                    debug("not match: '%s' '%s'" %(hostmask, ban.banmask))
+            return ban_list
+        except KeyError:
+            return []
+
+
+operator_banlist = BanList()
 
 ### Operator Commands ###
 class Op(CommandOperator):
@@ -703,32 +762,64 @@ class Ban(CommandNeedsOp):
         banmask = '%s!%s@%s' %(nick, user, host)
         return banmask
 
+    def add_ban(self, banmask, hostmask=None):
+        operator_banlist.add_ban(self.server, self.channel, banmask, hostmask)
+
     def _cmd(self):
         args = self.args.split()
         banmasks = []
         for arg in args:
             mask = arg
+            hostmask = None
             if not is_hostmask(arg):
                 hostmask = self.get_host(arg)
                 if hostmask:
                     mask = self.make_banmask(hostmask)
+            self.add_ban(mask, hostmask)
             banmasks.append(mask)
         if banmasks:
             self.ban(*banmasks)
 
-    def ban(self, *args, **kwargs):
-        cmd = '/ban %s' %' '.join(args)
+    def ban(self, *banmask, **kwargs):
+        cmd = '/ban %s' %' '.join(banmask)
         self.queue(cmd, **kwargs)
 
 
-# FIXME really not very useful yet
 class UnBan(Ban):
+    help = ("Unbans users. Request operator status if needed.",
+            "<nick|hostmask> [<nick|hostmask> ..]",
+            """
+            Note: If <nick> used, /ounban will only remove the bans known by the
+                  script, those are, the bans applied by it.""")
+
+    def search_bans(self, hostmask):
+        return operator_banlist.hostmask_match(self.server, self.channel, hostmask)
+
+    def remove_ban(self, *banmask):
+        for mask in banmask:
+            operator_banlist.remove_ban(self.server, self.channel, mask)
+
     def _cmd(self):
         args = self.args.split()
-        self.unban(*args)
+        banmasks = []
+        for arg in args:
+            if is_hostmask(arg):
+                banmasks.append(arg)
+            else:
+                hostmask = self.get_host(arg)
+                bans = self.search_bans(hostmask)
+                if bans:
+                    debug('found %s' %(bans, ))
+                    banmasks.extend([ban.banmask for ban in bans])
+        if banmasks:
+            self.remove_ban(*banmasks)
+            self.unban(*banmasks)
+        else:
+            say("Sorry, found nothing to unban.", buffer=self.buffer)
+            self.queue_clear()
 
-    def unban(self, *args):
-        cmd = '/unban %s' %' '.join(args)
+    def unban(self, *banmask):
+        cmd = '/unban %s' %' '.join(banmask)
         self.queue(cmd)
 
 
@@ -742,6 +833,12 @@ class MergedBan(Ban):
             hosts = ' '.join(slice)
             cmd = '/mode %s%s %s' %(c, 'b'*len(slice), hosts)
             self.queue(cmd)
+
+
+class MergedUnBan(MergedBan, UnBan):
+    unban = True
+    def unban(self, *banmask):
+        self.ban(*banmask)
 
 
 class KickBan(Ban, Kick):
@@ -810,12 +907,15 @@ def enable_multiple_kick_conf_cb(data, config, value):
     return WEECHAT_RC_OK
 
 def merge_bans_conf_cb(data, config, value):
-    global cmd_ban
+    global cmd_ban, cmd_unban
     cmd_ban.unhook()
+    cmd_unban.unhook()
     if boolDict[value]:
-        cmd_ban  = MergedBan('oban', 'cmd_ban')
+        cmd_ban    = MergedBan('oban', 'cmd_ban')
+        cmd_unban  = MergedUnBan('ounban', 'cmd_unban')
     else:
-        cmd_ban = Ban('okick', 'cmd_kick')
+        cmd_ban    = Ban('okick', 'cmd_kick')
+        cmd_unban  = UnBan('ounban', 'cmd_unban')
     return WEECHAT_RC_OK
 
 def invert_kickban_order_conf_cb(data, config, value):
@@ -860,11 +960,10 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
 
     if get_config_boolean('merge_bans'):
         cmd_ban = MergedBan('oban', 'cmd_ban')
+        cmd_unban  = MergedUnBan('ounban', 'cmd_unban')
     else:
         cmd_ban = Ban('oban', 'cmd_ban')
-
-    # FIXME unban cmd disabled as is not very useful atm
-    #cmd_unban  = UnBan('ounban', 'cmd_unban')
+        cmd_unban  = UnBan('ounban', 'cmd_unban')
 
     if get_config_boolean('invert_kickban_order'):
         cmd_kban.invert = True
