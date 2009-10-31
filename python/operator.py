@@ -28,6 +28,7 @@
 #   * /okick : Kicks user (or users)
 #   * /oban  : Apply bans
 #   * /ounban: Remove bans
+#   * /omute : Silences user
 #   * /okban : Kicks and bans user (or users)
 #
 #
@@ -76,6 +77,16 @@
 #   * plugins.var.python.operator.kick_reason:
 #     Default kick reason if none was given in the command.
 #
+#   * plugins.var.python.operator.remove_over_kick
+#     If enabled, it will use /quote remove command instead of /kick, enable it only in
+#     networks that support it, like freenode.
+#     Valid values 'on', 'off'
+#
+#   * plugins.var.python.operator.enable_mute
+#     If disabled, /omute will ban instead of silence a user, this is for networks that don't
+#     support /mode +q
+#     Valid values 'on', 'off'
+#
 #   * plugins.var.python.operator.enable_multiple_kick:
 #     Enables kicking multiple users with /okick command
 #     Be careful with this as you can kick somebody by accident if
@@ -102,7 +113,6 @@
 #
 #  TODO
 #  * make ounban more useful
-#  * implement freenode's remove and mute commands (!)
 #  * ban expire time
 #  * add completions
 #  * command for switch channel moderation on/off
@@ -741,7 +751,7 @@ class MultiKick(Kick):
 
 class Ban(CommandNeedsOp):
     help = ("Bans users. Request operator status if needed.",
-            "<nick> [<nick> ..] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]",
+            "<nick|banmask> [<nick|banmask> ..] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]",
             """
             Banmask options:
                 -h --host: Use *!*@hostname banmask
@@ -1054,7 +1064,7 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
     else:
         cmd_ban    = Ban('oban', 'cmd_ban')
         cmd_unban  = UnBan('ounban', 'cmd_unban')
-
+    # hook /omute
     cmd_mute = Mute('omute', 'cmd_mute')
 
     if get_config_boolean('invert_kickban_order'):
