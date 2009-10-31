@@ -769,8 +769,8 @@ class Ban(CommandNeedsOp):
     banmask = []
     def parse_args(self, *args):
         CommandNeedsOp.parse_args(self, *args)
-        if self.args == 'list':
-            return
+        #if self.args == 'list':
+        #    return
         args = self.args.split()
         (opts, args) = getopt.gnu_getopt(args, 'hune', ('host', 'user', 'nick', 'exact'))
         self.banmask = []
@@ -819,10 +819,10 @@ class Ban(CommandNeedsOp):
                 say(ban)
 
     def _cmd(self):
-        if self.args == 'list':
-            self.queue_clear()
-            self.show_ban_list()
-            return
+        #if self.args == 'list':
+        #    self.queue_clear()
+        #    self.show_ban_list()
+        #    return
         args = self.args.split()
         banmasks = []
         for arg in args:
