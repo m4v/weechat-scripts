@@ -98,21 +98,18 @@
 #     This config is global and can't be defined per server or channel
 #
 #
-#  TODO for v1.0
-#  * wait until got op before sending commands
+#  TODO
 #  * implement freenode's remove and mute commands
 #  * unban command
 #  * command for switch channel moderation on/off
 #  * implement ban with channel forward
-#  * Add unittests
-#
-#  TODO for later
 #  * ban expire time
 #  * user tracker (for ban even when they already /part'ed)
 #  * ban by gecos
 #  * bantracker (keeps a record of ban and kicks) (?)
 #  * smart banmask (?)
 #  * multiple-channel ban (?)
+#  * Add unittests (?)
 #
 #
 #   History:
@@ -143,9 +140,9 @@ def debug(s, prefix='', buffer=''):
     """Debug msg"""
     weechat.prnt(buffer, 'debug:\t%s %s' %(prefix, s))
 
-def error(s, prefix='', buffer=''):
+def error(s, prefix=SCRIPT_NAME, buffer=''):
     """Error msg"""
-    weechat.prnt(buffer, '%s%s %s' %(weechat.prefix('error'), prefix, s))
+    weechat.prnt(buffer, '%s%s: %s' %(weechat.prefix('error'), prefix, s))
 
 def say(s, prefix='', buffer=''):
     """Normal msg"""
@@ -327,14 +324,85 @@ class Command(object):
 
 
 ### Script Classes
+class Message(object):
+    """Class that stores the command send to WeeChat in the command queue."""
+    def __init__(self, cmd, buffer='', wait=0):
+        assert cmd
+        self.cmd = cmd
+        self.wait = wait
+        self.buffer = buffer
+
+    def __call__(self):
+        if self.wait:
+            weechat.command(self.buffer, '/wait %s %s' %(self.wait, self.cmd))
+        else:
+            weechat.command(self.buffer, self.cmd)
+        return True
+
+
 class CommandQueue(object):
     """Class that manages and executes the script's commands to WeeChat."""
     commands = []
     wait = 0
-    def queue(self, buffer, cmd, wait=1):
-        cmd = (buffer, cmd, wait)
-        debug('queue cmd:%s' %(cmd, ))
-        self.commands.append(cmd)
+
+    class Normal(Message):
+        """Normal message"""
+        def __str__(self):
+            return "<Normal(%s)>" \
+                    %', '.join((self.cmd, self.buffer, str(self.wait)))
+
+
+    class WaitForOp(Message):
+        """This message interrupts the command queue until user is op'ed."""
+        def __init__(self, cmd, server='*', channel='', nick='', **kwargs):
+            Message.__init__(self, cmd, **kwargs)
+            self.server = server
+            self.channel = channel
+            self.nick = nick
+
+        def __call__(self):
+            """Interrupt queue and wait until our user gets op."""
+            global weechat_queue_continue, weechat_queue_timeout
+            hook_signal = weechat.hook_signal('%s,irc_in2_MODE' %self.server, 'weechat_queue_continue', '')
+            hook_timeout = weechat.hook_timer(10000, 0, 1, 'weechat_queue_timeout', '')
+
+            def continue_callback(data, signal, signal_data):
+                #debug('SIGNAL: %s' %signal_data)
+                s = signal_data.split(' ', 2)[2].strip()
+                if s == '%s +o %s' %(self.channel, self.nick):
+                    # we got op'ed
+                    weechat.unhook(hook_signal)
+                    weechat.unhook(hook_timeout)
+                    weechat_queue.run()
+                    weechat_queue_timeout = None
+                    weechat_queue_continue = None
+                return WEECHAT_RC_OK
+
+            def timeout_callback(data, count):
+                error("Couldn't get op in '%s.%s', purging command queue..." %(self.server,
+                    self.channel))
+                weechat.unhook(hook_signal)
+                weechat_queue.clear()
+                weechat_queue_continue = None
+                weechat_queue_timeout = None
+                return WEECHAT_RC_OK
+
+            Message.__call__(self)
+            weechat_queue_continue = continue_callback
+            weechat_queue_timeout = timeout_callback
+            return False
+
+        def __str__(self):
+            return "<WaitForOp(%s)>" \
+                    %', '.join((self.cmd, self.buffer, self.server, self.channel, self.nick,
+                        str(self.wait)))
+
+
+    def queue(self, cmd, type='Normal', **kwargs):
+        pack = getattr(self, type)(cmd, wait=self.wait, **kwargs)
+        self.wait += 1
+        debug('queue: %s' %pack)
+        self.commands.append(pack)
 
     # it happened once and it wasn't pretty
     def safe_check(f):
@@ -342,22 +410,20 @@ class CommandQueue(object):
             if len(self.commands) > 20:
                 error("Limit of 20 commands in queue reached, must be a bug!")
                 error("last 10 commnads:")
-                for cmd in self.commands[-10:]:
-                    error(str(cmd))
+                for pack in self.commands[-10:]:
+                    error(pack)
                 self.clear()
             else:
                 f(self)
         return abort_if_too_many_commands
 
-    @safe_check
+    #@safe_check
     def run(self):
-        for buffer, cmd, wait in self.commands:
-            debug('running cmd:%s wait:%s' %(cmd, self.wait))
-            if self.wait:
-                weechat.command(buffer, '/wait %s %s' %(self.wait, cmd))
-            else:
-                weechat.command(buffer, cmd)
-            self.wait += wait
+        while self.commands:
+            pack = self.commands.pop(0)
+            debug('running: %s' %pack)
+            if not pack():
+                return
         self.clear()
 
     def clear(self):
@@ -365,7 +431,9 @@ class CommandQueue(object):
         self.wait = 0
 
 
-weechat_commands = CommandQueue()
+weechat_queue = CommandQueue()
+weechat_queue_continue = None
+weechat_queue_timeout = None
 
 class CommandOperator(Command):
     """Base class for our commands, with config and general functions."""
@@ -375,7 +443,7 @@ class CommandOperator(Command):
         debug("command __call__ args: %s" %(args,))
         self.parse_args(*args)
         self.cmd()
-        weechat_commands.run()
+        weechat_queue.run()
         self.infolist = None
         return WEECHAT_RC_OK
 
@@ -446,8 +514,8 @@ class CommandOperator(Command):
             if nicks['name'] == name:
                 return '%s!%s' % (name, nicks['host'])
 
-    def queue(self, cmd, wait=1):
-        weechat_commands.queue(self.buffer, cmd, wait)
+    def queue(self, cmd, **kwargs):
+        weechat_queue.queue(cmd, buffer=self.buffer, **kwargs)
 
     def get_op(self):
         op = self.is_op()
@@ -455,7 +523,8 @@ class CommandOperator(Command):
             value = self.get_config('op_cmd')
             if not value:
                 raise Exception, "No command defined for get op."
-            self.queue(self.replace_vars(value))
+            self.queue(self.replace_vars(value), type='WaitForOp', server=self.server,
+                    channel=self.channel, nick=self.nick)
         return op
 
     def drop_op(self):
@@ -467,7 +536,7 @@ class CommandOperator(Command):
             self.queue(self.replace_vars(value))
 
 
-deop_hook = ''
+deop_hook = None
 deop_callback = None
 manual_op = False
 class CommandNeedsOp(CommandOperator):
@@ -492,7 +561,7 @@ class CommandNeedsOp(CommandOperator):
 
                 def callback(data, count):
                     cmd_deop('', self.buffer, self.args)
-                    deop_hook = ''
+                    deop_hook = None
                     return WEECHAT_RC_OK
 
                 deop_callback = callback
@@ -507,7 +576,7 @@ class CommandNeedsOp(CommandOperator):
 
 ### Operator Commands ###
 class Op(CommandOperator):
-    help = ("Asks operator status.", "",
+    help = ("Request operator status.", "",
             """
             The command used for ask op is defined globally in plugins.var.python.%(name)s.op_cmd,
             it can be defined per server or per channel in:
