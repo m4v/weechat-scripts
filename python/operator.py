@@ -725,10 +725,14 @@ class MultiKick(Kick):
             nicks.append(args.pop(0))
         #debug('multikick: %s, %s' %(nicks, args))
         reason = ' '.join(args).lstrip(':')
-        if not reason:
-            reason = self.get_config('kick_reason')
-        for nick in nicks:
-            self.kick(nick, reason)
+        if nicks:
+            if not reason:
+                reason = self.get_config('kick_reason')
+            for nick in nicks:
+                self.kick(nick, reason)
+        else:
+            say("Sorry, found nothing to kick.", buffer=self.buffer)
+            self.queue_clear()
 
 
 class Ban(CommandNeedsOp):
@@ -817,6 +821,9 @@ class Ban(CommandNeedsOp):
             banmasks.append(mask)
         if banmasks:
             self.ban(*banmasks)
+        else:
+            say("Sorry, found nothing to ban.", buffer=self.buffer)
+            self.queue_clear()
 
     def ban(self, *banmask, **kwargs):
         cmd = '/ban %s' %' '.join(banmask)
@@ -891,9 +898,9 @@ class KickBan(Ban, Kick):
         else:
             nick, reason = self.args, ''
         hostmask = self.get_host(nick)
-        if not reason:
-            reason = self.get_config('kick_reason')
         if hostmask:
+            if not reason:
+                reason = self.get_config('kick_reason')
             banmask = self.make_banmask(hostmask)
             self.add_ban(banmask, hostmask)
             if not self.invert:
@@ -902,6 +909,9 @@ class KickBan(Ban, Kick):
             else:
                 self.ban(banmask, wait=0)
                 self.kick(nick, reason)
+        else:
+            say("Sorry, found nothing to kickban.", buffer=self.buffer)
+            self.queue_clear()
 
 
 class MultiKickBan(KickBan):
@@ -918,19 +928,23 @@ class MultiKickBan(KickBan):
                 break
             nicks.append(args.pop(0))
         reason = ' '.join(args).lstrip(':')
-        if not reason:
-            reason = self.get_config('kick_reason')
-        for nick in nicks:
-            hostmask = self.get_host(nick)
-            if hostmask:
-                banmask = self.make_banmask(hostmask)
-                self.add_ban(banmask, hostmask)
-                if not self.invert:
-                    self.kick(nick, reason, wait=0)
-                    self.ban(banmask)
-                else:
-                    self.ban(banmask, wait=0)
-                    self.kick(nick, reason)
+        if nicks:
+            if not reason:
+                reason = self.get_config('kick_reason')
+            for nick in nicks:
+                hostmask = self.get_host(nick)
+                if hostmask:
+                    banmask = self.make_banmask(hostmask)
+                    self.add_ban(banmask, hostmask)
+                    if not self.invert:
+                        self.kick(nick, reason, wait=0)
+                        self.ban(banmask)
+                    else:
+                        self.ban(banmask, wait=0)
+                        self.kick(nick, reason)
+        else:
+            say("Sorry, found nothing to kickban.", buffer=self.buffer)
+            self.queue_clear()
 
 
 ### config callbacks ###
