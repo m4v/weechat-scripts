@@ -598,12 +598,18 @@ class BanObject(object):
         self.time = time
 
     def __str__(self):
-        return "<BanObject(%s, %s, %s)>" %(self.banmask, self.hostmask, self.time)
+        #return "<BanObject(%s, %s, %s)>" %(self.banmask, self.hostmask, self.time)
+        return "Banmask:'%s' Hostmask:'%s' Date: %s" %(self.banmask,
+                self.hostmask, time.strftime('%d/%m/%y %H:%M', time.localtime(self.time)))
+                #FIXME date string isn't locale aware!
 
 
 class BanList(object):
     """Keeps a list of our bans for quick look up."""
     bans = {}
+    def __len__(self):
+        return len(self.bans)
+
     def add_ban(self, server, channel, banmask, hostmask):
         ban = BanObject(banmask, hostmask, int(time.time()))
         debug("adding ban: %s" %ban)
@@ -728,6 +734,8 @@ class Ban(CommandNeedsOp):
     banmask = []
     def parse_args(self, *args):
         CommandNeedsOp.parse_args(self, *args)
+        if self.args == 'list':
+            return
         args = self.args.split()
         (opts, args) = getopt.gnu_getopt(args, 'hune', ('host', 'user', 'nick', 'exact'))
         self.banmask = []
@@ -765,7 +773,21 @@ class Ban(CommandNeedsOp):
     def add_ban(self, banmask, hostmask=None):
         operator_banlist.add_ban(self.server, self.channel, banmask, hostmask)
 
+    def show_ban_list(self):
+        if not operator_banlist:
+            say("No bans known.")
+            return
+        # XXX should add methods in BanList for this
+        for server, channel in operator_banlist.bans.iterkeys():
+            say('%s %s' %(server, channel))
+            for ban in operator_banlist.bans[server, channel].itervalues():
+                say(ban)
+
     def _cmd(self):
+        if self.args == 'list':
+            self.queue_clear()
+            self.show_ban_list()
+            return
         args = self.args.split()
         banmasks = []
         for arg in args:
