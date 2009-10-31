@@ -101,6 +101,7 @@
 #
 #
 #  TODO
+#  * make ounban more useful
 #  * implement freenode's remove and mute commands (!)
 #  * ban expire time
 #  * add completions
@@ -860,7 +861,7 @@ class UnBan(Ban):
             self.remove_ban(*banmasks)
             self.unban(*banmasks)
         else:
-            say("Sorry, found nothing to unban.", buffer=self.buffer)
+            say("Sorry, found nothing to unban. Write the exact banmask.", buffer=self.buffer)
             self.queue_clear()
 
     def unban(self, *banmask):
