@@ -556,6 +556,22 @@ class CommandOperator(Command):
 manual_op = False
 class CommandNeedsOp(CommandOperator):
     """Base class for all the commands that requires op status for work."""
+    def __return_if_not_args(f):
+        """Commands derived from this class needs arguments. Otherwise they will just pointless op
+        and deop."""
+        def cmd(self, *args):
+            if not self.args:
+                return
+            return f(self, *args)
+        return cmd
+
+    def parse_args(self, data, buffer, args):
+        """Show help if nothing to parse."""
+        CommandOperator.parse_args(self, data, buffer, args)
+        if not self.args:
+            weechat.command('', '/help %s' %self.command)
+
+    @__return_if_not_args
     def cmd(self, *args):
         op = self.get_op()
         global manual_op
@@ -960,7 +976,7 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
             'op_cmd': '/msg chanserv op $channel $nick',
             'deop_cmd': '/deop',
             'deop_after_use': 'on',
-            'deop_delay': '300',
+            'deop_delay': '180',
             'default_banmask': 'host',
             'kick_reason': 'bye.',
             'enable_multiple_kick': 'off',
