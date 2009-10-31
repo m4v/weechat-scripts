@@ -365,35 +365,20 @@ class CommandQueue(object):
 
         def __call__(self):
             """Interrupt queue and wait until our user gets op."""
-            global weechat_queue_continue, weechat_queue_timeout
-            hook_signal = weechat.hook_signal('%s,irc_in2_MODE' %self.server, 'weechat_queue_continue', '')
-            hook_timeout = weechat.hook_timer(10000, 0, 1, 'weechat_queue_timeout', '')
-
-            def continue_callback(data, signal, signal_data):
-                #debug('SIGNAL: %s' %signal_data)
-                s = signal_data.split(' ', 2)[2].strip()
-                if s == '%s +o %s' %(self.channel, self.nick):
-                    # we got op'ed
-                    debug("We got op")
-                    weechat.unhook(hook_signal)
-                    weechat.unhook(hook_timeout)
-                    weechat_queue.run()
-                    weechat_queue_timeout = None
-                    weechat_queue_continue = None
-                return WEECHAT_RC_OK
-
-            def timeout_callback(data, count):
-                error("Couldn't get op in '%s.%s', purging command queue..." %(self.server,
-                    self.channel))
+            global hook_timeout, hook_signal
+            if hook_timeout:
+                weechat.unhook(hook_timeout)
+            if hook_signal:
                 weechat.unhook(hook_signal)
-                weechat_queue.clear()
-                weechat_queue_continue = None
-                weechat_queue_timeout = None
-                return WEECHAT_RC_OK
+
+            data = 'MODE %s +o %s' %(self.channel, self.nick)
+            hook_signal = weechat.hook_signal('%s,irc_in2_MODE' %self.server,
+                    'queue_continue_cb', data)
+
+            data = '%s.%s' %(self.server, self.channel)
+            hook_timeout = weechat.hook_timer(5000, 0, 1, 'queue_timeout_cb', data)
 
             Message.__call__(self)
-            weechat_queue_continue = continue_callback
-            weechat_queue_timeout = timeout_callback
             return False
 
         def __str__(self):
@@ -426,7 +411,7 @@ class CommandQueue(object):
             debug('running: %s' %pack)
             if not pack():
                 return
-        self.clear()
+        self.wait = 0
 
     def clear(self):
         self.commands = []
@@ -434,8 +419,28 @@ class CommandQueue(object):
 
 
 weechat_queue = CommandQueue()
-weechat_queue_continue = None
-weechat_queue_timeout = None
+hook_signal = hook_timeout = None
+
+def queue_continue_cb(data, signal, signal_data):
+    global hook_timeout, hook_signal
+    signal = signal_data.split(' ', 1)[1].strip()
+    if signal == data:
+        # we got op'ed
+        debug("We got op")
+        weechat.unhook(hook_signal)
+        weechat.unhook(hook_timeout)
+        hook_signal = hook_timeout = None
+        weechat_queue.run()
+    return WEECHAT_RC_OK
+
+def queue_timeout_cb(channel, count):
+    global hook_timeout, hook_signal
+    error("Couldn't get op in '%s', purging command queue..." %channel)
+    weechat.unhook(hook_signal)
+    hook_signal = hook_timeout = None
+    weechat_queue.clear()
+    return WEECHAT_RC_OK
+
 
 class CommandOperator(Command):
     """Base class for our commands, with config and general functions."""
@@ -528,7 +533,7 @@ class CommandOperator(Command):
             if not value:
                 raise Exception, "No command defined for get op."
             self.queue(self.replace_vars(value), type='WaitForOp', server=self.server,
-                    channel=self.channel, nick=self.nick)
+                    channel=self.channel, nick=self.nick, wait=0)
         return op
 
     def drop_op(self):
@@ -540,8 +545,6 @@ class CommandOperator(Command):
             self.queue(self.replace_vars(value))
 
 
-deop_hook = None
-deop_callback = None
 manual_op = False
 class CommandNeedsOp(CommandOperator):
     """Base class for all the commands that requires op status for work."""
@@ -559,17 +562,12 @@ class CommandNeedsOp(CommandOperator):
         if not manual_op and self.get_config_boolean('deop_after_use'):
             delay = self.get_config_int('deop_delay')
             if delay > 0:
-                global deop_hook, deop_callback
-                if deop_hook:
-                    weechat.unhook(deop_hook)
+                buffer = self.buffer
+                global deop_hook
+                if buffer in deop_hook:
+                    weechat.unhook(deop_hook[buffer])
 
-                def callback(data, count):
-                    cmd_deop('', self.buffer, '')
-                    deop_hook = None
-                    return WEECHAT_RC_OK
-
-                deop_callback = callback
-                deop_hook = weechat.hook_timer(delay * 1000, 0, 1, 'deop_callback', '')
+                deop_hook[buffer] = weechat.hook_timer(delay * 1000, 0, 1, 'deop_callback', buffer)
             else:
                 self.drop_op()
 
@@ -577,6 +575,13 @@ class CommandNeedsOp(CommandOperator):
         """Commands in this method will be run while user is with op status."""
         pass
 
+
+deop_hook = {}
+def deop_callback(buffer, count):
+    global deop_hook
+    cmd_deop('', buffer, '')
+    del deop_hook[buffer]
+    return WEECHAT_RC_OK
 
 ### Operator Commands ###
 class Op(CommandOperator):
