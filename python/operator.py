@@ -857,6 +857,7 @@ class KickBan(Ban, Kick):
             reason = self.get_config('kick_reason')
         if hostmask:
             banmask = self.make_banmask(hostmask)
+            self.add_ban(banmask, hostmask)
             if not self.invert:
                 self.kick(nick, reason, wait=0)
                 self.ban(banmask)
@@ -885,6 +886,7 @@ class MultiKickBan(KickBan):
             hostmask = self.get_host(nick)
             if hostmask:
                 banmask = self.make_banmask(hostmask)
+                self.add_ban(banmask, hostmask)
                 if not self.invert:
                     self.kick(nick, reason, wait=0)
                     self.ban(banmask)
