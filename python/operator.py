@@ -22,7 +22,6 @@
 #   Inspired by auto_bleh.pl (irssi) and chanserv.py (xchat) scripts
 #
 #
-#
 #   Commands:
 #   * /oop  : Request op
 #   * /odeop: Drops op
@@ -80,7 +79,7 @@
 #     Enables kicking multiple users with /okick command
 #     Be careful with this as you can kick somebody by accident if
 #     you're not careful when writting the kick reason.
-#   
+#
 #     This also applies to /okban command, multiple kickbans would be posible.
 #     Valid values 'on', 'off'
 #
@@ -101,12 +100,12 @@
 #
 #
 #  TODO
-#  * implement freenode's remove and mute commands (!)
 #  * unban command (!)
-#  * add completions (!)
+#  * implement freenode's remove and mute commands (!)
+#  * ban expire time
+#  * add completions
 #  * command for switch channel moderation on/off
 #  * implement ban with channel forward
-#  * ban expire time
 #  * user tracker (for ban even when they already /part'ed)
 #  * ban by gecos
 #  * bantracker (keeps a record of ban and kicks) (?)
@@ -375,6 +374,7 @@ class CommandQueue(object):
                 s = signal_data.split(' ', 2)[2].strip()
                 if s == '%s +o %s' %(self.channel, self.nick):
                     # we got op'ed
+                    debug("We got op")
                     weechat.unhook(hook_signal)
                     weechat.unhook(hook_timeout)
                     weechat_queue.run()
@@ -403,7 +403,7 @@ class CommandQueue(object):
 
 
     def queue(self, cmd, type='Normal', wait=1, **kwargs):
-        debug('queue: wait %s' %wait)
+        #debug('queue: wait %s' %wait)
         pack = getattr(self, type)(cmd, wait=self.wait, **kwargs)
         self.wait += wait
         debug('queue: %s' %pack)
@@ -413,10 +413,7 @@ class CommandQueue(object):
     def safe_check(f):
         def abort_if_too_many_commands(self):
             if len(self.commands) > 20:
-                error("Limit of 20 commands in queue reached, must be a bug!")
-                error("last 10 commnads:")
-                for pack in self.commands[-10:]:
-                    error(pack)
+                error("Limit of 20 commands in queue reached, aborting.")
                 self.clear()
             else:
                 f(self)
@@ -445,11 +442,12 @@ class CommandOperator(Command):
     infolist = None
     def __call__(self, *args):
         """Called by WeeChat when /command is used."""
-        debug("command __call__ args: %s" %(args,))
+        debug("command __call__ args: %s" %(args, ))
         self.parse_args(*args)  # argument parsing
         self.cmd()              # call our command and queue messages for WeeChat
         weechat_queue.run()     # run queued messages
         self.infolist = None    # free irc_nick infolist
+        debug("exiting __call__")
         return WEECHAT_RC_OK    # make WeeChat happy
 
     def parse_args(self, data, buffer, args):
@@ -566,7 +564,7 @@ class CommandNeedsOp(CommandOperator):
                     weechat.unhook(deop_hook)
 
                 def callback(data, count):
-                    cmd_deop('', self.buffer, self.args)
+                    cmd_deop('', self.buffer, '')
                     deop_hook = None
                     return WEECHAT_RC_OK
 
