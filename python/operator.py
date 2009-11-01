@@ -21,37 +21,48 @@
 #
 #   Inspired by auto_bleh.pl (irssi) and chanserv.py (xchat) scripts
 #
+#   Networks like Freenode and some channels encourage operators to not stay permanently with +o
+#   privileges and only use it when needed. This script works along those lines, requesting op,
+#   kick/ban/etc and deop automatically with a single command.
+#   Still this script is very configurable and its behaviour can be configured in a per server or per
+#   channel basis so it can fit most needs without changing its code.
 #
-#   Commands:
+#   Commands (see detailed help with /help in WeeChat):
 #   * /oop   : Request op
 #   * /odeop : Drops op
 #   * /okick : Kicks user (or users)
 #   * /oban  : Apply bans
 #   * /ounban: Remove bans
-#   * /omute : Silences user
+#   * /omute : Silences user (disabled by default)
 #   * /okban : Kicks and bans user (or users)
 #
 #
 #   Settings:
-#     Most configs (unless noted otherwise) can be defined for a server or a channel in particular
-#     Define 'option' per server with
-#     /set plugins.var.python.operator.'option'.'server_name'
-#     or per channel
-#     /set plugins.var.python.operator.'option'.'server_name'.'#channel_name'
+#   Most configs (unless noted otherwise) can be defined for a server or a channel in particular, so
+#   it is possible to request op in different networks, stay always op'ed in one channel while
+#   auto-deop in another.
 #
-#   * plugins.var.python.operator.op_cmd:
+#   For define the option 'option' in server 'server_name' use:
+#   /set plugins.var.python.operator.option.server_name "value"
+#   For define it in the channel '#channel_name':
+#   /set plugins.var.python.operator.option.server_name.#channel_name "value"
+#
+#   * plugins.var.python.operator.op_command:
 #     Here you define the command the script must run for request op, normally
 #     is a /msg to a bot, like chanserv in freenode or Q in quakenet.
 #     It accepts the special vars $server, $channel and $nick
 #
+#     By default it ask op to chanserv, if your network doesn't use chanserv, then you must change
+#     it.
+#
 #     Examples:
-#     /set plugins.var.python.operator.op_cmd "/msg chanserv op $channel $nick"
+#     /set plugins.var.python.operator.op_command "/msg chanserv op $channel $nick"
 #     (globally for all servers, like freenode and oftc)
-#     /set plugins.var.python.operator.op_cmd.quakenet "/msg q op $channel $nick"
+#     /set plugins.var.python.operator.op_command.quakenet "/msg q op $channel $nick"
 #     (for quakenet only)
 #
-#   * plugins.var.python.operator.deop_cmd:
-#     Same as op_cmd but just deops, really not needed since /deop works anywhere
+#   * plugins.var.python.operator.deop_command:
+#     Same as op_command but for deop, really not needed since /deop works anywhere, but it's there.
 #     It accepts the special vars $server, $channel and $nick
 #
 #   * plugins.var.python.operator.deop_after_use:
@@ -61,11 +72,13 @@
 #
 #   * plugins.var.python.operator.deop_delay:
 #     Time it must pass (without using any commands) before auto-deop, in seconds.
+#     Using zero causes to deop immediately.
 #
 #   * plugins.var.python.operator.default_banmask:
-#     List of keywords separated by comas. Defines default banmask, when using /oban or /okban
-#     You can use several keywords for build a banmask, each keyword defines which part of the
-#     user's hostmask you want to match in the banmask.
+#     List of keywords separated by comas. Defines default banmask, when using /oban, /okban or
+#     /omute
+#     You can use several keywords for build a banmask, each keyword defines how the banmask will be
+#     generated for a given hostmask.
 #     Valid keywords are: nick, user, host, exact
 #
 #     Examples:
@@ -77,48 +90,47 @@
 #   * plugins.var.python.operator.kick_reason:
 #     Default kick reason if none was given in the command.
 #
-#   * plugins.var.python.operator.remove_over_kick
-#     If enabled, it will use /quote remove command instead of /kick, enable it only in
+#   * plugins.var.python.operator.enable_remove:
+#     If enabled, it will use "/quote remove" command instead of /kick, enable it only in
 #     networks that support it, like freenode.
 #     Valid values 'on', 'off'
 #
-#   * plugins.var.python.operator.enable_mute
-#     If disabled, /omute will ban instead of silence a user, this is for networks that don't
-#     support /mode +q
+#   * plugins.var.python.operator.enable_mute:
+#     Mute is disabled by default, this means /omute will ban instead of silence a user, this is
+#     because not all networks support "/mode +q" and it should be enabled only for those that do.
 #     Valid values 'on', 'off'
 #
-#   * plugins.var.python.operator.enable_multiple_kick:
-#     Enables kicking multiple users with /okick command
+#
+#   The following configs are global and can't be defined per server or channel.
+#
+#   * plugins.var.python.operator.enable_multi_kick:
+#     Enables kicking multiple users with /okick command.
 #     Be careful with this as you can kick somebody by accident if
 #     you're not careful when writting the kick reason.
 #
-#     This also applies to /okban command, multiple kickbans would be posible.
+#     This also applies to /okban command, multiple kickbans would be enabled.
 #     Valid values 'on', 'off'
-#
-#     This config is global and can't be defined per server or channel.
 #
 #   * plugins.var.python.operator.merge_bans:
 #     Only if you want to reduce flooding when applying (or removing) several bans and
-#     _if_ the IRC server supports it. Every 4 bans will be merged in a
+#     if the IRC server supports it. Every 4 bans will be merged in a
 #     single command. Valid values 'on', 'off'
-#
-#     This config is global and can't be defined per server or channel.
 #
 #   * plugins.var.python.operator.invert_kickban_order:
 #     /okban kicks first, then bans, this inverts the order.
 #     Valid values 'on', 'off'
 #
-#     This config is global and can't be defined per server or channel.
-#
 #
 #  TODO
-#  * make ounban more useful
+#  * make /ounban more useful
+#  * use dedicated config file like in urlgrab.py
+#   (win free config value validation by WeeChat)
 #  * ban expire time
 #  * add completions
 #  * command for switch channel moderation on/off
 #  * implement ban with channel forward
 #  * user tracker (for ban even when they already /part'ed)
-#  * ban by gecos
+#  * ban by realname
 #  * bantracker (keeps a record of ban and kicks) (?)
 #  * smart banmask (?)
 #  * multiple-channel ban (?)
@@ -126,7 +138,7 @@
 #
 #
 #   History:
-#   2009-
+#   2009-10-31
 #   version 0.1: Initial release
 ###
 
@@ -285,7 +297,7 @@ class Command(object):
     help = ("WeeChat command.", "[define usage template]", "detailed help here")
 
     def __init__(self, command, callback, completion=''):
-        self.command = command
+        self._command = command
         self.callback = callback
         self.completion = completion
         self.pointer = ''
@@ -294,7 +306,7 @@ class Command(object):
     def __call__(self, *args):
         """Called by WeeChat when /command is used."""
         self.parse_args(*args)
-        self.cmd()
+        self.command()
         return WEECHAT_RC_OK
 
     def parse_args(self, data, buffer, args):
@@ -323,15 +335,15 @@ class Command(object):
             help = ''
         return desc, usage, help
 
-    def cmd(self):
+    def command(self):
         """This method is called when the command is run, override this."""
         pass
 
     def hook(self):
-        assert self.command and self.callback
+        assert self._command and self.callback
         assert not self.pointer, "There's already a hook pointer, unhook first"
         desc, usage, help = self._parse_doc()
-        self.pointer = weechat.hook_command(self.command, desc, usage, help, self.completion,
+        self.pointer = weechat.hook_command(self._command, desc, usage, help, self.completion,
                 self.callback, '')
         if self.pointer == '':
             raise Exception, "hook_command failed"
@@ -342,25 +354,25 @@ class Command(object):
             self.pointer = ''
 
 
-### Script Classes
+### Operator Classes
 class Message(object):
-    """Class that stores the command send to WeeChat in the command queue."""
+    """Class that stores the command for scheduling in CommandQueue."""
     def __init__(self, cmd, buffer='', wait=0):
         assert cmd
-        self.cmd = cmd
+        self.command = cmd
         self.wait = wait
         self.buffer = buffer
 
     def __call__(self):
         if self.wait:
-            weechat.command(self.buffer, '/wait %s %s' %(self.wait, self.cmd))
+            weechat.command(self.buffer, '/wait %s %s' %(self.wait, self.command))
         else:
-            weechat.command(self.buffer, self.cmd)
+            weechat.command(self.buffer, self.command)
         return True
 
 
 class CommandQueue(object):
-    """Class that manages and executes the script's commands to WeeChat."""
+    """Class that manages and sends the script's commands to WeeChat."""
     commands = []
     wait = 0
 
@@ -368,7 +380,7 @@ class CommandQueue(object):
         """Normal message"""
         def __str__(self):
             return "<Normal(%s)>" \
-                    %', '.join((self.cmd, self.buffer, str(self.wait)))
+                    %', '.join((self.command, self.buffer, str(self.wait)))
 
 
     class WaitForOp(Message):
@@ -395,11 +407,11 @@ class CommandQueue(object):
             hook_timeout = weechat.hook_timer(5000, 0, 1, 'queue_timeout_cb', data)
 
             Message.__call__(self)
-            return False
+            return False # returning false interrupts the queue execution
 
         def __str__(self):
             return "<WaitForOp(%s)>" \
-                    %', '.join((self.cmd, self.buffer, self.server, self.channel, self.nick,
+                    %', '.join((self.command, self.buffer, self.server, self.channel, self.nick,
                         str(self.wait)))
 
 
@@ -465,10 +477,9 @@ class CommandOperator(Command):
         """Called by WeeChat when /command is used."""
         #debug("command __call__ args: %s" %(args, ))
         self.parse_args(*args)  # argument parsing
-        self.cmd()              # call our command and queue messages for WeeChat
+        self.command()          # call our command and queue messages for WeeChat
         weechat_queue.run()     # run queued messages
         self.infolist = None    # free irc_nick infolist
-        #debug("exiting __call__")
         return WEECHAT_RC_OK    # make WeeChat happy
 
     def parse_args(self, data, buffer, args):
@@ -505,7 +516,7 @@ class CommandOperator(Command):
 
     def _nick_infolist(self):
         # reuse the same infolist instead of creating it many times
-        # per __call__() (like in MultiKick)
+        # per __call__() (like with MultiKick)
         if not self.infolist:
             #debug('Creating Infolist')
             self.infolist = Infolist('irc_nick', '%s,%s' %(self.server, self.channel))
@@ -548,7 +559,7 @@ class CommandOperator(Command):
     def get_op(self):
         op = self.is_op()
         if op is False:
-            value = self.get_config('op_cmd')
+            value = self.get_config('op_command')
             if not value:
                 raise Exception, "No command defined for get op."
             self.queue(self.replace_vars(value), type='WaitForOp', server=self.server,
@@ -558,7 +569,7 @@ class CommandOperator(Command):
     def drop_op(self):
         op = self.is_op()
         if op is True:
-            value = self.get_config('deop_cmd')
+            value = self.get_config('deop_command')
             if not value:
                 value = '/deop'
             self.queue(self.replace_vars(value))
@@ -567,33 +578,26 @@ class CommandOperator(Command):
 manual_op = False
 class CommandNeedsOp(CommandOperator):
     """Base class for all the commands that requires op status for work."""
-    def __return_if_not_args(f):
-        """Commands derived from this class needs arguments. Otherwise they will just pointless op
-        and deop."""
-        def cmd(self, *args):
-            if not self.args:
-                return
-            return f(self, *args)
-        return cmd
 
     def parse_args(self, data, buffer, args):
         """Show help if nothing to parse."""
         CommandOperator.parse_args(self, data, buffer, args)
         if not self.args:
-            weechat.command('', '/help %s' %self.command)
+            weechat.command('', '/help %s' %self._command)
 
-    @__return_if_not_args
-    def cmd(self, *args):
+    def command(self, *args):
+        if not self.args:
+            return # don't pointless op and deop it no arguments given
         op = self.get_op()
         global manual_op
         if op is None:
-            return WEECHAT_RC_OK
+            return WEECHAT_RC_OK # not a channel
         elif op is False:
             manual_op = False
         else:
+            # don't deop if we weren't auto-op'ed
             manual_op = True
-        self._cmd(*args)
-        # don't deop if we weren't auto-op'ed
+        self.command_op(*args)
         if not manual_op and self.get_config_boolean('deop_after_use'):
             delay = self.get_config_int('deop_delay')
             if delay > 0:
@@ -606,8 +610,8 @@ class CommandNeedsOp(CommandOperator):
             else:
                 self.drop_op()
 
-    def _cmd(self, *args):
-        """Commands in this method will be run while user is with op status."""
+    def command_op(self, *args):
+        """Commands in this method will be run with op privileges."""
         pass
 
 
@@ -619,10 +623,10 @@ def deop_callback(buffer, count):
     return WEECHAT_RC_OK
 
 class BanObject(object):
-    def __init__(self, banmask, hostmask, time):
+    def __init__(self, banmask, hostmask):
         self.banmask = banmask
         self.hostmask = hostmask
-        self.time = time
+        self.time = int(time.time())
 
     def __str__(self):
         #return "<BanObject(%s, %s, %s)>" %(self.banmask, self.hostmask, self.time)
@@ -638,7 +642,7 @@ class BanList(object):
         return len(self.bans)
 
     def add_ban(self, server, channel, banmask, hostmask):
-        ban = BanObject(banmask, hostmask, int(time.time()))
+        ban = BanObject(banmask, hostmask)
         #debug("adding ban: %s" %ban)
         key = (server, channel)
         if key in self.bans:
@@ -659,6 +663,7 @@ class BanList(object):
             del bans[banmask]
 
     def hostmask_match(self, server, channel, hostmask):
+        if not hostmask: return []
         try:
             bans = self.bans[(server, channel)]
             ban_list = []
@@ -677,30 +682,32 @@ class BanList(object):
 
 operator_banlist = BanList()
 
-### Operator Commands ###
-class Op(CommandOperator):
-    help = ("Request operator status.", "",
-            """
-            The command used for ask op is defined globally in plugins.var.python.%(name)s.op_cmd,
-            it can be defined per server or per channel in:
-              plugins.var.python.%(name)s.op_cmd.'server_name'
-              plugins.var.python.%(name)s.op_cmd.'server_name'.'channel_name'""" %{'name':SCRIPT_NAME})
+################################
+### Operator Command Classes ###
 
-    def cmd(self):
+class Op(CommandOperator):
+    help = ("Request operator privileges.", "",
+            """
+            The command used for ask op is defined globally in plugins.var.python.%(name)s.op_command,
+            it can be defined per server or per channel in:
+              plugins.var.python.%(name)s.op_command.server_name
+              plugins.var.python.%(name)s.op_command.server_name.#channel_name""" %{'name':SCRIPT_NAME})
+
+    def command(self):
         self.get_op()
 
 
 class Deop(CommandOperator):
-    help = ("Drops operator status.", "", "")
+    help = ("Drops operator privileges.", "", "")
 
-    def cmd(self):
+    def command(self):
         self.drop_op()
 
 
 class Kick(CommandNeedsOp):
-    help = ("Kicks nick. Request operator status if needed.", "<nick> [<reason>]", "")
+    help = ("Kick nick.", "<nick> [<reason>]", "")
 
-    def _cmd(self, args=None):
+    def command_op(self, args=None):
         if not args:
             args = self.args
         if ' ' in args:
@@ -712,7 +719,7 @@ class Kick(CommandNeedsOp):
         self.kick(nick, reason)
 
     def kick(self, nick, reason, **kwargs):
-        if self.get_config_boolean('remove_over_kick'):
+        if self.get_config_boolean('enable_remove'):
             cmd = '/quote remove %s %s :%s' %(self.channel, nick, reason)
         else:
             cmd = '/kick %s %s' %(nick, reason)
@@ -720,14 +727,14 @@ class Kick(CommandNeedsOp):
 
 
 class MultiKick(Kick):
-    help = ("Kicks nicks, can be more than one. Request operator status if needed.",
+    help = ("Kick one or more nicks.",
             "<nick> [<nick> ..] [:] [<reason>]",
             """
             Note: Is not needed, but use ':' as a separator between nicks and the reason.
-                  Otherwise, if there's a nick in the channel matching the reason it will
-                  be kicked.""")
+                  Otherwise, if there's a nick in the channel matching the first word in
+                  reason it will be kicked.""")
 
-    def _cmd(self, args=None):
+    def command_op(self, args=None):
         if not args:
             args = self.args
         args = args.split()
@@ -751,7 +758,7 @@ class MultiKick(Kick):
 
 
 class Ban(CommandNeedsOp):
-    help = ("Bans users. Request operator status if needed.",
+    help = ("Ban user or hostmask.",
             "<nick|banmask> [<nick|banmask> ..] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]",
             """
             Banmask options:
@@ -761,10 +768,10 @@ class Ban(CommandNeedsOp):
                 -e --exact: Use exact hostmask, same as using --nick --user --host
                             simultaneously.
 
-            If no banmask options are supplied, uses configured defaults.
+            If no banmask options are supplied, configured defaults are used.
 
             Example:
-            /oban troll --user --host : will use a *!user@hostname banmask.""")
+            /oban somebody --user --host : will use a *!user@hostname banmask.""")
 
     banmask = []
     def parse_args(self, *args):
@@ -818,7 +825,7 @@ class Ban(CommandNeedsOp):
             for ban in operator_banlist.bans[server, channel].itervalues():
                 say(ban)
 
-    def _cmd(self):
+    def command_op(self):
         #if self.args == 'list':
         #    self.queue_clear()
         #    self.show_ban_list()
@@ -846,11 +853,12 @@ class Ban(CommandNeedsOp):
 
 
 class UnBan(Ban):
-    help = ("Unbans users. Request operator status if needed.",
-            "<nick|hostmask> [<nick|hostmask> ..]",
+    help = ("Remove bans.",
+            "<nick|banmask> [<nick|banmask> ..]",
             """
-            Note: If <nick> used, /ounban will only remove the bans known by the
-                  script, those are, the bans applied by it.""")
+            Note: Unbaning with <nick> is not very useful at the momment, only the bans known by the
+                  script (bans that were applied with this script) will be removed and only *if*
+                  <nick> is present in the channel.""")
 
     def search_bans(self, hostmask):
         return operator_banlist.hostmask_match(self.server, self.channel, hostmask)
@@ -859,7 +867,7 @@ class UnBan(Ban):
         for mask in banmask:
             operator_banlist.remove_ban(self.server, self.channel, mask)
 
-    def _cmd(self):
+    def command_op(self):
         args = self.args.split()
         banmasks = []
         for arg in args:
@@ -884,13 +892,18 @@ class UnBan(Ban):
 
 
 class Mute(Ban):
-    help = ("Mute users. Request operator status if needed.",
+    help = ("Silence user or hostmask.",
             Ban.help[1],
-            "Use /ounban <nick> for remove the mute.")
+            """
+            Use /ounban <nick> for remove the mute.
+
+            Note: This command is disabled by default and should be enabled for networks that
+                  support "/mode +q hostmask", use:
+                  /set plugins.var.python.operator.enable_mute.your_server_name on""")
     # I need a way for disable mute per network, since networks that not recognise /mode +q will do
     # nasty stuff with the channel modes, but I can't do it in the Ban class because then KickBan
     # will mute instead of banning, hence this decorator
-    def ban_fallback(function_name):
+    def fallback_Ban(function_name):
         def decorator(mute_function):
             def new_method(self, *args, **kwargs):
                 if self.get_config_boolean('enable_mute'):
@@ -902,18 +915,19 @@ class Mute(Ban):
             return new_method
         return decorator
 
-    @ban_fallback('add_ban')
+    @fallback_Ban('add_ban')
     def add_ban(self, banmask, hostmask=None):
         # add '%' to banmask so /ounban can remove it
         operator_banlist.add_ban(self.server, self.channel, '%' + banmask, hostmask)
 
-    @ban_fallback('ban')
+    @fallback_Ban('ban')
     def ban(self, *banmask, **kwargs):
         cmd = '/mode +%s %s' %('q'*len(banmask), ' '.join(banmask))
         self.queue(cmd, **kwargs)
 
 
 class MergedBan(Ban):
+    """several bans are merged in a "/mode +bb banmask banmask" fashion."""
     unban = False
     def ban(self, *args):
         c = self.unban and '-' or '+'
@@ -932,12 +946,12 @@ class MergedUnBan(MergedBan, UnBan):
 
 
 class KickBan(Ban, Kick):
-    help = ("Kickban user. Request operator status if needed.",
+    help = ("Kickban nick.",
             "<nick> [<reason>] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]",
             "Combines /okick and /oban commands.")
 
     invert = False
-    def _cmd(self):
+    def command_op(self):
         if ' ' in self.args:
             nick, reason = self.args.split(' ', 1)
         else:
@@ -960,11 +974,11 @@ class KickBan(Ban, Kick):
 
 
 class MultiKickBan(KickBan):
-    help = ("Kickban user. Request operator status if needed.",
+    help = ("Kickban one or more nicks.",
             "<nick> [<nick> ..] [:] [<reason>] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]",
-            "Combines /okick and /oban commands.")
+            KickBan.help[2])
 
-    def _cmd(self):
+    def command_op(self):
         args = self.args.split()
         nicks = []
         while(args):
@@ -993,7 +1007,7 @@ class MultiKickBan(KickBan):
 
 
 ### config callbacks ###
-def enable_multiple_kick_conf_cb(data, config, value):
+def enable_multi_kick_conf_cb(data, config, value):
     global cmd_kick, cmd_kban
     cmd_kick.unhook()
     cmd_kban.unhook()
@@ -1010,11 +1024,11 @@ def merge_bans_conf_cb(data, config, value):
     cmd_ban.unhook()
     cmd_unban.unhook()
     if boolDict[value]:
-        cmd_ban    = MergedBan('oban', 'cmd_ban')
-        cmd_unban  = MergedUnBan('ounban', 'cmd_unban')
+        cmd_ban   = MergedBan('oban', 'cmd_ban')
+        cmd_unban = MergedUnBan('ounban', 'cmd_unban')
     else:
-        cmd_ban    = Ban('oban', 'cmd_ban')
-        cmd_unban  = UnBan('ounban', 'cmd_unban')
+        cmd_ban   = Ban('oban', 'cmd_ban')
+        cmd_unban = UnBan('ounban', 'cmd_unban')
     return WEECHAT_RC_OK
 
 def invert_kickban_order_conf_cb(data, config, value):
@@ -1030,19 +1044,19 @@ def invert_kickban_order_conf_cb(data, config, value):
 if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
         SCRIPT_DESC, '', ''):
 
-    # settings
+    # default settings
     settings = {
-            'op_cmd': '/msg chanserv op $channel $nick',
-            'deop_cmd': '/deop',
-            'deop_after_use': 'on',
-            'deop_delay': '180',
-            'default_banmask': 'host',
-            'remove_over_kick': 'off',
-            'kick_reason': 'bye.',
-            'enable_multiple_kick': 'off',
-            'merge_bans': 'off',
-            'enable_mute': 'off',
-            'invert_kickban_order': 'off'}
+            'op_command'        :'/msg chanserv op $channel $nick',
+            'deop_command'      :'/deop',
+            'deop_after_use'    :'on',
+            'deop_delay'        :'180',
+            'default_banmask'   :'host',
+            'enable_remove'     :'off',
+            'kick_reason'       :'kthxbye!',
+            'enable_multi_kick' :'off',
+            'merge_bans'        :'off',
+            'enable_mute'       :'off',
+            'invert_kickban_order':'off'}
 
     for opt, val in settings.iteritems():
         if not weechat.config_is_set_plugin(opt):
@@ -1052,7 +1066,7 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
     cmd_op         = Op('oop', 'cmd_op')
     cmd_deop       = Deop('odeop', 'cmd_deop')
     # hook /okick /okban
-    if get_config_boolean('enable_multiple_kick'):
+    if get_config_boolean('enable_multi_kick'):
         cmd_kick   = MultiKick('okick', 'cmd_kick')
         cmd_kban   = MultiKickBan('okban', 'cmd_kban')
     else:
@@ -1071,7 +1085,7 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
     if get_config_boolean('invert_kickban_order'):
         cmd_kban.invert = True
 
-    weechat.hook_config('plugins.var.python.%s.enable_multiple_kick' %SCRIPT_NAME, 'enable_multiple_kick_conf_cb', '')
+    weechat.hook_config('plugins.var.python.%s.enable_multi_kick' %SCRIPT_NAME, 'enable_multi_kick_conf_cb', '')
     weechat.hook_config('plugins.var.python.%s.merge_bans' %SCRIPT_NAME, 'merge_bans_conf_cb', '')
     weechat.hook_config('plugins.var.python.%s.invert_kickban_order' %SCRIPT_NAME, 'invert_kickban_order_conf_cb', '')
 
