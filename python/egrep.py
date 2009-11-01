@@ -32,6 +32,8 @@
 #   Settings:
 #   * plugins.var.python.egrep.clear_buffer:
 #     Clear the results buffer before each search. Valid values: on, off
+#   * plugins.var.python.egrep.go_to_buffer:
+#     Automatically go to egrep buffer when search is over. Valid values: on, off
 #   * plugins.var.python.egrep.log_filter:
 #     Coma separated list of patterns that egrep will use for exclude logs, e.g.
 #     if you use '*server/*' any log in the 'server' folder will be excluded
@@ -47,8 +49,9 @@
 #   History:
 #
 #	version 0.
+#   * added go_to_buffer config option.
 #   * added --buffer for search only in buffers.
-#	* refactoring
+#	* some refactoring
 #
 #   2009-10-12, omero
 #   version 0.5.2: made it python-2.4.x compliant
@@ -131,6 +134,7 @@ class linesDict(dict):
 settings = {
 		'clear_buffer' :'off', # Should clear the buffer before every search
 		'log_filter'   :'',    # filter for exclude log files
+		'go_to_buffer' :'on',
 		'show_summary' :'on'}  # Show summary line after the search
 
 ### value validation
@@ -190,15 +194,12 @@ def color_nick(nick):
 	nick_color = weechat.color(color)
 	return '%s%s%s%s' %(mode_color, mode, nick_color, nick)
 
-def color_hilight(s, list):
+def color_hilight(s, L):
 	"""Returns 's' with strings in 'list' coloured."""
-	# remove duplicates in match list if any
-	d = {}
-	for m in list:
-		d[m] = 1
-	list = d.keys()
+	# remove duplicates if any
+	L = list(set(L))
 	# apply hilight
-	for m in list:
+	for m in L:
 		s = s.replace(m, '%s%s%s' %(colors['hilight'], m, colors['reset']))
 	return s
 
@@ -499,7 +500,8 @@ def buffer_update(matched_lines, pattern, count, *args):
 				print_info(info, buffer)
 	else:
 		print_info(title, buffer)
-	weechat.buffer_set(buffer, 'display', '1')
+	if get_config_boolean('go_to_buffer'):
+		weechat.buffer_set(buffer, 'display', '1')
 
 def print_info(s, buffer=None, display=False):
 	"""Prints 's' in script's buffer as 'script_nick'. For displaying search summaries."""
