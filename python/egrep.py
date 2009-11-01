@@ -32,22 +32,29 @@
 #   Settings:
 #   * plugins.var.python.egrep.clear_buffer:
 #     Clear the results buffer before each search. Valid values: on, off
+#
 #   * plugins.var.python.egrep.go_to_buffer:
 #     Automatically go to egrep buffer when search is over. Valid values: on, off
+#
 #   * plugins.var.python.egrep.log_filter:
 #     Coma separated list of patterns that egrep will use for exclude logs, e.g.
 #     if you use '*server/*' any log in the 'server' folder will be excluded
 #     when using the command '/egrep log'
+#
 #   * plugins.var.python.egrep.show_summary:
 #     Shows summary for each log. Valid values: on, off
+#
+#   * plugins.var.python.egrep.max_lines_shown:
+#     egrep will only print the last matched lines that don't surpass the value defined here.
 #
 #
 #   History:
 #
 #   2009-
 #   version 0.6:
-#	* python code in update_buffer() optimized,
-#	  10000 lines update time down from ~4 to ~2 seconds
+#   * tweaks in egrep's output
+#   * code in update_buffer() optimized and max_lines_shown option added
+#   * time stats in buffer title
 #   * grepping for log files runs in a weechat_process.
 #   * added go_to_buffer config option.
 #   * added --buffer for search only in buffers.
@@ -108,6 +115,7 @@ class linesDict(dict):
 	linesDict[buffer_name] = matched_lines_list
 	"""
 	def __setitem__(self, key, value):
+		assert isinstance(value, list)
 		if key not in self:
 			dict.__setitem__(self, key, value)
 		else:
@@ -130,11 +138,13 @@ class linesDict(dict):
 		else:
 			return ''
 
+
 ### config
 settings = {
 		'clear_buffer' :'off', # Should clear the buffer before every search
 		'log_filter'   :'',    # filter for exclude log files
 		'go_to_buffer' :'on',
+		'max_lines_shown' :'4000',
 		'show_summary' :'on'}  # Show summary line after the search
 
 ### value validation
@@ -492,9 +502,8 @@ def buffer_update():
 
 	buffer = buffer_create()
 	len_matched_lines = len(matched_lines)
-	if len_matched_lines > 4000:
-		# is pointless to keep last result if where going to shove that many lines
-		# and, i think, updating the buffer is faster when it's clear
+	max_lines = int(weechat.config_get_plugin('max_lines_shown'))
+	if not count and len_matched_lines > max_lines:
 		weechat.buffer_clear(buffer)
 
 	hilight_color = colors['hilight']
@@ -502,15 +511,24 @@ def buffer_update():
 	date_color = colors['date']
 	nick_dict = {}
 
+	# formatting functions declared locally.
 	def make_title(name, count):
-		return "Search in %s | %s lines | pattern '%s' | %.4f seconds (%.2f%%)" \
-				%(name, count, pattern, time_total, time_grep_pct)
+		note = ''
+		if len_matched_lines > max_lines:
+			note = ' (only last %s shown)' %max_lines
+		return "Search in %s | %s lines%s | pattern '%s' | %.4f seconds (%.2f%%)" \
+				%(name, count, note, pattern, time_total, time_grep_pct)
 
-	def make_summary(name, count):
-		return "%s lines matched \"%s\" in %s" \
-				%(count, pattern, name)
+	def make_summary(name, count, printed=0):
+		note = ''
+		if printed != count:
+			if printed:
+				note = ' (only last %s shown)' %printed
+			else:
+				note = ' (not shown)'
+		return "%s lines matched \"%s\" in %s%s" \
+				%(count, pattern, name, note)
 
-	# formatting
 	global weechat_format
 	weechat_format = True # assume yes
 	def format_line(s):
@@ -541,7 +559,7 @@ def buffer_update():
 	def color_nick(nick):
 		"""Returns coloured nick, with coloured mode if any."""
 		# XXX should check if nick has a prefix and subfix string?
-		modes = '@!+%' # strip modes from nick
+		modes = '@!+%' # nick modes
 		if not nick: return ''
 		# nick mode
 		if nick[0] in modes:
@@ -558,20 +576,40 @@ def buffer_update():
 		nick_color = weechat.color(color)
 		return '%s%s%s%s' %(mode_color, mode, nick_color, nick)
 
-	if matched_lines: # lines matched in at least one log
+	# print last <max_lines> lines
+	print_count = max_lines
+	if matched_lines:
 		prnt = weechat.prnt
+		print_lines = []
 		for log, lines in matched_lines.iteritems():
 			if lines:
+				# matched lines
 				if not count:
-					prnt(buffer, '\n') # separator
-					for line in lines:
+					len_lines = len(lines)
+					if len_lines < print_count:
+						print_lines = lines
+						print_count -= len_lines
+					elif print_count:
+						print_lines = lines[-print_count:]
+						print_count = 0
+					else:
+						print_lines = []
+					# print lines
+					for line in print_lines:
 						prnt(buffer, format_line(line))
+
+				# summary
 				if count or get_config_boolean('show_summary'):
-					summary = make_summary(log, len(lines))
+					summary = make_summary(log, len(lines), len(print_lines))
 					print_info(summary, buffer)
+
+				# separator
+				if print_lines:
+					prnt(buffer, '\n')
 	else:
 		print_info('No matches found.', buffer)
 
+	# set title
 	global time_start
 	time_end = now()
 	# total time
