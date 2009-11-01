@@ -45,7 +45,9 @@
 #   History:
 #
 #   2009-
-#   version 0.
+#   version 0.6:
+#	* python code in update_buffer() optimized,
+#	  10000 lines update time down from ~4 to ~2 seconds
 #   * grepping for log files runs in a weechat_process.
 #   * added go_to_buffer config option.
 #   * added --buffer for search only in buffers.
@@ -170,59 +172,6 @@ def error(s, prefix=SCRIPT_NAME, buffer=''):
 def say(s, prefix=SCRIPT_NAME, buffer=''):
 	"""normal msg"""
 	weechat.prnt(buffer, '%s: %s' %(prefix, s))
-
-### formatting
-def color_nick(nick):
-	"""Returns coloured nick, with coloured mode if any."""
-	# XXX should check if nick has a prefix and subfix string?
-	if not nick: return ''
-	# nick mode
-	modes = '@!+%' # XXX I hope I got them right
-	if nick[0] in modes:
-		mode, nick = nick[0], nick[1:]
-		mode_color = weechat.config_string(weechat.config_get('weechat.color.nicklist_prefix%d' \
-			%(modes.find(mode) + 1)))
-		mode_color = weechat.color(mode_color)
-	else:
-		mode = ''
-		mode_color = ''
-	color_nicks_number = weechat.config_integer(weechat.config_get('weechat.look.color_nicks_number'))
-	idx = (sum(map(ord, nick))%color_nicks_number) + 1
-	color = weechat.config_string(weechat.config_get('weechat.color.chat_nick_color%02d' %idx))
-	nick_color = weechat.color(color)
-	return '%s%s%s%s' %(mode_color, mode, nick_color, nick)
-
-def color_hilight(s, L, hilight_color='', reset_color=''):
-	"""Returns 's' with strings in 'list' coloured."""
-	# remove duplicates if any
-	L = list(set(L))
-	# apply hilight
-	for m in L:
-		s = s.replace(m, '%s%s%s' %(hilight_color, m, reset_color))
-	return s
-
-def format_line(s, hilight):
-	"""Returns the log line 's' ready for printing in buffer."""
-	date, nick, msg = split_line(s)
-	# we don't want colors if there's match highlighting
-	if hilight:
-		# fix color reset when there's highlighting from date to prefix
-		if colors['hilight'] in date and not colors['reset'] in date:
-			nick = colors['hilight'] + nick
-		return '%s\t%s %s' %(date, nick, msg)
-	else:
-		nick = color_nick(nick)
-		return '%s%s\t%s%s %s' %(colors['date'], date, nick, colors['reset'], msg)
-
-def split_line(s):
-	"""Split 's' in (date, nick, msg), if 's' isn't in weechat's formats returns ('', '', s)."""
-	global weechat_format
-	if weechat_format and s.count('\t') >= 2:
-		return s.split('\t', 2) # date, nick, message
-	else:
-		# looks like log isn't in weechat's format
-		weechat_format = False # incoming lines won't be formatted if they have 2 tabs
-		return '', '', s.replace('\t', ' ')
 
 # for /logs cmd
 sizeDict = {0:'b', 1:'KiB', 2:'MiB', 3:'GiB', 4:'TiB'}
@@ -398,7 +347,12 @@ def check_string(s, regexp, hilight=False, exact=False):
 	elif hilight:
 		matchlist = regexp.findall(s)
 		if matchlist:
-			return color_hilight(s, matchlist, *hilight.split(','))
+			matchlist = list(set(matchlist)) # remove duplicates if any
+			# apply hilight
+			hilight_color, reset_color = hilight.split(',', 1)
+			for m in matchlist:
+				s = s.replace(m, '%s%s%s' %(hilight_color, m, reset_color))
+			return s
 	# no need for findall() here
 	elif regexp.search(s):
 		return s
@@ -416,10 +370,13 @@ def grep_file(file, head, tail, *args):
 	else:
 		fd = file_object
 	limit = head or tail
+
+	append = lines.append
+	check = check_string
 	for line in fd:
-		line = check_string(line, *args)
+		line = check(line, *args)
 		if line:
-			lines.append(line)
+			append(line)
 			if limit and len(lines) >= limit: break
 	if tail:
 		lines.reverse()
@@ -440,6 +397,10 @@ def grep_buffer(buffer, head, tail, *args):
 	else:
 		infolist_next = weechat.infolist_next
 	limit = head or tail
+
+	append = lines.append
+	check = check_string
+	infolist_time = weechat.infolist_time
 	while infolist_next(infolist):
 		prefix = weechat.infolist_string(infolist, 'prefix')
 		message = weechat.infolist_string(infolist, 'message')
@@ -451,11 +412,11 @@ def grep_buffer(buffer, head, tail, *args):
 			date = prefix
 			line = '%s\t%s' %(date, message.replace(' ', '\t', 1))
 		else:
-			date = weechat.infolist_time(infolist, 'date')
+			date = infolist_time(infolist, 'date')
 			line = '%s\t%s\t%s' %(date, prefix, message)
-		line = check_string(line, *args)
+		line = check(line, *args)
 		if line:
-			lines.append(line)
+			append(line)
 			if limit and len(lines) >= limit:
 				break
 	weechat.infolist_free(infolist)
@@ -537,22 +498,81 @@ def grep_file_callback(data, command, rc, stdout, stderr):
 	return WEECHAT_RC_OK
 
 ### output buffer
-make_title = lambda pattern, buffer, count: \
-	"Search in '%s' matched %s lines, pattern: '%s'" \
-		%(buffer, count, pattern)
 def buffer_update():
-	# XXX there's seems to be a short freeze at this point, try to optimize
 	"""Updates our buffer with new lines."""
 	global matched_lines, pattern, count, hilight
 	buffer = buffer_create()
-	title = make_title(pattern, matched_lines, len(matched_lines))
+	len_matched_lines = len(matched_lines)
+	if len_matched_lines > 4000 or get_config_boolean('clear_buffer'):
+		# updating the buffer is faster if it's clear
+		weechat.buffer_clear(buffer)
+
+	def make_title(name, count):
+		return "Search in '%s' matched %s lines, pattern: '%s'" %(name, count, pattern)
+
+	title = make_title(matched_lines, len_matched_lines)
 	weechat.buffer_set(buffer, 'title', title)
+
+	hilight_color = colors['hilight']
+	reset_color = colors['reset']
+	date_color = colors['date']
+	nick_dict = {}
+
+	# formatting
+	global weechat_format
+	weechat_format = True # assume yes
+	def format_line(s):
+		"""Returns the log line 's' ready for printing in buffer."""
+		global weechat_format
+		if weechat_format and s.count('\t') >= 2:
+			date, nick, msg = s.split('\t', 2) # date, nick, message
+		else:
+			# looks like log isn't in weechat's format
+			weechat_format = False # incoming lines won't be formatted if they have 2 tabs
+			date, nick, msg = '', '', s.replace('\t', ' ')
+		# we don't want colors if there's match highlighting
+		if hilight:
+			# fix color reset when there's highlighting from date to prefix
+			if hilight_color in date and not reset_color in date:
+				nick = hilight_color + nick
+			return '%s\t%s %s' %(date, nick, msg)
+		else:
+			if nick in nick_dict:
+				nick = nick_dict[nick]
+			else:
+				# cache nick
+				s = color_nick(nick)
+				nick_dict[nick] = s
+				nick = s
+			return '%s%s\t%s%s %s' %(date_color, date, nick, reset_color, msg)
+
+	def color_nick(nick):
+		"""Returns coloured nick, with coloured mode if any."""
+		# XXX should check if nick has a prefix and subfix string?
+		modes = '@!+%' # strip modes from nick
+		if not nick: return ''
+		# nick mode
+		if nick[0] in modes:
+			mode, nick = nick[0], nick[1:]
+			mode_color = weechat.config_string(weechat.config_get('weechat.color.nicklist_prefix%d' \
+				%(modes.find(mode) + 1)))
+			mode_color = weechat.color(mode_color)
+		else:
+			mode = ''
+			mode_color = ''
+		color_nicks_number = weechat.config_integer(weechat.config_get('weechat.look.color_nicks_number'))
+		idx = (sum(map(ord, nick))%color_nicks_number) + 1
+		color = weechat.config_string(weechat.config_get('weechat.color.chat_nick_color%02d' %idx))
+		nick_color = weechat.color(color)
+		return '%s%s%s%s' %(mode_color, mode, nick_color, nick)
+
 	if matched_lines: # lines matched in at least one log
+		prnt = weechat.prnt
 		for log, lines in matched_lines.iteritems():
 			if not count:
 				for line in lines:
-					weechat.prnt(buffer, format_line(line, hilight))
-			info = make_title(pattern, log, len(lines))
+					prnt(buffer, format_line(line))
+			info = make_title(log, len(lines))
 			if get_config_boolean('show_summary'):
 				print_info(info, buffer)
 	else:
@@ -578,9 +598,6 @@ def buffer_create():
 		weechat.buffer_set(buffer, 'nicklist', '0')
 		weechat.buffer_set(buffer, 'title', 'egrep output buffer')
 		weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
-	else:
-		if get_config_boolean('clear_buffer'):
-			weechat.buffer_clear(buffer)
 	return buffer
 
 def buffer_input(data, buffer, input_data):
@@ -610,9 +627,8 @@ def buffer_close(*args):
 
 ### commands
 def cmd_init():
-	global home_dir, weechat_format, cache_dir, last_search
+	global home_dir, cache_dir, last_search
 	home_dir = get_home()
-	weechat_format = True
 	cache_dir = {}
 	last_search = None
 
@@ -650,8 +666,8 @@ def cmd_grep(data, buffer, args):
 				matchcase = True
 			if opt in ('H', 'hilight'):
 				hilight = '%s,%s' %(colors['hilight'], colors['reset'])
-				# we pass the colors in the variable itself because color_hilight() must not use
-				# weechat's module
+				# we pass the colors in the variable itself because check_string() must not use
+				# weechat's module when applying the colors
 			if opt in ('e', 'exact'):
 				exact = True
 			if opt in ('a', 'all'):
