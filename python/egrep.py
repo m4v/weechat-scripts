@@ -105,17 +105,6 @@ class linesDict(dict):
 	Class for handling matched lines in more than one buffer.
 	linesDict[buffer_name] = matched_lines_list
 	"""
-	def str_values(setitem):
-		def decorator(self, key, value):
-			if isinstance(value, str):
-				value = (value, )
-				setitem(self, key, value)
-			else:
-				assert isinstance(value, list)
-				setitem(self, key, value)
-		return decorator
-
-	@str_values
 	def __setitem__(self, key, value):
 		if key not in self:
 			dict.__setitem__(self, key, value)
