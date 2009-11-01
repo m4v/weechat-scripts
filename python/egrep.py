@@ -45,6 +45,11 @@
 #
 #
 #   History:
+#
+#	version 0.
+#   * added --buffer for search only in buffers.
+#	* refactoring
+#
 #   2009-10-12, omero
 #   version 0.5.2: made it python-2.4.x compliant
 #
@@ -560,12 +565,12 @@ def cmd_grep(data, buffer, args):
 		return WEECHAT_RC_OK
 	# set defaults
 	log_name = buffer_name = ''
-	head = tail = matchcase = count = all = exact = hilight = False
+	head = tail = matchcase = count = all = exact = hilight = only_buffers = False
 	number = None
 	# parse
 	try:
-		opts, args = getopt.gnu_getopt(args.split(), 'cmHeahtin:', ['count', 'matchcase', 'hilight',
-			'exact', 'all', 'head', 'tail', 'number='])
+		opts, args = getopt.gnu_getopt(args.split(), 'cmHeahtin:b', ['count', 'matchcase', 'hilight',
+			'exact', 'all', 'head', 'tail', 'number=', 'buffer'])
 		#debug(opts, 'opts: '); debug(args, 'args: ')
 		if len(args) >= 2:
 			if args[0] == 'log':
@@ -595,6 +600,8 @@ def cmd_grep(data, buffer, args):
 				head = True
 			if opt in ('t', 'tail'):
 				tail = True
+			if opt in ('b', 'buffer'):
+				only_buffers = True
 			if opt in ('n', 'number'):
 				try:
 					number = int(val)
@@ -656,13 +663,15 @@ def cmd_grep(data, buffer, args):
 	logs = []
 	if log_file:
 		logs = log_file
-	else:
+	elif not only_buffers:
 		for pointer in search_buffer:
 			log = get_file_by_buffer(pointer)
 			if log:
 				logs.append(log)
 			else:
 				logs.append(pointer)
+	else:
+		logs = search_buffer
 	# grepping
 	#debug('Grepping in %s' %logs)
 	try:
@@ -732,7 +741,7 @@ def completion_log_files(data, completion_item, buffer, completion):
 	return WEECHAT_RC_OK
 
 def completion_egrep_args(data, completion_item, buffer, completion):
-	for arg in ('count', 'all', 'matchcase', 'hilight', 'exact', 'head', 'tail', 'number'):
+	for arg in ('count', 'all', 'matchcase', 'hilight', 'exact', 'head', 'tail', 'number', 'buffer'):
 		weechat.hook_completion_list_add(completion, '--' + arg, 0, weechat.WEECHAT_LIST_POS_SORT)
 	return WEECHAT_RC_OK
 
@@ -745,21 +754,22 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
 		SCRIPT_DESC, '', ''):
 	script_init()
 	weechat.hook_command(SCRIPT_COMMAND, cmd_grep.__doc__,
-			"[[log <file>] | [buffer <name>]] [-a|--all] [-c|--count] [-m|--matchcase] "
+			"[[log <file>] | [buffer <name>]] [-a|--all] [-b|--buffer] [-c|--count] [-m|--matchcase] "
 			"[-H|--hilight] [-e|--exact] [(-h|--head)|(-t|--tail) [-n|--number <n>]] <expression>",
 			# help
-			"      log <file>: Search in one log that matches <file> in the logger path. Use '*' and '?' as jokers.\n"
-			"   buffer <name>: Search in buffer <name>, if there's no buffer with <name> it will try to search for a log file.\n"
-			"       -a, --all: Search in all open buffers.\n"
-			"                  If used with 'log <file>' search in all logs that matches <file>.\n"
-			"     -c, --count: Just count the number of matched lines instead of showing them.\n"
-			" -m, --matchcase: Don't do case insensible search.\n"
-			"   -H, --hilight: Colour exact matches in output buffer.\n"
-			"     -e, --exact: Print exact matches only.\n"
-			"      -t, --tail: Print the last 10 matching lines.\n"
-			"      -h, --head: Print the first 10 matching lines.\n"
-			"-n, --number <n>: Overrides default number of lines for --tail or --head.\n"
-			"    <expression>: Expression to search.\n\n"
+			"     log <file>: Search in one log that matches <file> in the logger path. Use '*' and '?' as jokers.\n"
+			"  buffer <name>: Search in buffer <name>, if there's no buffer with <name> it will try to search for a log file.\n"
+			"       -a --all: Search in all open buffers.\n"
+			"                 If used with 'log <file>' search in all logs that matches <file>.\n"
+			"    -b --buffer: Search only in buffers, not in file logs.\n"
+			"     -c --count: Just count the number of matched lines instead of showing them.\n"
+			" -m --matchcase: Don't do case insensible search.\n"
+			"   -H --hilight: Colour exact matches in output buffer.\n"
+			"     -e --exact: Print exact matches only.\n"
+			"      -t --tail: Print the last 10 matching lines.\n"
+			"      -h --head: Print the first 10 matching lines.\n"
+			"-n --number <n>: Overrides default number of lines for --tail or --head.\n"
+			"   <expression>: Expression to search.\n\n"
 			"egrep buffer input:\n"
 			"  Repeat last search using the new given expression.\n\n"
 			"see http://docs.python.org/lib/re-syntax.html for documentation about python regular expressions.\n",
