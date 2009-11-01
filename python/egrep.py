@@ -336,7 +336,7 @@ def make_regexp(pattern, matchcase=False):
 		raise Exception, 'Bad pattern, %s' %e
 	return regexp
 
-def check_string(s, regexp, hilight=False, exact=False):
+def check_string(s, regexp, hilight='', exact=False):
 	"""Checks 's' with a regexp and returns it if is a match."""
 	if not regexp:
 		return s
@@ -640,8 +640,8 @@ def cmd_grep(data, buffer, args):
 	# set defaults
 	global home_dir, last_search
 	global pattern, matchcase, head, tail, number, count, all, exact, hilight
-	log_name = buffer_name = ''
-	head = tail = matchcase = count = all = exact = hilight = only_buffers = False
+	log_name = buffer_name = hilight = ''
+	head = tail = matchcase = count = all = exact = only_buffers = False
 	number = None
 	# parse
 	try:
