@@ -72,12 +72,17 @@
 #
 ###
 
-#from __future__ import with_statement # This isn't required in Python 2.6
 import os.path as path
 import getopt
 
-import weechat
-from weechat import WEECHAT_RC_OK
+try:
+    import weechat
+    WEECHAT_RC_OK = weechat.WEECHAT_RC_OK
+    import_ok = True
+except ImportError:
+    print "This script must be run under WeeChat."
+    print "Get WeeChat now at: http://weechat.flashtux.org/"
+    import_ok = False
 
 SCRIPT_NAME    = "egrep"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
@@ -117,40 +122,23 @@ class linesDict(dict):
 		else:
 			return ''
 
-class ValidValuesDict(dict):
-	"""
-	Dict that returns the default value defined by 'defaultKey' key if __getitem__ raises
-	KeyError. 'defaultKey' must be in the supplied dict.
-	"""
-	def _error_msg(self, key):
-		error("'%s' is an invalid option value, allowed: %s. Defaulting to '%s'" \
-				%(key, ', '.join(map(repr, self.keys())), self.default))
-
-	def __init__(self, dict, defaultKey):
-		self.update(dict)
-		assert defaultKey in self
-		self.default = defaultKey
-
-	def __getitem__(self, key):
-		try:
-			return dict.__getitem__(self, key)
-		except KeyError:
-			# user set a bad value
-			self._error_msg(key)
-			return dict.__getitem__(self, self.default)
-
 ### config
-settings = (
-		('clear_buffer', 'off'), # Should clear the buffer before every search
-		('log_filter', ''), # filter for exclude log files
-		('show_summary', 'on')) # Show summary line after the search
+settings = {
+		'clear_buffer' :'off', # Should clear the buffer before every search
+		'log_filter'   :'',    # filter for exclude log files
+		'show_summary' :'on'}  # Show summary line after the search
 
-# I can't find for the love of me how to easily add a boolean config option in plugins.var.python
-# config_set_plugin sets a string option and any string is valid, will do value validation here.
-boolDict = ValidValuesDict({'on':True, 'off':False}, 'off')
+### value validation
+boolDict = {'on':True, 'off':False}
 def get_config_boolean(config):
-	"""Gets our config value, returns a sane default if value is wrong."""
-	return boolDict[weechat.config_get_plugin(config)]
+    value = weechat.config_get_plugin(config)
+    try:
+        return boolDict[value]
+    except KeyError:
+        default = settings[config]
+        error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
+        error("'%s' is invalid, allowed: 'on', 'off'" %value)
+        return boolDict[default]
 
 def get_config_log_filter():
 	filter = weechat.config_get_plugin('log_filter')
@@ -753,7 +741,7 @@ def script_init():
 	global home_dir
 	home_dir = get_home()
 
-if weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
+if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
 		SCRIPT_DESC, '', ''):
 	script_init()
 	weechat.hook_command(SCRIPT_COMMAND, cmd_grep.__doc__,
@@ -788,7 +776,7 @@ if weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, 
 	weechat.hook_completion('egrep_arguments', "list of arguments",
 			'completion_egrep_args', '')
 	# settings
-	for opt, val in settings:
+	for opt, val in settings.iteritems():
 		if not weechat.config_is_set_plugin(opt):
 			weechat.config_set_plugin(opt, val)
 	# colors
