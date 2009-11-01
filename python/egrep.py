@@ -88,8 +88,6 @@ try:
     WEECHAT_RC_OK = weechat.WEECHAT_RC_OK
     import_ok = True
 except ImportError:
-#    print "This script must be run under WeeChat."
-#    print "Get WeeChat now at: http://weechat.flashtux.org/"
     import_ok = False
 
 SCRIPT_NAME    = "egrep"
@@ -172,15 +170,6 @@ def error(s, prefix=SCRIPT_NAME, buffer=''):
 def say(s, prefix=SCRIPT_NAME, buffer=''):
 	"""normal msg"""
 	weechat.prnt(buffer, '%s: %s' %(prefix, s))
-
-# for /logs cmd
-sizeDict = {0:'b', 1:'KiB', 2:'MiB', 3:'GiB', 4:'TiB'}
-def human_readable_size(size):
-	power = 0
-	while size > 1024:
-		power += 1
-		size /= 1024.0
-	return '%.2f%s' %(size, sizeDict.get(power, ''))
 
 ### log files and buffers
 cache_dir = {} # for avoid walking the dir tree more than once per command
@@ -497,20 +486,26 @@ def buffer_update():
 	global matched_lines, pattern, count, hilight
 	buffer = buffer_create()
 	len_matched_lines = len(matched_lines)
-	if len_matched_lines > 4000 or get_config_boolean('clear_buffer'):
-		# updating the buffer is faster if it's clear
+	if len_matched_lines > 4000:
+		# is pointless to keep last result if where going to shove that many lines
+		# and, i think, updating the buffer is faster when it's clear
 		weechat.buffer_clear(buffer)
-
-	def make_title(name, count):
-		return "Search in '%s' matched %s lines, pattern: '%s'" %(name, count, pattern)
-
-	title = make_title(matched_lines, len_matched_lines)
-	weechat.buffer_set(buffer, 'title', title)
 
 	hilight_color = colors['hilight']
 	reset_color = colors['reset']
 	date_color = colors['date']
 	nick_dict = {}
+
+	def make_title(name, count):
+		return "Search in %s | %s lines | pattern %s" \
+				%(name, count, pattern)
+
+	def make_summary(name, count):
+		return "%s lines matched \"%s\" in %s" \
+				%(count, pattern, name)
+
+	title = make_title(matched_lines, len_matched_lines)
+	weechat.buffer_set(buffer, 'title', title)
 
 	# formatting
 	global weechat_format
@@ -563,12 +558,14 @@ def buffer_update():
 	if matched_lines: # lines matched in at least one log
 		prnt = weechat.prnt
 		for log, lines in matched_lines.iteritems():
-			if not count:
-				for line in lines:
-					prnt(buffer, format_line(line))
-			info = make_title(log, len(lines))
-			if get_config_boolean('show_summary'):
-				print_info(info, buffer)
+			if lines:
+				if not count:
+					prnt(buffer, '\n') # separator
+					for line in lines:
+						prnt(buffer, format_line(line))
+				if count or get_config_boolean('show_summary'):
+					summary = make_summary(log, len(lines))
+					print_info(summary, buffer)
 	else:
 		print_info(title, buffer)
 	if get_config_boolean('go_to_buffer'):
@@ -592,6 +589,9 @@ def buffer_create():
 		weechat.buffer_set(buffer, 'nicklist', '0')
 		weechat.buffer_set(buffer, 'title', 'egrep output buffer')
 		weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
+	else:
+		if get_config_boolean('clear_buffer'):
+			weechat.buffer_clear(buffer)
 	return buffer
 
 def buffer_input(data, buffer, input_data):
@@ -622,6 +622,10 @@ def buffer_close(*args):
 ### commands
 def cmd_init():
 	global home_dir, cache_dir, last_search
+	global pattern, matchcase, head, tail, number, count, all, exact, hilight
+	log_name = buffer_name = hilight = ''
+	head = tail = matchcase = count = all = exact = only_buffers = False
+	number = None
 	home_dir = get_home()
 	cache_dir = {}
 	last_search = None
@@ -631,12 +635,10 @@ def cmd_grep(data, buffer, args):
 	if not args:
 		weechat.command('', '/help %s' %SCRIPT_COMMAND)
 		return WEECHAT_RC_OK
-	# set defaults
-	global home_dir, last_search
+
+	cmd_init()
 	global pattern, matchcase, head, tail, number, count, all, exact, hilight
-	log_name = buffer_name = hilight = ''
-	head = tail = matchcase = count = all = exact = only_buffers = False
-	number = None
+
 	# parse
 	try:
 		opts, args = getopt.gnu_getopt(args.split(), 'cmHeahtin:b', ['count', 'matchcase', 'hilight',
@@ -706,8 +708,8 @@ def cmd_grep(data, buffer, args):
 	except Exception, e:
 		error('Argument error, %s' %e)
 		return WEECHAT_RC_OK
-	# lets start
-	cmd_init()
+
+	# find logs
 	log_file = search_buffer = None
 	if log_name:
 		log_file = get_file_by_pattern(log_name, all)
@@ -728,6 +730,7 @@ def cmd_grep(data, buffer, args):
 			search_buffer = [search_buffer]
 	else:
 		search_buffer = [buffer]
+
 	# make the log list
 	global search_in_files, search_in_buffers
 	search_in_files = []
@@ -743,22 +746,23 @@ def cmd_grep(data, buffer, args):
 				search_in_buffers.append(pointer)
 	else:
 		search_in_buffers = search_buffer
+
 	# grepping
 	try:
 		show_matching_lines()
-	# save last search
-	#	last_search = (logs_file, head, tail, regexp, hilight, exact, count, matchcase)
 	except Exception, e:
 		error(e)
 	return WEECHAT_RC_OK
 
 def cmd_logs(data, buffer, args):
 	"""List files in Weechat's log dir."""
+	cmd_init()
 	global home_dir
 	from os import stat
 	get_size = lambda x: stat(x).st_size
 	sort_by_size = False
 	filter = []
+
 	try:
 		opts, args = getopt.gnu_getopt(args.split(), 's', ['size'])
 		if args:
@@ -770,8 +774,7 @@ def cmd_logs(data, buffer, args):
 	except Exception, e:
 		error('Argument error, %s' %e)
 		return WEECHAT_RC_OK
-	# args look good
-	cmd_init()
+
 	# is there's a filter, filter_excludes should be False
 	file_list = dir_list(home_dir, filter, filter_excludes=not filter)
 	home_dir_len = len(home_dir)
@@ -779,6 +782,15 @@ def cmd_logs(data, buffer, args):
 		file_list.sort(key=get_size)
 	else:
 		file_list.sort()
+
+	sizeDict = {0:'b', 1:'KiB', 2:'MiB', 3:'GiB', 4:'TiB'}
+	def human_readable_size(size):
+		power = 0
+		while size > 1024:
+			power += 1
+			size /= 1024.0
+		return '%.2f%s' %(size, sizeDict.get(power, ''))
+
 	file_sizes = map(lambda x: human_readable_size(get_size(x)), file_list)
 	if weechat.config_string(weechat.config_get('weechat.look.prefix_align')) == 'none' \
 			and file_list:
@@ -813,13 +825,9 @@ def completion_egrep_args(data, completion_item, buffer, completion):
 	return WEECHAT_RC_OK
 
 ### Main
-def script_init():
-	global home_dir
-	home_dir = get_home()
-
 if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
 		SCRIPT_DESC, '', ''):
-	script_init()
+	home_dir = get_home()
 	weechat.hook_command(SCRIPT_COMMAND, cmd_grep.__doc__,
 			"[[log <file>] | [buffer <name>]] [-a|--all] [-b|--buffer] [-c|--count] [-m|--matchcase] "
 			"[-H|--hilight] [-e|--exact] [(-h|--head)|(-t|--tail) [-n|--number <n>]] <expression>",
