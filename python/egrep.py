@@ -81,7 +81,9 @@
 ###
 
 import os.path as path
-import getopt
+import getopt, time
+
+now = time.time
 
 try:
     import weechat
@@ -422,8 +424,10 @@ def show_matching_lines():
 	"""
 	global pattern, matchcase, head, tail, number, count, all, exact, hilight
 	global search_in_files, search_in_buffers, matched_lines, home_dir
+	global time_start
 	matched_lines = linesDict()
 	#debug('buffers:%s \nlogs:%s' %(search_in_buffers, search_in_files))
+	time_start = now()
 	if search_in_buffers:
 		regexp = make_regexp(pattern, matchcase)
 		for buffer in search_in_buffers:
@@ -484,6 +488,8 @@ def grep_file_callback(data, command, rc, stdout, stderr):
 def buffer_update():
 	"""Updates our buffer with new lines."""
 	global matched_lines, pattern, count, hilight
+	time_grep = now()
+
 	buffer = buffer_create()
 	len_matched_lines = len(matched_lines)
 	if len_matched_lines > 4000:
@@ -497,15 +503,12 @@ def buffer_update():
 	nick_dict = {}
 
 	def make_title(name, count):
-		return "Search in %s | %s lines | pattern %s" \
-				%(name, count, pattern)
+		return "Search in %s | %s lines | pattern '%s' | %.4f seconds (%.2f%%)" \
+				%(name, count, pattern, time_total, time_grep_pct)
 
 	def make_summary(name, count):
 		return "%s lines matched \"%s\" in %s" \
 				%(count, pattern, name)
-
-	title = make_title(matched_lines, len_matched_lines)
-	weechat.buffer_set(buffer, 'title', title)
 
 	# formatting
 	global weechat_format
@@ -567,7 +570,17 @@ def buffer_update():
 					summary = make_summary(log, len(lines))
 					print_info(summary, buffer)
 	else:
-		print_info(title, buffer)
+		print_info('No matches found.', buffer)
+
+	global time_start
+	time_end = now()
+	# total time
+	time_total = time_end - time_start
+	# percent of the total time used for grepping
+	time_grep_pct = (time_grep - time_start)/time_total*100
+	title = make_title(matched_lines, len_matched_lines)
+	weechat.buffer_set(buffer, 'title', title)
+
 	if get_config_boolean('go_to_buffer'):
 		weechat.buffer_set(buffer, 'display', '1')
 
