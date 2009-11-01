@@ -483,6 +483,7 @@ def show_matching_lines():
 		# we hook a process so grepping runs in background.
 		global hook_file_grep
 		timeout = 1000*60*5 # 5 min
+		global now; now = time.time()
 		hook_file_grep = weechat.hook_process(
 			"python -c \"\n"
 			"import sys\n"
@@ -507,19 +508,18 @@ def show_matching_lines():
 		buffer_update()
 
 grep_stdout = grep_stderr = ''
-#import time
-#now = time.time()
+import time
 def grep_file_callback(data, command, rc, stdout, stderr):
 	global hook_file_grep, grep_stderr,  grep_stdout
 	global matched_lines
-	#global now, now_old
+	global now, now_old
 	#debug("%s @ stderr: '%s', stdout: '%s'" %(rc, stderr.strip('\n'), stdout.strip('\n')))
-	#now_old, now = now, time.time(); debug('ping! %s' %(now-now_old))
 	if stdout:
 		grep_stdout += stdout
 	if stderr:
 		grep_stderr += stderr
 	if int(rc) >= 0:
+		now_old, now = now, time.time(); debug('grepping DONE! %s' %(now-now_old))
 		if grep_stderr:
 			error(grep_stderr)
 		elif grep_stdout:
@@ -529,9 +529,9 @@ def grep_file_callback(data, command, rc, stdout, stderr):
 				log = log.splitlines()
 				log_name = log.pop(0)
 				matched_lines[log_name] = log
-			#now_old, now = now, time.time(); debug('I\'m updating mah buffer! %s' %(now-now_old))
+			now_old, now = now, time.time(); debug('I\'m updating mah buffer! %s' %(now-now_old))
 			buffer_update()
-			#now_old, now = now, time.time(); debug('I\'m DONE updating mah buffer! %s' %(now-now_old))
+			now_old, now = now, time.time(); debug('I\'m DONE updating mah buffer! %s' %(now-now_old))
 		grep_stdout = grep_stderr = ''
 		hook_file_grep = None
 	return WEECHAT_RC_OK
