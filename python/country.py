@@ -81,34 +81,18 @@ database_url = 'http://geolite.maxmind.com/download/geoip/database/GeoIPCountryC
 database_file = 'GeoIPCountryWhois.csv'
 
 ### config
-class ValidValuesDict(dict):
-	"""
-	Dict that returns the default value defined by 'defaultKey' key if __getitem__ raises
-	KeyError. 'defaultKey' must be in the supplied dict.
-	"""
-	def _error_msg(self, key):
-		error("'%s' is an invalid option value, allowed: %s. Defaulting to '%s'" \
-				%(key, ', '.join(map(repr, self.keys())), self.default))
+settings = {'show_in_whois': 'on', 'show_localtime': 'on'}
 
-	def __init__(self, dict, defaultKey):
-		self.update(dict)
-		assert defaultKey in self
-		self.default = defaultKey
-
-	def __getitem__(self, key):
-		try:
-			return dict.__getitem__(self, key)
-		except KeyError:
-			# user set a bad value
-			self._error_msg(key)
-			return dict.__getitem__(self, self.default)
-
-settings = (('show_in_whois', 'on'), ('show_localtime', 'on'))
-
-boolDict = ValidValuesDict({'on':True, 'off':False}, 'off')
+boolDict = {'on':True, 'off':False}
 def get_config_boolean(config):
-	"""Gets our config value, returns a sane default if value is wrong."""
-	return boolDict[weechat.config_get_plugin(config)]
+    value = weechat.config_get_plugin(config)
+    try:
+        return boolDict[value]
+    except KeyError:
+        default = settings[config]
+        error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
+        error("'%s' is invalid, allowed: 'on', 'off'" %value)
+        return boolDict[default]
 
 ### messages
 def say(s, prefix=SCRIPT_NAME, buffer=''):
@@ -419,7 +403,7 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
 			"nick, ip, uri: Gets country and local time for a given ip, domain or nick.",
 			'update||%(nick)', 'cmd_country', '')
 	# settings
-	for opt, val in settings:
+	for opt, val in settings.iteritems():
 		if not weechat.config_is_set_plugin(opt):
 			weechat.config_set_plugin(opt, val)
 	if not check_database():
