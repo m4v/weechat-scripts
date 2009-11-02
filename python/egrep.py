@@ -48,18 +48,25 @@
 #     egrep will only print the last matched lines that don't surpass the value defined here.
 #
 #
+#   TODO
+#   * add some stats in get_grep_file_status
+#   * Update buffer real time.
+#
+#
 #   History:
 #
 #   2009-
-#   version 0.6:
-#   * tweaks in egrep's output
-#   * max_lines option added for limit egrep's output
-#   * code in update_buffer() optimized
-#   * time stats in buffer title
+#   version 0.6: improvements for large log files (WeeChat freezes reduced)
+#   * egrep buffer input accepts the same arguments as /egrep for repeat a search.
+#   * added /egrep stop.
+#   * tweaks in egrep's output.
+#   * max_lines option added for limit egrep's output.
+#   * code in update_buffer() optimized.
+#   * time stats in buffer title.
 #   * grepping for log files runs in a weechat_process.
 #   * added go_to_buffer config option.
 #   * added --buffer for search only in buffers.
-#   * some refactoring
+#   * some refactoring.
 #
 #   2009-10-12, omero
 #   version 0.5.2: made it python-2.4.x compliant
@@ -102,7 +109,7 @@ except ImportError:
 
 SCRIPT_NAME    = "egrep"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.5.2"
+SCRIPT_VERSION = "0.6-dev"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Search in buffers and logs"
 SCRIPT_COMMAND = "egrep"
@@ -443,10 +450,6 @@ def show_matching_lines():
 	Greps buffers in search_in_buffers or files in search_in_files and updates egrep buffer with the
 	result.
 	"""
-	global hook_file_grep
-	if hook_file_grep:
-		error('There\'s already a search in progress..')
-		return
 	global pattern, matchcase, head, tail, number, count, exact, hilight
 	global search_in_files, search_in_buffers, matched_lines, home_dir
 	global time_start
@@ -460,13 +463,15 @@ def show_matching_lines():
 			matched_lines[buffer_name] = grep_buffer(buffer, head, tail, regexp, hilight, exact)
 	if search_in_files:
 		# we hook a process so grepping runs in background.
-		timeout = 1000*60*5 # 5 min
+		global hook_file_grep
+		timeout = 1000*60*10 # 10 min
 
+		files_string = search_in_files[:]
 		for id in range(len(search_in_files)):
 			# nicks might have ` characters, must be escaped in the shell cmd
 			if '`' in search_in_files[id]:
-				search_in_files[id] = search_in_files[id].replace('`', '\`')
-		search_in_files = ', '.join(map(repr, search_in_files)).replace('\\\\','\\')
+				files_string[id] = search_in_files[id].replace('`', '\`')
+		files_string = ', '.join(map(repr, files_string)).replace('\\\\','\\')
 		cmd = str(
 			"python -c \"\n"
 			"import sys\n"
@@ -484,7 +489,7 @@ def show_matching_lines():
 			"		print\n"                    # print \n as delimiter between logs
 			"except Exception, e:\n"
 			"	print >> sys.stderr, e\"\n" \
-				%dict(logs=search_in_files, head=head, pattern=pattern, tail=tail, hilight=hilight,
+				%dict(logs=files_string, head=head, pattern=pattern, tail=tail, hilight=hilight,
 						exact=exact, matchcase=matchcase, len_home=len(home_dir),
 						home=weechat.info_get('weechat_dir', '')))
 
@@ -517,6 +522,12 @@ def grep_file_callback(data, command, rc, stdout, stderr):
 		hook_file_grep = None
 	return WEECHAT_RC_OK
 
+def get_grep_file_status():
+	global search_in_files, matched_lines, time_start
+	elapsed = now() - time_start
+	return 'There\'s a search in progress (running for %.4f seconds) interrupt it with /egrep stop'\
+			%elapsed
+
 ### output buffer
 def buffer_update():
 	"""Updates our buffer with new lines."""
@@ -532,25 +543,27 @@ def buffer_update():
 	hilight_color = colors['hilight']
 	reset_color = colors['reset']
 	date_color = colors['date']
+	title_color = weechat.color('yellow')
+	summary_color = weechat.color('lightcyan')
 	nick_dict = {}
 
 	# formatting functions declared locally.
-	def make_title(name, count):
+	def make_title(name, number):
 		note = ''
-		if len_matched_lines > max_lines:
+		if len_matched_lines > max_lines and not count:
 			note = ' (only last %s shown)' %max_lines
-		return "Search in %s | %s lines%s | pattern \"%s\" | %.4f seconds (%.2f%%)" \
-				%(name, count, note, pattern, time_total, time_grep_pct)
+		return "Search in %s%s%s | %s lines%s | pattern \"%s%s%s\" | %.4f seconds (%.2f%%)" \
+				%(title_color, name, reset_color, number, note, title_color, pattern, reset_color, time_total, time_grep_pct)
 
-	def make_summary(name, count, printed=0):
+	def make_summary(name, number, printed=0):
 		note = ''
-		if printed != count:
+		if printed != number:
 			if printed:
 				note = ' (only last %s shown)' %printed
 			else:
 				note = ' (not shown)'
-		return "%s lines matched \"%s\" in %s%s" \
-				%(count, pattern, name, note)
+		return "%s lines matched \"%s%s%s\" in %s%s%s%s" \
+				%(number, summary_color, pattern, colors['info'], summary_color, name, reset_color, note)
 
 	global weechat_format
 	weechat_format = True # assume yes
@@ -599,6 +612,7 @@ def buffer_update():
 		nick_color = weechat.color(color)
 		return '%s%s%s%s' %(mode_color, mode, nick_color, nick)
 
+	print_info('Search for "%s" in %s.' %(pattern, matched_lines), buffer)
 	# print last <max_lines> lines
 	print_count = max_lines
 	if matched_lines:
@@ -613,7 +627,7 @@ def buffer_update():
 						print_lines = lines
 						print_count -= len_lines
 					elif print_count:
-						print_lines = lines[-print_count:]
+						print_lines = lines[-print_count:] # grab the last <print_count> lines
 						print_count = 0
 					else:
 						print_lines = []
@@ -651,7 +665,7 @@ def print_info(s, buffer=None, display=False):
 		buffer = buffer_create()
 	weechat.prnt(buffer, '%s%s\t%s%s' \
 			%(colors['script_nick'],script_nick, colors['info'], s))
-	if display:
+	if display and get_config_boolean('go_to_buffer'):
 		weechat.buffer_set(buffer, 'display', '1')
 
 def buffer_create():
@@ -670,23 +684,22 @@ def buffer_create():
 
 def buffer_input(data, buffer, input_data):
 	"""Repeats last search with 'input_data' as regexp."""
-	global last_search
-	if last_search and input_data:
-		logs, head, tail, regexp, hilight, exact, count, matchcase = last_search
-		try:
-			regexp = make_regexp(input_data, matchcase)
-		except Exception, e:
-			error(e, buffer=buffer)
-			return WEECHAT_RC_OK
-		# lets be sure that our pointers in 'logs' are still valid
-		for log in logs:
-			if log.startswith('0x') and not weechat.infolist_get('buffer', log, ''):
-				# I don't want any crashes
-				error("Got invalid pointer, did you close a buffer? use /egrep", buffer=buffer)
+	global search_in_buffers, search_in_files
+	global pattern, matchcase, head, tail, number, count, exact, hilight
+	try:
+		if pattern and (search_in_files or search_in_buffers):
+			for pointer in search_in_buffers:
+				if not weechat.infolist_get('buffer', pointer, ''):
+					# I don't want any crashes
+					del search_in_buffers[search_in_buffers.index(pointer)]
+					error("Got invalid buffer pointer, did you close a buffer? Removing it.")
+			try:
+				cmd_grep_parsing(input_data)
+			except Exception, e:
+				error('Argument error, %s' %e, buffer=buffer)
 				return WEECHAT_RC_OK
-		matched_lines = get_matching_lines(logs, head, tail, regexp, hilight, exact)
-		buffer_update(matched_lines, input_data, count, hilight)
-	elif not last_search:
+			show_matching_lines()
+	except NameError:
 		error("There isn't any previous search to repeat.", buffer=buffer)
 	return WEECHAT_RC_OK
 
@@ -695,92 +708,108 @@ def buffer_close(*args):
 
 ### commands
 def cmd_init():
-	global home_dir, cache_dir, last_search
+	global home_dir, cache_dir
 	global pattern, matchcase, head, tail, number, count, exact, hilight
 	hilight = ''
 	head = tail = matchcase = count = exact = False
 	number = None
 	home_dir = get_home()
 	cache_dir = {}
-	last_search = None
+
+def cmd_grep_parsing(args):
+	global pattern, matchcase, head, tail, number, count, exact, hilight
+	global log_name, buffer_name, only_buffers, all
+	opts, args = getopt.gnu_getopt(args.split(), 'cmHeahtin:br', ['count', 'matchcase', 'hilight',
+		'exact', 'all', 'head', 'tail', 'number=', 'buffer'])
+	#debug(opts, 'opts: '); debug(args, 'args: ')
+	if len(args) >= 2:
+		if args[0] == 'log':
+			del args[0]
+			log_name = args.pop(0)
+		elif args[0] == 'buffer':
+			del args[0]
+			buffer_name = args.pop(0)
+	args = ' '.join(args) # join pattern for keep spaces
+	if args:
+		pattern = args
+	elif not pattern:
+		raise Exception, 'No pattern for grep the logs.'
+	for opt, val in opts:
+		opt = opt.strip('-')
+		if opt in ('c', 'count'):
+			count = True
+		if opt in ('m', 'matchcase'):
+			matchcase = True
+		if opt in ('H', 'hilight'):
+			hilight = '%s,%s' %(colors['hilight'], colors['reset'])
+			# we pass the colors in the variable itself because check_string() must not use
+			# weechat's module when applying the colors
+		if opt in ('e', 'exact'):
+			exact = True
+		if opt in ('a', 'all'):
+			all = True
+		if opt in ('h', 'head'):
+			head = True
+		if opt in ('t', 'tail'):
+			tail = True
+		if opt in ('b', 'buffer'):
+			only_buffers = True
+		if opt in ('n', 'number'):
+			try:
+				number = int(val)
+				if number < 0:
+					raise ValueError
+			except ValueError:
+				raise Exception, "argument for --number must be a integer positive number."
+	# more checks
+	if count:
+		if hilight:
+			hilight = False # why hilight if we're just going to count?
+		if exact:
+			exact = False # see hilight
+	if head and tail: # it won't work
+		raise Exception, "can't use --tail and --head simultaneously."
+	if number is not None:
+		if not head and not tail:
+			raise Exception, "--number only works with --tail or --head."
+		if number == 0:
+			# waste of cpu cycles
+			raise Exception, "this humble script refuses to search and return zero lines."
+		if head:
+			head = number
+		elif tail:
+			tail = number
+	else:
+		if head:
+			head = 10
+		elif tail:
+			tail = 10
 
 def cmd_grep(data, buffer, args):
 	"""Search in buffers and logs."""
+	global pattern, matchcase, head, tail, number, count, exact, hilight
+	global hook_file_grep
+	if hook_file_grep:
+		if args == 'stop':
+			weechat.unhook(hook_file_grep)
+			hook_file_grep = None
+			say('Search for \'%s\' stopped.' %pattern, buffer=buffer)
+		else:
+			error(get_grep_file_status(), buffer=buffer)
+		return WEECHAT_RC_OK
+
 	if not args:
 		weechat.command('', '/help %s' %SCRIPT_COMMAND)
 		return WEECHAT_RC_OK
 
 	cmd_init()
-	global pattern, matchcase, head, tail, number, count, exact, hilight
+	global log_name, buffer_name, only_buffers, all
 	log_name = buffer_name = ''
 	only_buffers = all = False
 
 	# parse
 	try:
-		opts, args = getopt.gnu_getopt(args.split(), 'cmHeahtin:b', ['count', 'matchcase', 'hilight',
-			'exact', 'all', 'head', 'tail', 'number=', 'buffer'])
-		#debug(opts, 'opts: '); debug(args, 'args: ')
-		if len(args) >= 2:
-			if args[0] == 'log':
-				del args[0]
-				log_name = args.pop(0)
-			elif args[0] == 'buffer':
-				del args[0]
-				buffer_name = args.pop(0)
-		pattern = ' '.join(args) # join pattern for keep spaces
-		if not pattern:
-			raise Exception, 'No pattern for grep the logs.'
-		for opt, val in opts:
-			opt = opt.strip('-')
-			if opt in ('c', 'count'):
-				count = True
-			if opt in ('m', 'matchcase'):
-				matchcase = True
-			if opt in ('H', 'hilight'):
-				hilight = '%s,%s' %(colors['hilight'], colors['reset'])
-				# we pass the colors in the variable itself because check_string() must not use
-				# weechat's module when applying the colors
-			if opt in ('e', 'exact'):
-				exact = True
-			if opt in ('a', 'all'):
-				all = True
-			if opt in ('h', 'head'):
-				head = True
-			if opt in ('t', 'tail'):
-				tail = True
-			if opt in ('b', 'buffer'):
-				only_buffers = True
-			if opt in ('n', 'number'):
-				try:
-					number = int(val)
-					if number < 0:
-						raise ValueError
-				except ValueError:
-					raise Exception, "argument for --number must be a integer positive number."
-		# more checks
-		if count:
-			if hilight:
-				hilight = False # why hilight if we're just going to count?
-			if exact:
-				exact = False # see hilight
-		if head and tail: # it won't work
-			raise Exception, "can't use --tail and --head simultaneously."
-		if number is not None:
-			if not head and not tail:
-				raise Exception, "--number only works with --tail or --head."
-			if number == 0:
-				# waste of cpu cycles
-				say("This humble script refuses to search and return zero lines.", buffer=buffer)
-				return WEECHAT_RC_OK
-			if head:
-				head = number
-			elif tail:
-				tail = number
-		else:
-			if head:
-				head = 10
-			elif tail:
-				tail = 10
+		cmd_grep_parsing(args)
 	except Exception, e:
 		error('Argument error, %s' %e)
 		return WEECHAT_RC_OK
@@ -814,8 +843,10 @@ def cmd_grep(data, buffer, args):
 	if log_file:
 		search_in_files = log_file
 	elif not only_buffers:
+		#debug(search_buffer)
 		for pointer in search_buffer:
 			log = get_file_by_buffer(pointer)
+			#debug('buffer %s log %s' %(pointer, log))
 			if log:
 				search_in_files.append(log)
 			else:
@@ -905,11 +936,12 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
 		SCRIPT_DESC, '', ''):
 	home_dir = get_home()
 	weechat.hook_command(SCRIPT_COMMAND, cmd_grep.__doc__,
-			"[[log <file>] | [buffer <name>]] [-a|--all] [-b|--buffer] [-c|--count] [-m|--matchcase] "
+			"[log <file> | buffer <name> | stop] [-a|--all] [-b|--buffer] [-c|--count] [-m|--matchcase] "
 			"[-H|--hilight] [-e|--exact] [(-h|--head)|(-t|--tail) [-n|--number <n>]] <expression>",
 			# help
 			"     log <file>: Search in one log that matches <file> in the logger path. Use '*' and '?' as jokers.\n"
 			"  buffer <name>: Search in buffer <name>, if there's no buffer with <name> it will try to search for a log file.\n"
+			"           stop: Stops a currently running search.\n"
 			"       -a --all: Search in all open buffers.\n"
 			"                 If used with 'log <file>' search in all logs that matches <file>.\n"
 			"    -b --buffer: Search only in buffers, not in file logs.\n"
@@ -921,12 +953,15 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
 			"      -h --head: Print the first 10 matching lines.\n"
 			"-n --number <n>: Overrides default number of lines for --tail or --head.\n"
 			"   <expression>: Expression to search.\n\n"
-			"egrep buffer input:\n"
-			"  Repeat last search using the new given expression.\n\n"
+			"If no arguments given and there's a search in progress, egrep will display a short"
+			" stat.\n\n"
+			"egrep buffer:\n"
+			"  Accepts the same arguments as /egrep, It'll repeat last search using the new arguments.\n\n"
 			"see http://docs.python.org/lib/re-syntax.html for documentation about python regular expressions.\n",
 			# completion template
 			"buffer %(buffers_names) %(egrep_arguments)|%*"
 			"||log %(egrep_log_files) %(egrep_arguments)|%*"
+			"||stop"
 			"||%(egrep_arguments)|%*",
 			'cmd_grep' ,'')
 	weechat.hook_command('logs', cmd_logs.__doc__, "[-s|--size] [<filter>]",
