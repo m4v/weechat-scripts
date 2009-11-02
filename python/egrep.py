@@ -458,13 +458,18 @@ def show_matching_lines():
 		# we hook a process so grepping runs in background.
 		global hook_file_grep
 		timeout = 1000*60*5 # 5 min
-#		hook_file_grep = weechat.hook_process(
-		cmd = (
+
+		for id in range(len(search_in_files)):
+			# nicks might have ` characters, must be escaped in the shell cmd
+			if '`' in search_in_files[id]:
+				search_in_files[id] = search_in_files[id].replace('`', '\`')
+		search_in_files = ', '.join(map(repr, search_in_files)).replace('\\\\','\\')
+		cmd = str(
 			"python -c \"\n"
 			"import sys\n"
 			"sys.path.append('%(home)s/python')\n" # add WeeChat script dir so we can import egrep
 			"from egrep import make_regexp, grep_file\n"
-			"logs = %(logs)r\n"
+			"logs = (%(logs)s, )\n"
 			"try:\n"
 			"	regexp = make_regexp('%(pattern)s', %(matchcase)s)\n"
 			"	for log in logs:\n"
@@ -478,9 +483,10 @@ def show_matching_lines():
 			"	print >> sys.stderr, e\"\n" \
 				%dict(logs=search_in_files, head=head, pattern=pattern, tail=tail, hilight=hilight,
 						exact=exact, matchcase=matchcase, len_home=len(home_dir),
-						home=weechat.info_get('weechat_dir', '')), )
-		#debug(cmd[0])
-		hook_file_grep = weechat.hook_process(cmd[0], timeout, 'grep_file_callback', '')
+						home=weechat.info_get('weechat_dir', '')))
+
+		#debug(cmd)
+		hook_file_grep = weechat.hook_process(cmd, timeout, 'grep_file_callback', '')
 	else:
 		buffer_update()
 
