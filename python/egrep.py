@@ -686,7 +686,7 @@ def buffer_input(data, buffer, input_data):
 				# I don't want any crashes
 				del search_in_buffers[search_in_buffers.index(pointer)]
 				error("Got invalid buffer pointer, did you close a buffer? Removing it.")
-		pattern = input_data
+		cmd_grep_parsing(input_data)
 		show_matching_lines()
 	else:
 		error("There isn't any previous search to repeat.", buffer=buffer)
@@ -704,6 +704,75 @@ def cmd_init():
 	number = None
 	home_dir = get_home()
 	cache_dir = {}
+
+def cmd_grep_parsing(args):
+	global pattern, matchcase, head, tail, number, count, exact, hilight
+	global log_name, buffer_name, only_buffers, all
+	opts, args = getopt.gnu_getopt(args.split(), 'cmHeahtin:br', ['count', 'matchcase', 'hilight',
+		'exact', 'all', 'head', 'tail', 'number=', 'buffer'])
+	#debug(opts, 'opts: '); debug(args, 'args: ')
+	if len(args) >= 2:
+		if args[0] == 'log':
+			del args[0]
+			log_name = args.pop(0)
+		elif args[0] == 'buffer':
+			del args[0]
+			buffer_name = args.pop(0)
+	args = ' '.join(args) # join pattern for keep spaces
+	if args:
+		pattern = args
+	elif not pattern:
+		raise Exception, 'No pattern for grep the logs.'
+	for opt, val in opts:
+		opt = opt.strip('-')
+		if opt in ('c', 'count'):
+			count = True
+		if opt in ('m', 'matchcase'):
+			matchcase = True
+		if opt in ('H', 'hilight'):
+			hilight = '%s,%s' %(colors['hilight'], colors['reset'])
+			# we pass the colors in the variable itself because check_string() must not use
+			# weechat's module when applying the colors
+		if opt in ('e', 'exact'):
+			exact = True
+		if opt in ('a', 'all'):
+			all = True
+		if opt in ('h', 'head'):
+			head = True
+		if opt in ('t', 'tail'):
+			tail = True
+		if opt in ('b', 'buffer'):
+			only_buffers = True
+		if opt in ('n', 'number'):
+			try:
+				number = int(val)
+				if number < 0:
+					raise ValueError
+			except ValueError:
+				raise Exception, "argument for --number must be a integer positive number."
+	# more checks
+	if count:
+		if hilight:
+			hilight = False # why hilight if we're just going to count?
+		if exact:
+			exact = False # see hilight
+	if head and tail: # it won't work
+		raise Exception, "can't use --tail and --head simultaneously."
+	if number is not None:
+		if not head and not tail:
+			raise Exception, "--number only works with --tail or --head."
+		if number == 0:
+			# waste of cpu cycles
+			raise Exception, "this humble script refuses to search and return zero lines."
+		if head:
+			head = number
+		elif tail:
+			tail = number
+	else:
+		if head:
+			head = 10
+		elif tail:
+			tail = 10
 
 def cmd_grep(data, buffer, args):
 	"""Search in buffers and logs."""
@@ -723,75 +792,13 @@ def cmd_grep(data, buffer, args):
 		return WEECHAT_RC_OK
 
 	cmd_init()
+	global log_name, buffer_name, only_buffers, all
 	log_name = buffer_name = ''
 	only_buffers = all = False
 
 	# parse
 	try:
-		opts, args = getopt.gnu_getopt(args.split(), 'cmHeahtin:b', ['count', 'matchcase', 'hilight',
-			'exact', 'all', 'head', 'tail', 'number=', 'buffer'])
-		#debug(opts, 'opts: '); debug(args, 'args: ')
-		if len(args) >= 2:
-			if args[0] == 'log':
-				del args[0]
-				log_name = args.pop(0)
-			elif args[0] == 'buffer':
-				del args[0]
-				buffer_name = args.pop(0)
-		pattern = ' '.join(args) # join pattern for keep spaces
-		if not pattern:
-			raise Exception, 'No pattern for grep the logs.'
-		for opt, val in opts:
-			opt = opt.strip('-')
-			if opt in ('c', 'count'):
-				count = True
-			if opt in ('m', 'matchcase'):
-				matchcase = True
-			if opt in ('H', 'hilight'):
-				hilight = '%s,%s' %(colors['hilight'], colors['reset'])
-				# we pass the colors in the variable itself because check_string() must not use
-				# weechat's module when applying the colors
-			if opt in ('e', 'exact'):
-				exact = True
-			if opt in ('a', 'all'):
-				all = True
-			if opt in ('h', 'head'):
-				head = True
-			if opt in ('t', 'tail'):
-				tail = True
-			if opt in ('b', 'buffer'):
-				only_buffers = True
-			if opt in ('n', 'number'):
-				try:
-					number = int(val)
-					if number < 0:
-						raise ValueError
-				except ValueError:
-					raise Exception, "argument for --number must be a integer positive number."
-		# more checks
-		if count:
-			if hilight:
-				hilight = False # why hilight if we're just going to count?
-			if exact:
-				exact = False # see hilight
-		if head and tail: # it won't work
-			raise Exception, "can't use --tail and --head simultaneously."
-		if number is not None:
-			if not head and not tail:
-				raise Exception, "--number only works with --tail or --head."
-			if number == 0:
-				# waste of cpu cycles
-				say("This humble script refuses to search and return zero lines.", buffer=buffer)
-				return WEECHAT_RC_OK
-			if head:
-				head = number
-			elif tail:
-				tail = number
-		else:
-			if head:
-				head = 10
-			elif tail:
-				tail = 10
+		cmd_grep_parsing(args)
 	except Exception, e:
 		error('Argument error, %s' %e)
 		return WEECHAT_RC_OK
