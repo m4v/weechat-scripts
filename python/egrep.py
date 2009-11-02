@@ -48,10 +48,16 @@
 #     egrep will only print the last matched lines that don't surpass the value defined here.
 #
 #
+#   TODO
+#   * add some stats in get_grep_file_status
+#   * Update buffer real time.
+#
+#
 #   History:
 #
 #   2009-
 #   version 0.6: improvements for large log files (WeeChat freezes reduced)
+#   * egrep buffer input accepts the same arguments as /egrep for repeat a search.
 #   * added /egrep stop.
 #   * tweaks in egrep's output.
 #   * max_lines option added for limit egrep's output.
@@ -103,7 +109,7 @@ except ImportError:
 
 SCRIPT_NAME    = "egrep"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.5.2"
+SCRIPT_VERSION = "0.6-dev"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Search in buffers and logs"
 SCRIPT_COMMAND = "egrep"
@@ -546,7 +552,7 @@ def buffer_update():
 		note = ''
 		if len_matched_lines > max_lines and not count:
 			note = ' (only last %s shown)' %max_lines
-		return "Search in %s%s%s | matched %s lines%s | pattern \"%s%s%s\" | %.4f seconds (%.2f%%)" \
+		return "Search in %s%s%s | %s lines%s | pattern \"%s%s%s\" | %.4f seconds (%.2f%%)" \
 				%(title_color, name, reset_color, number, note, title_color, pattern, reset_color, time_total, time_grep_pct)
 
 	def make_summary(name, number, printed=0):
@@ -680,15 +686,20 @@ def buffer_input(data, buffer, input_data):
 	"""Repeats last search with 'input_data' as regexp."""
 	global search_in_buffers, search_in_files
 	global pattern, matchcase, head, tail, number, count, exact, hilight
-	if pattern and (search_in_files or search_in_buffers):
-		for pointer in search_in_buffers:
-			if not weechat.infolist_get('buffer', pointer, ''):
-				# I don't want any crashes
-				del search_in_buffers[search_in_buffers.index(pointer)]
-				error("Got invalid buffer pointer, did you close a buffer? Removing it.")
-		cmd_grep_parsing(input_data)
-		show_matching_lines()
-	else:
+	try:
+		if pattern and (search_in_files or search_in_buffers):
+			for pointer in search_in_buffers:
+				if not weechat.infolist_get('buffer', pointer, ''):
+					# I don't want any crashes
+					del search_in_buffers[search_in_buffers.index(pointer)]
+					error("Got invalid buffer pointer, did you close a buffer? Removing it.")
+			try:
+				cmd_grep_parsing(input_data)
+			except Exception, e:
+				error('Argument error, %s' %e, buffer=buffer)
+				return WEECHAT_RC_OK
+			show_matching_lines()
+	except NameError:
 		error("There isn't any previous search to repeat.", buffer=buffer)
 	return WEECHAT_RC_OK
 
@@ -944,8 +955,8 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
 			"   <expression>: Expression to search.\n\n"
 			"If no arguments given and there's a search in progress, egrep will display a short"
 			" stat.\n\n"
-			"egrep buffer input:\n"
-			"  Repeat last search using the new given expression.\n\n"
+			"egrep buffer:\n"
+			"  Accepts the same arguments as /egrep, It'll repeat last search using the new arguments.\n\n"
 			"see http://docs.python.org/lib/re-syntax.html for documentation about python regular expressions.\n",
 			# completion template
 			"buffer %(buffers_names) %(egrep_arguments)|%*"
