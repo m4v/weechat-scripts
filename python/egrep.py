@@ -460,11 +460,12 @@ def show_matching_lines():
 		global hook_file_grep
 		timeout = 1000*60*10 # 10 min
 
+		files_string = search_in_files[:]
 		for id in range(len(search_in_files)):
 			# nicks might have ` characters, must be escaped in the shell cmd
 			if '`' in search_in_files[id]:
-				search_in_files[id] = search_in_files[id].replace('`', '\`')
-		search_in_files = ', '.join(map(repr, search_in_files)).replace('\\\\','\\')
+				files_string[id] = search_in_files[id].replace('`', '\`')
+		files_string = ', '.join(map(repr, files_string)).replace('\\\\','\\')
 		cmd = str(
 			"python -c \"\n"
 			"import sys\n"
@@ -482,7 +483,7 @@ def show_matching_lines():
 			"		print\n"                    # print \n as delimiter between logs
 			"except Exception, e:\n"
 			"	print >> sys.stderr, e\"\n" \
-				%dict(logs=search_in_files, head=head, pattern=pattern, tail=tail, hilight=hilight,
+				%dict(logs=files_string, head=head, pattern=pattern, tail=tail, hilight=hilight,
 						exact=exact, matchcase=matchcase, len_home=len(home_dir),
 						home=weechat.info_get('weechat_dir', '')))
 
@@ -545,7 +546,7 @@ def buffer_update():
 		note = ''
 		if len_matched_lines > max_lines and not count:
 			note = ' (only last %s shown)' %max_lines
-		return "Search in %s%s%s | %s lines%s | pattern \"%s%s%s\" | %.4f seconds (%.2f%%)" \
+		return "Search in %s%s%s | matched %s lines%s | pattern \"%s%s%s\" | %.4f seconds (%.2f%%)" \
 				%(title_color, name, reset_color, number, note, title_color, pattern, reset_color, time_total, time_grep_pct)
 
 	def make_summary(name, number, printed=0):
@@ -605,6 +606,7 @@ def buffer_update():
 		nick_color = weechat.color(color)
 		return '%s%s%s%s' %(mode_color, mode, nick_color, nick)
 
+	print_info('Search for "%s" in %s.' %(pattern, matched_lines), buffer)
 	# print last <max_lines> lines
 	print_count = max_lines
 	if matched_lines:
@@ -676,23 +678,17 @@ def buffer_create():
 
 def buffer_input(data, buffer, input_data):
 	"""Repeats last search with 'input_data' as regexp."""
-	global last_search
-	if last_search and input_data:
-		logs, head, tail, regexp, hilight, exact, count, matchcase = last_search
-		try:
-			regexp = make_regexp(input_data, matchcase)
-		except Exception, e:
-			error(e, buffer=buffer)
-			return WEECHAT_RC_OK
-		# lets be sure that our pointers in 'logs' are still valid
-		for log in logs:
-			if log.startswith('0x') and not weechat.infolist_get('buffer', log, ''):
+	global search_in_buffers, search_in_files
+	global pattern, matchcase, head, tail, number, count, exact, hilight
+	if pattern and (search_in_files or search_in_buffers):
+		for pointer in search_in_buffers:
+			if not weechat.infolist_get('buffer', pointer, ''):
 				# I don't want any crashes
-				error("Got invalid pointer, did you close a buffer? use /egrep", buffer=buffer)
-				return WEECHAT_RC_OK
-		matched_lines = get_matching_lines(logs, head, tail, regexp, hilight, exact)
-		buffer_update(matched_lines, input_data, count, hilight)
-	elif not last_search:
+				del search_in_buffers[search_in_buffers.index(pointer)]
+				error("Got invalid buffer pointer, did you close a buffer? Removing it.")
+		pattern = input_data
+		show_matching_lines()
+	else:
 		error("There isn't any previous search to repeat.", buffer=buffer)
 	return WEECHAT_RC_OK
 
@@ -701,14 +697,13 @@ def buffer_close(*args):
 
 ### commands
 def cmd_init():
-	global home_dir, cache_dir, last_search
+	global home_dir, cache_dir
 	global pattern, matchcase, head, tail, number, count, exact, hilight
 	hilight = ''
 	head = tail = matchcase = count = exact = False
 	number = None
 	home_dir = get_home()
 	cache_dir = {}
-	last_search = None
 
 def cmd_grep(data, buffer, args):
 	"""Search in buffers and logs."""
@@ -830,8 +825,10 @@ def cmd_grep(data, buffer, args):
 	if log_file:
 		search_in_files = log_file
 	elif not only_buffers:
+		#debug(search_buffer)
 		for pointer in search_buffer:
 			log = get_file_by_buffer(pointer)
+			#debug('buffer %s log %s' %(pointer, log))
 			if log:
 				search_in_files.append(log)
 			else:
