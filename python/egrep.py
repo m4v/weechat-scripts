@@ -443,10 +443,6 @@ def show_matching_lines():
 	Greps buffers in search_in_buffers or files in search_in_files and updates egrep buffer with the
 	result.
 	"""
-	global hook_file_grep
-	if hook_file_grep:
-		error('There\'s already a search in progress..')
-		return
 	global pattern, matchcase, head, tail, number, count, exact, hilight
 	global search_in_files, search_in_buffers, matched_lines, home_dir
 	global time_start
@@ -460,6 +456,7 @@ def show_matching_lines():
 			matched_lines[buffer_name] = grep_buffer(buffer, head, tail, regexp, hilight, exact)
 	if search_in_files:
 		# we hook a process so grepping runs in background.
+		global hook_file_grep
 		timeout = 1000*60*5 # 5 min
 
 		for id in range(len(search_in_files)):
@@ -516,6 +513,10 @@ def grep_file_callback(data, command, rc, stdout, stderr):
 		grep_stdout = grep_stderr = ''
 		hook_file_grep = None
 	return WEECHAT_RC_OK
+
+def get_grep_file_status():
+	global search_in_files, matched_lines
+	pass
 
 ### output buffer
 def buffer_update():
@@ -706,12 +707,22 @@ def cmd_init():
 
 def cmd_grep(data, buffer, args):
 	"""Search in buffers and logs."""
+	global pattern, matchcase, head, tail, number, count, exact, hilight
+	global hook_file_grep
+	if hook_file_grep:
+		if args == 'stop':
+			weechat.unhook(hook_file_grep)
+			hook_file_grep = None
+			say('Search for \'%s\' stopped.' %pattern, buffer=buffer)
+		else:
+			error('There\'s already a search in progress, close it with /egrep stop', buffer=buffer)
+		return WEECHAT_RC_OK
+
 	if not args:
 		weechat.command('', '/help %s' %SCRIPT_COMMAND)
 		return WEECHAT_RC_OK
 
 	cmd_init()
-	global pattern, matchcase, head, tail, number, count, exact, hilight
 	log_name = buffer_name = ''
 	only_buffers = all = False
 
@@ -905,11 +916,12 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
 		SCRIPT_DESC, '', ''):
 	home_dir = get_home()
 	weechat.hook_command(SCRIPT_COMMAND, cmd_grep.__doc__,
-			"[[log <file>] | [buffer <name>]] [-a|--all] [-b|--buffer] [-c|--count] [-m|--matchcase] "
+			"[log <file> | buffer <name> | stop] [-a|--all] [-b|--buffer] [-c|--count] [-m|--matchcase] "
 			"[-H|--hilight] [-e|--exact] [(-h|--head)|(-t|--tail) [-n|--number <n>]] <expression>",
 			# help
 			"     log <file>: Search in one log that matches <file> in the logger path. Use '*' and '?' as jokers.\n"
 			"  buffer <name>: Search in buffer <name>, if there's no buffer with <name> it will try to search for a log file.\n"
+			"           stop: Stops a currently running search.\n"
 			"       -a --all: Search in all open buffers.\n"
 			"                 If used with 'log <file>' search in all logs that matches <file>.\n"
 			"    -b --buffer: Search only in buffers, not in file logs.\n"
@@ -927,6 +939,7 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
 			# completion template
 			"buffer %(buffers_names) %(egrep_arguments)|%*"
 			"||log %(egrep_log_files) %(egrep_arguments)|%*"
+			"||stop"
 			"||%(egrep_arguments)|%*",
 			'cmd_grep' ,'')
 	weechat.hook_command('logs', cmd_logs.__doc__, "[-s|--size] [<filter>]",
