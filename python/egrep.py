@@ -32,19 +32,35 @@
 #   Settings:
 #   * plugins.var.python.egrep.clear_buffer:
 #     Clear the results buffer before each search. Valid values: on, off
+#
+#   * plugins.var.python.egrep.go_to_buffer:
+#     Automatically go to egrep buffer when search is over. Valid values: on, off
+#
 #   * plugins.var.python.egrep.log_filter:
 #     Coma separated list of patterns that egrep will use for exclude logs, e.g.
 #     if you use '*server/*' any log in the 'server' folder will be excluded
 #     when using the command '/egrep log'
+#
 #   * plugins.var.python.egrep.show_summary:
 #     Shows summary for each log. Valid values: on, off
 #
-#
-#   TODO:
-#   * grepping should run in background for big logs
+#   * plugins.var.python.egrep.max_lines:
+#     egrep will only print the last matched lines that don't surpass the value defined here.
 #
 #
 #   History:
+#
+#   2009-
+#   version 0.6:
+#   * tweaks in egrep's output
+#   * max_lines option added for limit egrep's output
+#   * code in update_buffer() optimized
+#   * time stats in buffer title
+#   * grepping for log files runs in a weechat_process.
+#   * added go_to_buffer config option.
+#   * added --buffer for search only in buffers.
+#   * some refactoring
+#
 #   2009-10-12, omero
 #   version 0.5.2: made it python-2.4.x compliant
 #
@@ -72,12 +88,17 @@
 #
 ###
 
-#from __future__ import with_statement # This isn't required in Python 2.6
 import os.path as path
-import getopt
+import getopt, time
 
-import weechat
-from weechat import WEECHAT_RC_OK
+now = time.time
+
+try:
+    import weechat
+    WEECHAT_RC_OK = weechat.WEECHAT_RC_OK
+    import_ok = True
+except ImportError:
+    import_ok = False
 
 SCRIPT_NAME    = "egrep"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
@@ -95,10 +116,11 @@ class linesDict(dict):
 	linesDict[buffer_name] = matched_lines_list
 	"""
 	def __setitem__(self, key, value):
-		# probably I'm being too carefull.
 		assert isinstance(value, list)
-		assert isinstance(key, str)
-		dict.__setitem__(self, key, value)
+		if key not in self:
+			dict.__setitem__(self, key, value)
+		else:
+			dict.__getitem__(self, key).extend(value)
 
 	def __len__(self):
 		"""Return the sum of total lines stored."""
@@ -117,40 +139,36 @@ class linesDict(dict):
 		else:
 			return ''
 
-class ValidValuesDict(dict):
-	"""
-	Dict that returns the default value defined by 'defaultKey' key if __getitem__ raises
-	KeyError. 'defaultKey' must be in the supplied dict.
-	"""
-	def _error_msg(self, key):
-		error("'%s' is an invalid option value, allowed: %s. Defaulting to '%s'" \
-				%(key, ', '.join(map(repr, self.keys())), self.default))
-
-	def __init__(self, dict, defaultKey):
-		self.update(dict)
-		assert defaultKey in self
-		self.default = defaultKey
-
-	def __getitem__(self, key):
-		try:
-			return dict.__getitem__(self, key)
-		except KeyError:
-			# user set a bad value
-			self._error_msg(key)
-			return dict.__getitem__(self, self.default)
 
 ### config
-settings = (
-		('clear_buffer', 'off'), # Should clear the buffer before every search
-		('log_filter', ''), # filter for exclude log files
-		('show_summary', 'on')) # Show summary line after the search
+settings = {
+		'clear_buffer' :'off', # Should clear the buffer before every search
+		'log_filter'   :'',    # filter for exclude log files
+		'go_to_buffer' :'on',
+		'max_lines'    :'4000',
+		'show_summary' :'on'}  # Show summary line after the search
 
-# I can't find for the love of me how to easily add a boolean config option in plugins.var.python
-# config_set_plugin sets a string option and any string is valid, will do value validation here.
-boolDict = ValidValuesDict({'on':True, 'off':False}, 'off')
+### value validation
+boolDict = {'on':True, 'off':False}
 def get_config_boolean(config):
-	"""Gets our config value, returns a sane default if value is wrong."""
-	return boolDict[weechat.config_get_plugin(config)]
+    value = weechat.config_get_plugin(config)
+    try:
+        return boolDict[value]
+    except KeyError:
+        default = settings[config]
+        error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
+        error("'%s' is invalid, allowed: 'on', 'off'" %value)
+        return boolDict[default]
+
+def get_config_int(config):
+    value = weechat.config_get_plugin(config)
+    try:
+        return int(value)
+    except ValueError:
+        default = settings[config]
+        error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
+        error("'%s' is not a number." %value)
+        return int(default)
 
 def get_config_log_filter():
 	filter = weechat.config_get_plugin('log_filter')
@@ -175,71 +193,6 @@ def error(s, prefix=SCRIPT_NAME, buffer=''):
 def say(s, prefix=SCRIPT_NAME, buffer=''):
 	"""normal msg"""
 	weechat.prnt(buffer, '%s: %s' %(prefix, s))
-
-### formatting
-def color_nick(nick):
-	"""Returns coloured nick, with coloured mode if any."""
-	# XXX should check if nick has a prefix and subfix string?
-	if not nick: return ''
-	# nick mode
-	modes = '@!+%' # XXX I hope I got them right
-	if nick[0] in modes:
-		mode, nick = nick[0], nick[1:]
-		mode_color = weechat.config_string(weechat.config_get('weechat.color.nicklist_prefix%d' \
-			%(modes.find(mode) + 1)))
-		mode_color = weechat.color(mode_color)
-	else:
-		mode = ''
-		mode_color = ''
-	color_nicks_number = weechat.config_integer(weechat.config_get('weechat.look.color_nicks_number'))
-	idx = (sum(map(ord, nick))%color_nicks_number) + 1
-	color = weechat.config_string(weechat.config_get('weechat.color.chat_nick_color%02d' %idx))
-	nick_color = weechat.color(color)
-	return '%s%s%s%s' %(mode_color, mode, nick_color, nick)
-
-def color_hilight(s, list):
-	"""Returns 's' with strings in 'list' coloured."""
-	# remove duplicates in match list if any
-	d = {}
-	for m in list:
-		d[m] = 1
-	list = d.keys()
-	# apply hilight
-	for m in list:
-		s = s.replace(m, '%s%s%s' %(colors['hilight'], m, colors['reset']))
-	return s
-
-def format_line(s, hilight):
-	"""Returns the log line 's' ready for printing in buffer."""
-	date, nick, msg = split_line(s)
-	# we don't want colors if there's match highlighting
-	if hilight:
-		# fix color reset when there's highlighting from date to prefix
-		if colors['hilight'] in date and not colors['reset'] in date:
-			nick = colors['hilight'] + nick
-		return '%s\t%s %s' %(date, nick, msg)
-	else:
-		nick = color_nick(nick)
-		return '%s%s\t%s%s %s' %(colors['date'], date, nick, colors['reset'], msg)
-
-def split_line(s):
-	"""Split 's' in (date, nick, msg), if 's' isn't in weechat's formats returns ('', '', s)."""
-	global weechat_format
-	if weechat_format and s.count('\t') >= 2:
-		return s.split('\t', 2) # date, nick, message
-	else:
-		# looks like log isn't in weechat's format
-		weechat_format = False # incoming lines won't be formatted if they have 2 tabs
-		return '', '', s.replace('\t', ' ')
-
-# for /logs cmd
-sizeDict = {0:'b', 1:'KiB', 2:'MiB', 3:'GiB', 4:'TiB'}
-def human_readable_size(size):
-	power = 0
-	while size > 1024:
-		power += 1
-		size /= 1024.0
-	return '%.2f%s' %(size, sizeDict.get(power, ''))
 
 ### log files and buffers
 cache_dir = {} # for avoid walking the dir tree more than once per command
@@ -382,6 +335,9 @@ def get_all_buffers():
 ### grep
 def make_regexp(pattern, matchcase=False):
 	"""Returns a compiled regexp."""
+	if pattern in ('.', '.*', '.?', '.+'):
+		# because I don't need to use a regexp if we're going to match all lines
+		return None
 	try:
 		import re
 		if not matchcase:
@@ -392,7 +348,7 @@ def make_regexp(pattern, matchcase=False):
 		raise Exception, 'Bad pattern, %s' %e
 	return regexp
 
-def check_string(s, regexp, hilight=False, exact=False):
+def check_string(s, regexp, hilight='', exact=False):
 	"""Checks 's' with a regexp and returns it if is a match."""
 	if not regexp:
 		return s
@@ -403,7 +359,12 @@ def check_string(s, regexp, hilight=False, exact=False):
 	elif hilight:
 		matchlist = regexp.findall(s)
 		if matchlist:
-			return color_hilight(s, matchlist)
+			matchlist = list(set(matchlist)) # remove duplicates if any
+			# apply hilight
+			hilight_color, reset_color = hilight.split(',', 1)
+			for m in matchlist:
+				s = s.replace(m, '%s%s%s' %(hilight_color, m, reset_color))
+			return s
 	# no need for findall() here
 	elif regexp.search(s):
 		return s
@@ -421,10 +382,13 @@ def grep_file(file, head, tail, *args):
 	else:
 		fd = file_object
 	limit = head or tail
+
+	append = lines.append
+	check = check_string
 	for line in fd:
-		line = check_string(line, *args)
+		line = check(line, *args)
 		if line:
-			lines.append(line)
+			append(line)
 			if limit and len(lines) >= limit: break
 	if tail:
 		lines.reverse()
@@ -445,6 +409,10 @@ def grep_buffer(buffer, head, tail, *args):
 	else:
 		infolist_next = weechat.infolist_next
 	limit = head or tail
+
+	append = lines.append
+	check = check_string
+	infolist_time = weechat.infolist_time
 	while infolist_next(infolist):
 		prefix = weechat.infolist_string(infolist, 'prefix')
 		message = weechat.infolist_string(infolist, 'message')
@@ -456,11 +424,11 @@ def grep_buffer(buffer, head, tail, *args):
 			date = prefix
 			line = '%s\t%s' %(date, message.replace(' ', '\t', 1))
 		else:
-			date = weechat.infolist_time(infolist, 'date')
+			date = infolist_time(infolist, 'date')
 			line = '%s\t%s\t%s' %(date, prefix, message)
-		line = check_string(line, *args)
+		line = check(line, *args)
 		if line:
-			lines.append(line)
+			append(line)
 			if limit and len(lines) >= limit:
 				break
 	weechat.infolist_free(infolist)
@@ -469,44 +437,213 @@ def grep_buffer(buffer, head, tail, *args):
 	return lines
 
 ### this is our main grep function
-def get_matching_lines(logs, *args):
+hook_file_grep = None
+def show_matching_lines():
 	"""
-	get_matching_lines(logs, head, tail, regexp, hilight, exact) => linesDict
-	Given a list of log files or buffer pointers, returns a linesDict with the matching lines
+	Greps buffers in search_in_buffers or files in search_in_files and updates egrep buffer with the
+	result.
 	"""
-	global home_dir
+	global hook_file_grep
+	if hook_file_grep:
+		error('There\'s already a search in progress..')
+		return
+	global pattern, matchcase, head, tail, number, count, exact, hilight
+	global search_in_files, search_in_buffers, matched_lines, home_dir
+	global time_start
 	matched_lines = linesDict()
-	for log in logs:
-		if log == '' or log.startswith('0x'):
-			# is a buffer
-			buffer_name = weechat.buffer_get_string(log, 'name')
-			matched_lines[buffer_name] = grep_buffer(log, *args)
-		else:
-			# is a file
-			log_name = log[len(home_dir):]
-			matched_lines[log_name] = grep_file(log, *args)
-	return matched_lines
+	#debug('buffers:%s \nlogs:%s' %(search_in_buffers, search_in_files))
+	time_start = now()
+	if search_in_buffers:
+		regexp = make_regexp(pattern, matchcase)
+		for buffer in search_in_buffers:
+			buffer_name = weechat.buffer_get_string(buffer, 'name')
+			matched_lines[buffer_name] = grep_buffer(buffer, head, tail, regexp, hilight, exact)
+	if search_in_files:
+		# we hook a process so grepping runs in background.
+		timeout = 1000*60*5 # 5 min
+
+		for id in range(len(search_in_files)):
+			# nicks might have ` characters, must be escaped in the shell cmd
+			if '`' in search_in_files[id]:
+				search_in_files[id] = search_in_files[id].replace('`', '\`')
+		search_in_files = ', '.join(map(repr, search_in_files)).replace('\\\\','\\')
+		cmd = str(
+			"python -c \"\n"
+			"import sys\n"
+			"sys.path.append('%(home)s/python')\n" # add WeeChat script dir so we can import egrep
+			"from egrep import make_regexp, grep_file\n"
+			"logs = (%(logs)s, )\n"
+			"try:\n"
+			"	regexp = make_regexp('%(pattern)s', %(matchcase)s)\n"
+			"	for log in logs:\n"
+			"		log_name = log[%(len_home)s:]\n"
+			"		matched_lines = grep_file(log, %(head)s, %(tail)s, regexp, '%(hilight)s', %(exact)s)\n"
+			"		print log_name\n"           # print logname first
+			"		for l in matched_lines:\n"  # then our matched lines
+			"			print l[:-1]\n"         # remove tailing \n
+			"		print\n"                    # print \n as delimiter between logs
+			"except Exception, e:\n"
+			"	print >> sys.stderr, e\"\n" \
+				%dict(logs=search_in_files, head=head, pattern=pattern, tail=tail, hilight=hilight,
+						exact=exact, matchcase=matchcase, len_home=len(home_dir),
+						home=weechat.info_get('weechat_dir', '')))
+
+		#debug(cmd)
+		hook_file_grep = weechat.hook_process(cmd, timeout, 'grep_file_callback', '')
+	else:
+		buffer_update()
+
+grep_stdout = grep_stderr = ''
+def grep_file_callback(data, command, rc, stdout, stderr):
+	global hook_file_grep, grep_stderr,  grep_stdout
+	global matched_lines
+	#debug("%s @ stderr: '%s', stdout: '%s'" %(rc, stderr.strip('\n'), stdout.strip('\n')))
+	if stdout:
+		grep_stdout += stdout
+	if stderr:
+		grep_stderr += stderr
+	if int(rc) >= 0:
+		if grep_stderr:
+			error(grep_stderr)
+		elif grep_stdout:
+			logs = grep_stdout.split('\n\n') # split between log files
+			for log in logs:
+				if not log: continue
+				log = log.splitlines()
+				log_name = log.pop(0)
+				matched_lines[log_name] = log
+			buffer_update()
+		grep_stdout = grep_stderr = ''
+		hook_file_grep = None
+	return WEECHAT_RC_OK
 
 ### output buffer
-make_title = lambda pattern, buffer, count: \
-	"Search in '%s' matched %s lines, pattern: '%s'" \
-		%(buffer, count, pattern)
-def buffer_update(matched_lines, pattern, count, *args):
+def buffer_update():
 	"""Updates our buffer with new lines."""
+	global matched_lines, pattern, count, hilight
+	time_grep = now()
+
 	buffer = buffer_create()
-	title = make_title(pattern, matched_lines, len(matched_lines))
-	weechat.buffer_set(buffer, 'title', title)
-	if matched_lines: # lines matched in at least one log
+	len_matched_lines = len(matched_lines)
+	max_lines = get_config_int('max_lines')
+	if not count and len_matched_lines > max_lines:
+		weechat.buffer_clear(buffer)
+
+	hilight_color = colors['hilight']
+	reset_color = colors['reset']
+	date_color = colors['date']
+	nick_dict = {}
+
+	# formatting functions declared locally.
+	def make_title(name, count):
+		note = ''
+		if len_matched_lines > max_lines:
+			note = ' (only last %s shown)' %max_lines
+		return "Search in %s | %s lines%s | pattern \"%s\" | %.4f seconds (%.2f%%)" \
+				%(name, count, note, pattern, time_total, time_grep_pct)
+
+	def make_summary(name, count, printed=0):
+		note = ''
+		if printed != count:
+			if printed:
+				note = ' (only last %s shown)' %printed
+			else:
+				note = ' (not shown)'
+		return "%s lines matched \"%s\" in %s%s" \
+				%(count, pattern, name, note)
+
+	global weechat_format
+	weechat_format = True # assume yes
+	def format_line(s):
+		"""Returns the log line 's' ready for printing in buffer."""
+		global weechat_format
+		if weechat_format and s.count('\t') >= 2:
+			date, nick, msg = s.split('\t', 2) # date, nick, message
+		else:
+			# looks like log isn't in weechat's format
+			weechat_format = False # incoming lines won't be formatted if they have 2 tabs
+			date, nick, msg = '', '', s.replace('\t', ' ')
+		# we don't want colors if there's match highlighting
+		if hilight:
+			# fix color reset when there's highlighting from date to prefix
+			if hilight_color in date and not reset_color in date:
+				nick = hilight_color + nick
+			return '%s\t%s %s' %(date, nick, msg)
+		else:
+			if nick in nick_dict:
+				nick = nick_dict[nick]
+			else:
+				# cache nick
+				s = color_nick(nick)
+				nick_dict[nick] = s
+				nick = s
+			return '%s%s\t%s%s %s' %(date_color, date, nick, reset_color, msg)
+
+	def color_nick(nick):
+		"""Returns coloured nick, with coloured mode if any."""
+		# XXX should check if nick has a prefix and subfix string?
+		modes = '@!+%' # nick modes
+		if not nick: return ''
+		# nick mode
+		if nick[0] in modes:
+			mode, nick = nick[0], nick[1:]
+			mode_color = weechat.config_string(weechat.config_get('weechat.color.nicklist_prefix%d' \
+				%(modes.find(mode) + 1)))
+			mode_color = weechat.color(mode_color)
+		else:
+			mode = ''
+			mode_color = ''
+		color_nicks_number = weechat.config_integer(weechat.config_get('weechat.look.color_nicks_number'))
+		idx = (sum(map(ord, nick))%color_nicks_number) + 1
+		color = weechat.config_string(weechat.config_get('weechat.color.chat_nick_color%02d' %idx))
+		nick_color = weechat.color(color)
+		return '%s%s%s%s' %(mode_color, mode, nick_color, nick)
+
+	# print last <max_lines> lines
+	print_count = max_lines
+	if matched_lines:
+		prnt = weechat.prnt
+		print_lines = []
 		for log, lines in matched_lines.iteritems():
-			if not count:
-				for line in lines:
-					weechat.prnt(buffer, format_line(line, *args))
-			info = make_title(pattern, log, len(lines))
-			if get_config_boolean('show_summary'):
-				print_info(info, buffer)
+			if lines:
+				# matched lines
+				if not count:
+					len_lines = len(lines)
+					if len_lines < print_count:
+						print_lines = lines
+						print_count -= len_lines
+					elif print_count:
+						print_lines = lines[-print_count:]
+						print_count = 0
+					else:
+						print_lines = []
+					# print lines
+					for line in print_lines:
+						prnt(buffer, format_line(line))
+
+				# summary
+				if count or get_config_boolean('show_summary'):
+					summary = make_summary(log, len(lines), len(print_lines))
+					print_info(summary, buffer)
+
+				# separator
+				if print_lines:
+					prnt(buffer, '\n')
 	else:
-		print_info(title, buffer)
-	weechat.buffer_set(buffer, 'display', '1')
+		print_info('No matches found.', buffer)
+
+	# set title
+	global time_start
+	time_end = now()
+	# total time
+	time_total = time_end - time_start
+	# percent of the total time used for grepping
+	time_grep_pct = (time_grep - time_start)/time_total*100
+	title = make_title(matched_lines, len_matched_lines)
+	weechat.buffer_set(buffer, 'title', title)
+
+	if get_config_boolean('go_to_buffer'):
+		weechat.buffer_set(buffer, 'display', '1')
 
 def print_info(s, buffer=None, display=False):
 	"""Prints 's' in script's buffer as 'script_nick'. For displaying search summaries."""
@@ -558,26 +695,30 @@ def buffer_close(*args):
 
 ### commands
 def cmd_init():
-	global home_dir, weechat_format, cache_dir, last_search
+	global home_dir, cache_dir, last_search
+	global pattern, matchcase, head, tail, number, count, exact, hilight
+	hilight = ''
+	head = tail = matchcase = count = exact = False
+	number = None
 	home_dir = get_home()
-	weechat_format = True
 	cache_dir = {}
 	last_search = None
 
 def cmd_grep(data, buffer, args):
 	"""Search in buffers and logs."""
-	global home_dir, last_search
 	if not args:
 		weechat.command('', '/help %s' %SCRIPT_COMMAND)
 		return WEECHAT_RC_OK
-	# set defaults
+
+	cmd_init()
+	global pattern, matchcase, head, tail, number, count, exact, hilight
 	log_name = buffer_name = ''
-	head = tail = matchcase = count = all = exact = hilight = False
-	number = None
+	only_buffers = all = False
+
 	# parse
 	try:
-		opts, args = getopt.gnu_getopt(args.split(), 'cmHeahtin:', ['count', 'matchcase', 'hilight',
-			'exact', 'all', 'head', 'tail', 'number='])
+		opts, args = getopt.gnu_getopt(args.split(), 'cmHeahtin:b', ['count', 'matchcase', 'hilight',
+			'exact', 'all', 'head', 'tail', 'number=', 'buffer'])
 		#debug(opts, 'opts: '); debug(args, 'args: ')
 		if len(args) >= 2:
 			if args[0] == 'log':
@@ -589,8 +730,6 @@ def cmd_grep(data, buffer, args):
 		pattern = ' '.join(args) # join pattern for keep spaces
 		if not pattern:
 			raise Exception, 'No pattern for grep the logs.'
-		elif pattern in ('.', '.*', '.?', '.+'):
-			pattern = '' # because I don't need to use a regexp if we're going to match all lines.
 		for opt, val in opts:
 			opt = opt.strip('-')
 			if opt in ('c', 'count'):
@@ -598,7 +737,9 @@ def cmd_grep(data, buffer, args):
 			if opt in ('m', 'matchcase'):
 				matchcase = True
 			if opt in ('H', 'hilight'):
-				hilight = True
+				hilight = '%s,%s' %(colors['hilight'], colors['reset'])
+				# we pass the colors in the variable itself because check_string() must not use
+				# weechat's module when applying the colors
 			if opt in ('e', 'exact'):
 				exact = True
 			if opt in ('a', 'all'):
@@ -607,6 +748,8 @@ def cmd_grep(data, buffer, args):
 				head = True
 			if opt in ('t', 'tail'):
 				tail = True
+			if opt in ('b', 'buffer'):
+				only_buffers = True
 			if opt in ('n', 'number'):
 				try:
 					number = int(val)
@@ -638,12 +781,11 @@ def cmd_grep(data, buffer, args):
 				head = 10
 			elif tail:
 				tail = 10
-		regexp = pattern and make_regexp(pattern, matchcase)
 	except Exception, e:
 		error('Argument error, %s' %e)
 		return WEECHAT_RC_OK
-	# lets start
-	cmd_init()
+
+	# find logs
 	log_file = search_buffer = None
 	if log_name:
 		log_file = get_file_by_pattern(log_name, all)
@@ -664,37 +806,39 @@ def cmd_grep(data, buffer, args):
 			search_buffer = [search_buffer]
 	else:
 		search_buffer = [buffer]
+
 	# make the log list
-	logs = []
+	global search_in_files, search_in_buffers
+	search_in_files = []
+	search_in_buffers = []
 	if log_file:
-		logs = log_file
-	else:
+		search_in_files = log_file
+	elif not only_buffers:
 		for pointer in search_buffer:
 			log = get_file_by_buffer(pointer)
 			if log:
-				logs.append(log)
+				search_in_files.append(log)
 			else:
-				logs.append(pointer)
+				search_in_buffers.append(pointer)
+	else:
+		search_in_buffers = search_buffer
+
 	# grepping
-	#debug('Grepping in %s' %logs)
 	try:
-		matched_lines = get_matching_lines(logs, head, tail, regexp, hilight, exact)
-		# save last search
-		last_search = (logs, head, tail, regexp, hilight, exact, count, matchcase)
+		show_matching_lines()
 	except Exception, e:
 		error(e)
-		return WEECHAT_RC_OK
-	# output
-	buffer_update(matched_lines, pattern, count, hilight)
 	return WEECHAT_RC_OK
 
 def cmd_logs(data, buffer, args):
 	"""List files in Weechat's log dir."""
+	cmd_init()
 	global home_dir
 	from os import stat
 	get_size = lambda x: stat(x).st_size
 	sort_by_size = False
 	filter = []
+
 	try:
 		opts, args = getopt.gnu_getopt(args.split(), 's', ['size'])
 		if args:
@@ -706,8 +850,7 @@ def cmd_logs(data, buffer, args):
 	except Exception, e:
 		error('Argument error, %s' %e)
 		return WEECHAT_RC_OK
-	# args look good
-	cmd_init()
+
 	# is there's a filter, filter_excludes should be False
 	file_list = dir_list(home_dir, filter, filter_excludes=not filter)
 	home_dir_len = len(home_dir)
@@ -715,6 +858,15 @@ def cmd_logs(data, buffer, args):
 		file_list.sort(key=get_size)
 	else:
 		file_list.sort()
+
+	sizeDict = {0:'b', 1:'KiB', 2:'MiB', 3:'GiB', 4:'TiB'}
+	def human_readable_size(size):
+		power = 0
+		while size > 1024:
+			power += 1
+			size /= 1024.0
+		return '%.2f%s' %(size, sizeDict.get(power, ''))
+
 	file_sizes = map(lambda x: human_readable_size(get_size(x)), file_list)
 	if weechat.config_string(weechat.config_get('weechat.look.prefix_align')) == 'none' \
 			and file_list:
@@ -744,34 +896,31 @@ def completion_log_files(data, completion_item, buffer, completion):
 	return WEECHAT_RC_OK
 
 def completion_egrep_args(data, completion_item, buffer, completion):
-	for arg in ('count', 'all', 'matchcase', 'hilight', 'exact', 'head', 'tail', 'number'):
+	for arg in ('count', 'all', 'matchcase', 'hilight', 'exact', 'head', 'tail', 'number', 'buffer'):
 		weechat.hook_completion_list_add(completion, '--' + arg, 0, weechat.WEECHAT_LIST_POS_SORT)
 	return WEECHAT_RC_OK
 
 ### Main
-def script_init():
-	global home_dir
-	home_dir = get_home()
-
-if weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
+if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
 		SCRIPT_DESC, '', ''):
-	script_init()
+	home_dir = get_home()
 	weechat.hook_command(SCRIPT_COMMAND, cmd_grep.__doc__,
-			"[[log <file>] | [buffer <name>]] [-a|--all] [-c|--count] [-m|--matchcase] "
+			"[[log <file>] | [buffer <name>]] [-a|--all] [-b|--buffer] [-c|--count] [-m|--matchcase] "
 			"[-H|--hilight] [-e|--exact] [(-h|--head)|(-t|--tail) [-n|--number <n>]] <expression>",
 			# help
-			"      log <file>: Search in one log that matches <file> in the logger path. Use '*' and '?' as jokers.\n"
-			"   buffer <name>: Search in buffer <name>, if there's no buffer with <name> it will try to search for a log file.\n"
-			"       -a, --all: Search in all open buffers.\n"
-			"                  If used with 'log <file>' search in all logs that matches <file>.\n"
-			"     -c, --count: Just count the number of matched lines instead of showing them.\n"
-			" -m, --matchcase: Don't do case insensible search.\n"
-			"   -H, --hilight: Colour exact matches in output buffer.\n"
-			"     -e, --exact: Print exact matches only.\n"
-			"      -t, --tail: Print the last 10 matching lines.\n"
-			"      -h, --head: Print the first 10 matching lines.\n"
-			"-n, --number <n>: Overrides default number of lines for --tail or --head.\n"
-			"    <expression>: Expression to search.\n\n"
+			"     log <file>: Search in one log that matches <file> in the logger path. Use '*' and '?' as jokers.\n"
+			"  buffer <name>: Search in buffer <name>, if there's no buffer with <name> it will try to search for a log file.\n"
+			"       -a --all: Search in all open buffers.\n"
+			"                 If used with 'log <file>' search in all logs that matches <file>.\n"
+			"    -b --buffer: Search only in buffers, not in file logs.\n"
+			"     -c --count: Just count the number of matched lines instead of showing them.\n"
+			" -m --matchcase: Don't do case insensible search.\n"
+			"   -H --hilight: Colour exact matches in output buffer.\n"
+			"     -e --exact: Print exact matches only.\n"
+			"      -t --tail: Print the last 10 matching lines.\n"
+			"      -h --head: Print the first 10 matching lines.\n"
+			"-n --number <n>: Overrides default number of lines for --tail or --head.\n"
+			"   <expression>: Expression to search.\n\n"
 			"egrep buffer input:\n"
 			"  Repeat last search using the new given expression.\n\n"
 			"see http://docs.python.org/lib/re-syntax.html for documentation about python regular expressions.\n",
@@ -788,7 +937,7 @@ if weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, 
 	weechat.hook_completion('egrep_arguments', "list of arguments",
 			'completion_egrep_args', '')
 	# settings
-	for opt, val in settings:
+	for opt, val in settings.iteritems():
 		if not weechat.config_is_set_plugin(opt):
 			weechat.config_set_plugin(opt, val)
 	# colors
