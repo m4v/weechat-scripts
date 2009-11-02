@@ -44,7 +44,7 @@
 #   * plugins.var.python.egrep.show_summary:
 #     Shows summary for each log. Valid values: on, off
 #
-#   * plugins.var.python.egrep.max_lines_shown:
+#   * plugins.var.python.egrep.max_lines:
 #     egrep will only print the last matched lines that don't surpass the value defined here.
 #
 #
@@ -53,7 +53,8 @@
 #   2009-
 #   version 0.6:
 #   * tweaks in egrep's output
-#   * code in update_buffer() optimized and max_lines_shown option added
+#   * max_lines option added for limit egrep's output
+#   * code in update_buffer() optimized
 #   * time stats in buffer title
 #   * grepping for log files runs in a weechat_process.
 #   * added go_to_buffer config option.
@@ -144,7 +145,7 @@ settings = {
 		'clear_buffer' :'off', # Should clear the buffer before every search
 		'log_filter'   :'',    # filter for exclude log files
 		'go_to_buffer' :'on',
-		'max_lines_shown' :'4000',
+		'max_lines'    :'4000',
 		'show_summary' :'on'}  # Show summary line after the search
 
 ### value validation
@@ -432,7 +433,7 @@ def show_matching_lines():
 	Greps buffers in search_in_buffers or files in search_in_files and updates egrep buffer with the
 	result.
 	"""
-	global pattern, matchcase, head, tail, number, count, all, exact, hilight
+	global pattern, matchcase, head, tail, number, count, exact, hilight
 	global search_in_files, search_in_buffers, matched_lines, home_dir
 	global time_start
 	matched_lines = linesDict()
@@ -447,12 +448,13 @@ def show_matching_lines():
 		# we hook a process so grepping runs in background.
 		global hook_file_grep
 		timeout = 1000*60*5 # 5 min
-		hook_file_grep = weechat.hook_process(
+#		hook_file_grep = weechat.hook_process(
+		cmd = (
 			"python -c \"\n"
 			"import sys\n"
 			"sys.path.append('%(home)s/python')\n" # add WeeChat script dir so we can import egrep
 			"from egrep import make_regexp, grep_file\n"
-			"logs = %(logs)s\n"
+			"logs = %(logs)r\n"
 			"try:\n"
 			"	regexp = make_regexp('%(pattern)s', %(matchcase)s)\n"
 			"	for log in logs:\n"
@@ -464,9 +466,11 @@ def show_matching_lines():
 			"		print\n"                    # print \n as delimiter between logs
 			"except Exception, e:\n"
 			"	print >> sys.stderr, e\"\n" \
-				%dict(logs=search_in_files, head=head, pattern=pattern, tail=tail, hilight=hilight, exact=exact,
-				matchcase=matchcase, len_home=len(home_dir), home=weechat.info_get('weechat_dir', '')),
-				timeout, 'grep_file_callback', '')
+				%dict(logs=search_in_files, head=head, pattern=pattern, tail=tail, hilight=hilight,
+						exact=exact, matchcase=matchcase, len_home=len(home_dir),
+						home=weechat.info_get('weechat_dir', '')), )
+		#debug(cmd[0])
+		hook_file_grep = weechat.hook_process(cmd[0], timeout, 'grep_file_callback', '')
 	else:
 		buffer_update()
 
@@ -502,7 +506,7 @@ def buffer_update():
 
 	buffer = buffer_create()
 	len_matched_lines = len(matched_lines)
-	max_lines = int(weechat.config_get_plugin('max_lines_shown'))
+	max_lines = int(weechat.config_get_plugin('max_lines'))
 	if not count and len_matched_lines > max_lines:
 		weechat.buffer_clear(buffer)
 
@@ -516,7 +520,7 @@ def buffer_update():
 		note = ''
 		if len_matched_lines > max_lines:
 			note = ' (only last %s shown)' %max_lines
-		return "Search in %s | %s lines%s | pattern '%s' | %.4f seconds (%.2f%%)" \
+		return "Search in %s | %s lines%s | pattern \"%s\" | %.4f seconds (%.2f%%)" \
 				%(name, count, note, pattern, time_total, time_grep_pct)
 
 	def make_summary(name, count, printed=0):
@@ -673,9 +677,9 @@ def buffer_close(*args):
 ### commands
 def cmd_init():
 	global home_dir, cache_dir, last_search
-	global pattern, matchcase, head, tail, number, count, all, exact, hilight
-	log_name = buffer_name = hilight = ''
-	head = tail = matchcase = count = all = exact = only_buffers = False
+	global pattern, matchcase, head, tail, number, count, exact, hilight
+	hilight = ''
+	head = tail = matchcase = count = exact = False
 	number = None
 	home_dir = get_home()
 	cache_dir = {}
@@ -688,7 +692,9 @@ def cmd_grep(data, buffer, args):
 		return WEECHAT_RC_OK
 
 	cmd_init()
-	global pattern, matchcase, head, tail, number, count, all, exact, hilight
+	global pattern, matchcase, head, tail, number, count, exact, hilight
+	log_name = buffer_name = ''
+	only_buffers = all = False
 
 	# parse
 	try:
