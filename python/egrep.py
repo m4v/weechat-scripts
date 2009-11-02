@@ -651,7 +651,7 @@ def print_info(s, buffer=None, display=False):
 		buffer = buffer_create()
 	weechat.prnt(buffer, '%s%s\t%s%s' \
 			%(colors['script_nick'],script_nick, colors['info'], s))
-	if display:
+	if display and get_config_boolean('go_to_buffer'):
 		weechat.buffer_set(buffer, 'display', '1')
 
 def buffer_create():
