@@ -160,6 +160,16 @@ def get_config_boolean(config):
         error("'%s' is invalid, allowed: 'on', 'off'" %value)
         return boolDict[default]
 
+def get_config_int(config):
+    value = weechat.config_get_plugin(config)
+    try:
+        return int(value)
+    except ValueError:
+        default = settings[config]
+        error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
+        error("'%s' is not a number." %value)
+        return int(default)
+
 def get_config_log_filter():
 	filter = weechat.config_get_plugin('log_filter')
 	if filter:
@@ -506,7 +516,7 @@ def buffer_update():
 
 	buffer = buffer_create()
 	len_matched_lines = len(matched_lines)
-	max_lines = int(weechat.config_get_plugin('max_lines'))
+	max_lines = get_config_int('max_lines')
 	if not count and len_matched_lines > max_lines:
 		weechat.buffer_clear(buffer)
 
