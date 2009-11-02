@@ -51,15 +51,16 @@
 #   History:
 #
 #   2009-
-#   version 0.6:
-#   * tweaks in egrep's output
-#   * max_lines option added for limit egrep's output
-#   * code in update_buffer() optimized
-#   * time stats in buffer title
+#   version 0.6: improvements for large log files (WeeChat freezes reduced)
+#   * added /egrep stop.
+#   * tweaks in egrep's output.
+#   * max_lines option added for limit egrep's output.
+#   * code in update_buffer() optimized.
+#   * time stats in buffer title.
 #   * grepping for log files runs in a weechat_process.
 #   * added go_to_buffer config option.
 #   * added --buffer for search only in buffers.
-#   * some refactoring
+#   * some refactoring.
 #
 #   2009-10-12, omero
 #   version 0.5.2: made it python-2.4.x compliant
@@ -457,7 +458,7 @@ def show_matching_lines():
 	if search_in_files:
 		# we hook a process so grepping runs in background.
 		global hook_file_grep
-		timeout = 1000*60*5 # 5 min
+		timeout = 1000*60*10 # 10 min
 
 		for id in range(len(search_in_files)):
 			# nicks might have ` characters, must be escaped in the shell cmd
@@ -515,8 +516,10 @@ def grep_file_callback(data, command, rc, stdout, stderr):
 	return WEECHAT_RC_OK
 
 def get_grep_file_status():
-	global search_in_files, matched_lines
-	pass
+	global search_in_files, matched_lines, time_start
+	elapsed = now() - time_start
+	return 'There\'s a search in progress (running for %.4f seconds) interrupt it with /egrep stop'\
+			%elapsed
 
 ### output buffer
 def buffer_update():
@@ -533,25 +536,27 @@ def buffer_update():
 	hilight_color = colors['hilight']
 	reset_color = colors['reset']
 	date_color = colors['date']
+	title_color = weechat.color('yellow')
+	summary_color = weechat.color('lightcyan')
 	nick_dict = {}
 
 	# formatting functions declared locally.
-	def make_title(name, count):
+	def make_title(name, number):
 		note = ''
-		if len_matched_lines > max_lines:
+		if len_matched_lines > max_lines and not count:
 			note = ' (only last %s shown)' %max_lines
-		return "Search in %s | %s lines%s | pattern \"%s\" | %.4f seconds (%.2f%%)" \
-				%(name, count, note, pattern, time_total, time_grep_pct)
+		return "Search in %s%s%s | %s lines%s | pattern \"%s%s%s\" | %.4f seconds (%.2f%%)" \
+				%(title_color, name, reset_color, number, note, title_color, pattern, reset_color, time_total, time_grep_pct)
 
-	def make_summary(name, count, printed=0):
+	def make_summary(name, number, printed=0):
 		note = ''
-		if printed != count:
+		if printed != number:
 			if printed:
 				note = ' (only last %s shown)' %printed
 			else:
 				note = ' (not shown)'
-		return "%s lines matched \"%s\" in %s%s" \
-				%(count, pattern, name, note)
+		return "%s lines matched \"%s%s%s\" in %s%s%s%s" \
+				%(number, summary_color, pattern, colors['info'], summary_color, name, reset_color, note)
 
 	global weechat_format
 	weechat_format = True # assume yes
@@ -614,7 +619,7 @@ def buffer_update():
 						print_lines = lines
 						print_count -= len_lines
 					elif print_count:
-						print_lines = lines[-print_count:]
+						print_lines = lines[-print_count:] # grab the last <print_count> lines
 						print_count = 0
 					else:
 						print_lines = []
@@ -715,7 +720,7 @@ def cmd_grep(data, buffer, args):
 			hook_file_grep = None
 			say('Search for \'%s\' stopped.' %pattern, buffer=buffer)
 		else:
-			error('There\'s already a search in progress, close it with /egrep stop', buffer=buffer)
+			error(get_grep_file_status(), buffer=buffer)
 		return WEECHAT_RC_OK
 
 	if not args:
@@ -933,6 +938,8 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
 			"      -h --head: Print the first 10 matching lines.\n"
 			"-n --number <n>: Overrides default number of lines for --tail or --head.\n"
 			"   <expression>: Expression to search.\n\n"
+			"If no arguments given and there's a search in progress, egrep will display a short"
+			" stat.\n\n"
 			"egrep buffer input:\n"
 			"  Repeat last search using the new given expression.\n\n"
 			"see http://docs.python.org/lib/re-syntax.html for documentation about python regular expressions.\n",
