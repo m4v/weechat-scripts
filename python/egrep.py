@@ -443,6 +443,10 @@ def show_matching_lines():
 	Greps buffers in search_in_buffers or files in search_in_files and updates egrep buffer with the
 	result.
 	"""
+	global hook_file_grep
+	if hook_file_grep:
+		error('There\'s already a search in progress..')
+		return
 	global pattern, matchcase, head, tail, number, count, exact, hilight
 	global search_in_files, search_in_buffers, matched_lines, home_dir
 	global time_start
@@ -456,7 +460,6 @@ def show_matching_lines():
 			matched_lines[buffer_name] = grep_buffer(buffer, head, tail, regexp, hilight, exact)
 	if search_in_files:
 		# we hook a process so grepping runs in background.
-		global hook_file_grep
 		timeout = 1000*60*5 # 5 min
 
 		for id in range(len(search_in_files)):
