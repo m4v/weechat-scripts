@@ -221,6 +221,14 @@ def hostmask_pattern_match(pattern, hostmask):
     # I should replace it with a regexp, but I'm lazy now
     return fnmatch.fnmatch(hostmask, pattern)
 
+def is_ip(s):
+    """Returns whether or not a given string is an IPV4 address."""
+    import socket
+    try:
+        return bool(socket.inet_aton(s))
+    except socket.error:
+        return False
+
 ### WeeChat Classes
 class Infolist(object):
     """Class for reading WeeChat's infolists."""
@@ -464,7 +472,11 @@ class CommandOperator(Command):
     def __call__(self, *args):
         """Called by WeeChat when /command is used."""
         debug("command __call__ args: %s" %(args, ))
-        self.parse_args(*args)  # argument parsing
+        try:
+            self.parse_args(*args)  # argument parsing
+        except Exception, e:
+            error('Argument error, %s' %e)
+            return WEECHAT_RC_OK
         self.cmd()              # call our command and queue messages for WeeChat
         weechat_queue.run()     # run queued messages
         self.infolist = None    # free irc_nick infolist
@@ -771,11 +783,18 @@ class Ban(CommandNeedsOp):
         if self.args == 'list':
             return
         args = self.args.split()
-        (opts, args) = getopt.gnu_getopt(args, 'hune', ('host', 'user', 'nick', 'exact'))
+        try:
+            (opts, args) = getopt.gnu_getopt(args, 'hune', ('host', 'host2', 'host1', 'user', 'nick', 'exact'))
+        except getopt.GetoptError, e:
+            raise Exception, e
         self.banmask = []
         for k, v in opts:
             if k in ('-h', '--host'):
                 self.banmask.append('host')
+            elif k == '--host2':
+                self.banmask.append('host2')
+            elif k == '--host1':
+                self.banmask.append('host1')
             elif k in ('-u', '--user'):
                 self.banmask.append('user')
             elif k in ('-n', '--nick'):
@@ -801,6 +820,24 @@ class Ban(CommandNeedsOp):
             user = hostmask.split('!',1)[1].split('@')[0]
         if 'host' in self.banmask:
             host = hostmask[hostmask.find('@') + 1:]
+        elif 'host1' in self.banmask:
+            host = hostmask[hostmask.find('@') + 1:]
+            if is_ip(host):
+                # make a 123.123.123.* banmask
+                host = host.split('.')[:-1]
+                host.append('*')
+            host = '.'.join(host)
+        elif 'host2' in self.banmask:
+            host = hostmask[hostmask.find('@') + 1:]
+            if is_ip(host):
+                # make a 123.123.* banmask
+                host = host.split('.')[:-2]
+                host.append('*')
+#            elif '.' in host:
+#                # make a *.domain.com banmask
+#                host = host.split('.')[2:]
+#               host.insert(0, '*')
+            host = '.'.join(host)
         banmask = '%s!%s@%s' %(nick, user, host)
         return banmask
 
