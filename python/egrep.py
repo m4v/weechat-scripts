@@ -370,9 +370,9 @@ def check_string(s, regexp, hilight='', exact=False):
 		if matchlist:
 			matchlist = list(set(matchlist)) # remove duplicates if any
 			# apply hilight
-			hilight_color, reset_color = hilight.split(',', 1)
+			color_hilight, color_reset = hilight.split(',', 1)
 			for m in matchlist:
-				s = s.replace(m, '%s%s%s' %(hilight_color, m, reset_color))
+				s = s.replace(m, '%s%s%s' %(color_hilight, m, color_reset))
 			return s
 	# no need for findall() here
 	elif regexp.search(s):
@@ -542,12 +542,13 @@ def buffer_update():
 	if not count and len_matched_lines > max_lines:
 		weechat.buffer_clear(buffer)
 
-	hilight_color = colors['hilight']
-	reset_color = colors['reset']
-	date_color = colors['date']
-	title_color = weechat.color('yellow')
-	summary_color = weechat.color('lightcyan')
-	nick_dict = {}
+	# color variables defined locally
+	c_title = color_title
+	c_reset = color_reset
+	c_summary = color_summary
+	c_date = color_date
+	c_info = color_info
+	c_hilight = color_hilight
 
 	# formatting functions declared locally.
 	def make_title(name, number):
@@ -555,7 +556,7 @@ def buffer_update():
 		if len_matched_lines > max_lines and not count:
 			note = ' (only last %s shown)' %max_lines
 		return "Search in %s%s%s | %s lines%s | pattern \"%s%s%s\" | %.4f seconds (%.2f%%)" \
-				%(title_color, name, reset_color, number, note, title_color, pattern, reset_color, time_total, time_grep_pct)
+				%(c_title, name, c_reset, number, note, c_title, pattern, c_reset, time_total, time_grep_pct)
 
 	def make_summary(name, number, printed=0):
 		note = ''
@@ -565,10 +566,11 @@ def buffer_update():
 			else:
 				note = ' (not shown)'
 		return "%s lines matched \"%s%s%s\" in %s%s%s%s" \
-				%(number, summary_color, pattern, colors['info'], summary_color, name, reset_color, note)
+				%(number, c_summary, pattern, c_info, c_summary, name, c_reset, note)
 
 	global weechat_format
 	weechat_format = True # assume yes
+	nick_dict = {} # nick caching
 	def format_line(s):
 		"""Returns the log line 's' ready for printing in buffer."""
 		global weechat_format
@@ -581,18 +583,20 @@ def buffer_update():
 		# we don't want colors if there's match highlighting
 		if hilight:
 			# fix color reset when there's highlighting from date to prefix
-			if hilight_color in date and not reset_color in date:
-				nick = hilight_color + nick
+			if c_hilight in date and not c_reset in date:
+				nick = c_hilight + nick
 			return '%s\t%s %s' %(date, nick, msg)
 		else:
 			if nick in nick_dict:
+				debug('cache nick: %s' %nick)
 				nick = nick_dict[nick]
 			else:
 				# cache nick
+				debug('caching nick: %s' %nick)
 				s = color_nick(nick)
 				nick_dict[nick] = s
 				nick = s
-			return '%s%s\t%s%s %s' %(date_color, date, nick, reset_color, msg)
+			return '%s%s\t%s%s %s' %(c_date, date, nick, c_reset, msg)
 
 	def color_nick(nick):
 		"""Returns coloured nick, with coloured mode if any."""
@@ -666,7 +670,7 @@ def print_info(s, buffer=None, display=False):
 	if buffer is None:
 		buffer = buffer_create()
 	weechat.prnt(buffer, '%s%s\t%s%s' \
-			%(colors['script_nick'],script_nick, colors['info'], s))
+			%(color_script_nick, script_nick, color_info, s))
 	if display and get_config_boolean('go_to_buffer'):
 		weechat.buffer_set(buffer, 'display', '1')
 
@@ -748,7 +752,7 @@ def cmd_grep_parsing(args):
 		if opt in ('m', 'matchcase'):
 			matchcase = not matchcase
 		if opt in ('H', 'hilight'):
-			hilight = '%s,%s' %(colors['hilight'], colors['reset'])
+			hilight = '%s,%s' %(color_hilight, color_reset)
 			# we pass the colors in the variable itself because check_string() must not use
 			# weechat's module when applying the colors
 		if opt in ('e', 'exact'):
@@ -983,12 +987,12 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
 		if not weechat.config_is_set_plugin(opt):
 			weechat.config_set_plugin(opt, val)
 	# colors
-	colors = {
-			'date': weechat.color('brown'),
-			'script_nick': weechat.color('lightgreen'),
-			'info': weechat.color('cyan'),
-			'hilight': weechat.color('lightred'),
-			'reset': weechat.color('reset'),
-			}
+	color_date = weechat.color('brown')
+	color_script_nick = weechat.color('lightgreen')
+	color_info = weechat.color('cyan')
+	color_hilight = weechat.color('lightred')
+	color_reset = weechat.color('reset')
+	color_title = weechat.color('yellow')
+	color_summary = weechat.color('lightcyan')
 
 # vim:set shiftwidth=4 tabstop=4 noexpandtab textwidth=100:
