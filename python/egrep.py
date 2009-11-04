@@ -49,8 +49,8 @@
 #
 #
 #   TODO
-#   * add some stats in get_grep_file_status
 #   * update buffer real time.
+#   * add some stats in get_grep_file_status
 #   * search templates or something (?)
 #
 #
@@ -58,8 +58,8 @@
 #
 #   2009-
 #   version 0.6: improvements for large log files (WeeChat freezes reduced)
-#   * egrep buffer input accepts the same arguments as /egrep for repeat a search with different
-#     arguments.
+#   * egrep buffer input accepts the same flags as /egrep for repeat a search with different
+#     options.
 #   * added /egrep stop.
 #   * tweaks in egrep's output.
 #   * max_lines option added for limit egrep's output.
@@ -111,7 +111,7 @@ except ImportError:
 
 SCRIPT_NAME    = "egrep"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.6-dev"
+SCRIPT_VERSION = "0.6"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Search in buffers and logs"
 SCRIPT_COMMAND = "egrep"
