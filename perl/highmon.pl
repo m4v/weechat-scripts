@@ -1,6 +1,6 @@
 #
 # highmon.pl - Highlight monitor for weechat 0.3.0
-# Version 1.1
+# Version 1.6
 #
 # Add 'Highlight Monitor' buffer to log all highlights in one spot
 #
@@ -14,6 +14,10 @@
 # /set plugins.var.perl.highmon.short_names
 # Setting this to 'on' will trim the network name from chanmon, ala buffers.pl
 #
+# /set plugins.var.perl.highmon.color_buf
+# This turns colored buffer names on or off, you can also set a single fixed color by using a weechat color name.
+# This *must* be a valid color name, or weechat will likely do unexpected things :)
+#
 # /set plugins.var.perl.highmon.hotlist_show
 # Setting this to 'on' will let the highmon buffer appear in hotlists
 # (status bar/buffer.pl)
@@ -23,6 +27,13 @@
 # you set your status to away
 #
 # History:
+# 2009-09-07, KenjiE20 <longbow@longbowslair.co.uk>:
+#	v1.6:	-feature: colored buffer names
+#		-change: version sync with chanmon
+# 2009-09-05, KenjiE20 <longbow@longbowslair.co.uk>:
+#	v1.2:	-fix: disable buffer highlight
+# 2009-09-02, KenjiE20 <longbow@longbowslair.co.uk>:
+#	v.1.1.1	-change: Stop unsightly text block on '/help'
 # 2009-08-10, KenjiE20 <longbow@longbowslair.co.uk>:
 #	v1.1:	In-client help added
 # 2009-08-02, KenjiE20 <longbow@longbowslair.co.uk>:
@@ -55,6 +66,10 @@ The 'schannel' value will only show the buffer number as opposed to 'server#chan
 
 ".weechat::color("bold")."/set plugins.var.perl.highmon.short_names".weechat::color("-bold")."
 Setting this to 'on' will trim the network name from chanmon, ala buffers.pl
+
+".weechat::color("bold")."/set plugins.var.perl.highmon.color_buf".weechat::color("-bold")."
+This turns colored buffer names on or off, you can also set a single fixed color by using a weechat color name.
+This ".weechat::color("bold")."must".weechat::color("-bold")." be a valid color name, or weechat will likely do unexpected things :)
 
 ".weechat::color("bold")."/set plugins.var.perl.highmon.hotlist_show".weechat::color("-bold")."
 Setting this to 'on' will let the highmon buffer appear in hotlists (status bar/buffer.pl)
@@ -113,10 +128,7 @@ sub highmon_new_message
 					$nick = weechat::color("chat_highlight").$uncolnick.weechat::color("reset");
 				}
 
-				if (weechat::config_get_plugin("short_names") eq "on")
-				{
-					$bufname =~ s/.*([#&\+!])(.*)/$1$2/;
-				}
+				$bufname = format_buffer($cb_bufferp, $bufname);
 
 				if (weechat::config_get_plugin("alignment") eq "channel")
 				{
@@ -150,6 +162,39 @@ sub highmon_new_message
 	return weechat::WEECHAT_RC_OK;
 }
 
+sub format_buffer
+{
+	$cb_bufferp = $_[0];
+	$bufname = $_[1];
+
+	if (weechat::config_get_plugin("short_names") eq "on")
+	{
+		$bufname = weechat::buffer_get_string($cb_bufferp, 'short_name');
+	}
+
+	if (weechat::config_get_plugin("color_buf") eq "on")
+	{
+		$color = 0;
+		@char_array = split(//,weechat::buffer_get_string($cb_bufferp, 'name'));
+		foreach $char (@char_array)
+		{
+			$color += ord($char);
+		}
+		$color %= 10;
+		$color = sprintf "weechat.color.chat_nick_color%02d", $color+1;
+		$color = weechat::config_get($color);
+		$color = weechat::config_string($color);
+		$bufname = weechat::color($color).$bufname.weechat::color("reset");
+	}
+	elsif (weechat::config_get_plugin("color_buf") ne "off")
+	{
+		$color = weechat::config_get_plugin("color_buf");
+		$bufname = weechat::color($color).$bufname.weechat::color("reset");
+	}
+
+	return $bufname;
+}
+
 sub highmon_buffer_close
 {
 	$highmon_buffer = "";
@@ -176,6 +221,7 @@ sub highmon_buffer_open
 		{
 			weechat::buffer_set($highmon_buffer, "notify", "0");
 		}
+		weechat::buffer_set($highmon_buffer, "highlight_words", "-");
 		weechat::buffer_set($highmon_buffer, "title", "Highlight Monitor");
 	}
 	return weechat::WEECHAT_RC_OK;
@@ -193,9 +239,9 @@ sub print_help
 	return weechat::WEECHAT_RC_OK;
 }
 
-weechat::register("highmon", "KenjiE20", "1.1", "GPL3", "Highlight Monitor", "", "");
+weechat::register("highmon", "KenjiE20", "1.6", "GPL3", "Highlight Monitor", "", "");
 weechat::hook_print("", "", "", 0, "highmon_new_message", "");
-weechat::hook_command("highmon", $highmonhelp, "", "", "", "print_help", "");
+weechat::hook_command("highmon", "Highmon help", "", $highmonhelp, "", "print_help", "");
 
 weechat::hook_config("plugins.var.perl.highmon.*", "", "");
 if (!(weechat::config_is_set_plugin ("alignment")))
@@ -207,6 +253,10 @@ if (weechat::config_get_plugin("alignment") eq "")
 	weechat::config_set_plugin("alignment", "none");
 }
 if (!(weechat::config_is_set_plugin ("short_names")))
+{
+	weechat::config_set_plugin("short_names", "on");
+}
+if (!(weechat::config_is_set_plugin ("color_buf")))
 {
 	weechat::config_set_plugin("short_names", "on");
 }

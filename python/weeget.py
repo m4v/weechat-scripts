@@ -22,6 +22,11 @@
 #
 # History:
 #
+# 2009-09-30, FlashCode <flashcode@flashtux.org>:
+#     version 0.8: fix bugs and add missing info in "/weeget show",
+#                  display warning if url for plugins.xml.gz is old site
+# 2009-09-07, FlashCode <flashcode@flashtux.org>:
+#     version 0.7: update weechat site with new URL
 # 2009-05-02, FlashCode <flashcode@flashtux.org>:
 #     version 0.6: sync with last API changes
 # 2009-04-15, FlashCode <flashcode@flashtux.org>:
@@ -40,7 +45,7 @@
 
 SCRIPT_NAME    = "weeget"
 SCRIPT_AUTHOR  = "FlashCode <flashcode@flashtux.org>"
-SCRIPT_VERSION = "0.6"
+SCRIPT_VERSION = "0.8"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "WeeChat scripts manager"
 
@@ -52,7 +57,7 @@ try:
     import weechat
 except ImportError:
     print "This script must be run under WeeChat."
-    print "Get WeeChat now at: http://weechat.flashtux.org/"
+    print "Get WeeChat now at: http://www.weechat.org/"
     import_ok = False
 
 try:
@@ -152,8 +157,8 @@ def wg_config_init():
     wg_config_option["scripts_url"] = weechat.config_new_option(
         wg_config_file, section_scripts,
         "url", "string", "URL for file with list of plugins", "", 0, 0,
-        "http://weechat.flashtux.org/plugins.xml.gz",
-        "http://weechat.flashtux.org/plugins.xml.gz", 0, "", "", "", "", "", "")
+        "http://www.weechat.org/files/plugins.xml.gz",
+        "http://www.weechat.org/files/plugins.xml.gz", 0, "", "", "", "", "", "")
     wg_config_option["scripts_dir"] = weechat.config_new_option(
         wg_config_file, section_scripts,
         "dir", "string", "Local cache directory for" + SCRIPT_NAME, "", 0, 0,
@@ -402,14 +407,16 @@ def wg_show_script(name):
     """
     Show detailed info about a script (in repository).
     For example:
-      Script: weeget.py, version 0.2, license: GPL3
-      Author: FlashCode <flashcode [at] flashtux [dot] org>
-      Status: installed, running
-        Date: added: 2009-04-05, updated: 2009-04-07
-         URL: http://weechat.flashtux.org/dev/scripts/weeget.py
-        Desc: Scripts manager.
-        Tags: scripts
-         Min: 0.3.0
+        Script: weeget.py, version 0.7, license: GPL3
+        Author: FlashCode <flashcode [at] flashtux [dot] org>
+        Status: installed, running
+          Date: added: 2009-04-05, updated: 2009-09-07
+           URL: http://www.weechat.org/files/scripts/weeget.py
+           MD5: 4b0458dd5cc5c9a09ba8078f89830869
+          Desc: Scripts manager.
+          Tags: scripts
+      Requires: python 2.5
+           Min: 0.3.0
     """
     if len(wg_scripts) == 0:
         return
@@ -422,13 +429,13 @@ def wg_show_script(name):
                         weechat.color("chat")))
     else:
         weechat.prnt("", "")
-        weechat.prnt("", "Script: %s%s%s, version %s, license: %s"
+        weechat.prnt("", "  Script: %s%s%s, version %s, license: %s"
                      % (wg_config_color("script"),
                         script["full_name"],
                         weechat.color("chat"),
                         script["version"],
                         script["license"]))
-        weechat.prnt("", "Author: %s <%s>" % (script["author"], script["mail"]))
+        weechat.prnt("", "  Author: %s <%s>" % (script["author"], script["mail"]))
         status = wg_get_local_script_status(script)
         str_status = "not installed"
         if status["installed"]:
@@ -439,23 +446,32 @@ def wg_show_script(name):
                 str_status += ", not running"
         if status["obsolete"]:
             str_status += " (new version available)"
-        weechat.prnt("", "Status: %s" % str_status)
-        date_added = script["added"][:10]
-        date_updated = script["updated"][:10]
-        if date_updated != "0000-00-00" and date_updated != date_added:
-            weechat.prnt("", "  Date: added: %s, updated: %s"
+        weechat.prnt("",   "  Status: %s" % str_status)
+        date_added = script.get("added", "")[:10]
+        str_updated = script.get("updated", "")
+        if str_updated != "":
+            date_updated = script["updated"][:10]
+            if date_updated == "0000-00-00" or date_updated == date_added:
+                str_updated = ""
+        if str_updated != "":
+            weechat.prnt("", "    Date: added: %s, updated: %s"
                          % (date_added, date_updated))
         else:
-            weechat.prnt("", "  Date: added: %s" % date_added)
-        weechat.prnt("", "   URL: %s" % script["url"])
-        weechat.prnt("", "  Desc: %s" % script["desc_en"])
-        weechat.prnt("", "  Tags: %s" % script["tags"])
+            weechat.prnt("", "    Date: added: %s" % date_added)
+        weechat.prnt("", "     URL: %s" % script.get("url", ""))
+        weechat.prnt("", "     MD5: %s" % script.get("md5sum", ""))
+        weechat.prnt("", "    Desc: %s" % script.get("desc_en", ""))
+        weechat.prnt("", "    Tags: %s" % script.get("tags", ""))
+        str_requires = script.get("requirements", "")
+        if str_requires == "":
+            str_requires = "(nothing)"
+        weechat.prnt("", "Requires: %s" % str_requires)
         vmin = script.get("min_weechat", "")
         vmax = script.get("max_weechat", "")
         if vmin != "":
-            weechat.prnt("", "   Min: %s" % vmin)
+            weechat.prnt("", "     Min: %s" % vmin)
         if vmax != "":
-            weechat.prnt("", "   Max: %s" % vmax)
+            weechat.prnt("", "     Max: %s" % vmax)
 
 def wg_install_next_script():
     """
@@ -670,7 +686,7 @@ def wg_parse_xml():
     Example of item return in dictionary :
       '119': { 'name'        : 'weeget',
                'version'     : '0.1',
-               'url'         : 'http://weechat.flashtux.org/dev/scripts/weeget.py',
+               'url'         : 'http://www.weechat.org/files/scripts/weeget.py',
                'language'    : 'python',
                'license'     : 'GPL3',
                'md5sum'      : 'd500714fc19b0e10cc4e339e70739e4ad500714fc19b0e10cc4e339e70739e4a',
@@ -837,6 +853,9 @@ if __name__ == "__main__" and import_ok:
                         SCRIPT_DESC, "wg_unload_script", ""):
         wg_config_init()
         wg_config_read()
+        if weechat.config_string(wg_config_option["scripts_url"]).find("weechat.flashtux.org") >= 0:
+            weechat.prnt("", "%sWarning: old site still used in URL for plugins.xml.gz, you should do:  /unset wg.scripts.url"
+                         % weechat.prefix("error"))
         str_installed = wg_config_color("installed") + "i" + weechat.color("chat")
         str_unknown = wg_config_color("unknown") + "?" + weechat.color("chat")
         str_running = wg_config_color("running") + "r" + weechat.color("chat")
