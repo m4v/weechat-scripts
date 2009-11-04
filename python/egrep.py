@@ -588,11 +588,9 @@ def buffer_update():
 			return '%s\t%s %s' %(date, nick, msg)
 		else:
 			if nick in nick_dict:
-				debug('cache nick: %s' %nick)
 				nick = nick_dict[nick]
 			else:
 				# cache nick
-				debug('caching nick: %s' %nick)
 				s = color_nick(nick)
 				nick_dict[nick] = s
 				nick = s
@@ -618,6 +616,7 @@ def buffer_update():
 		nick_color = weechat.color(color)
 		return '%s%s%s%s' %(mode_color, mode, nick_color, nick)
 
+	weechat.prnt(buffer, '\n')
 	print_info('Search for "%s" in %s.' %(pattern, matched_lines), buffer)
 	# print last <max_lines> lines
 	print_count = max_lines
@@ -752,7 +751,11 @@ def cmd_grep_parsing(args):
 		if opt in ('m', 'matchcase'):
 			matchcase = not matchcase
 		if opt in ('H', 'hilight'):
-			hilight = '%s,%s' %(color_hilight, color_reset)
+			# hilight must be always a string!
+			if hilight:
+				hilight = ''
+			else:
+				hilight = '%s,%s' %(color_hilight, color_reset)
 			# we pass the colors in the variable itself because check_string() must not use
 			# weechat's module when applying the colors
 		if opt in ('e', 'exact'):
@@ -775,7 +778,7 @@ def cmd_grep_parsing(args):
 	# more checks
 	if count:
 		if hilight:
-			hilight = False # why hilight if we're just going to count?
+			hilight = '' # why hilight if we're just going to count?
 		if exact:
 			exact = False # see hilight
 	if head and tail: # it won't work
