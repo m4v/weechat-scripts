@@ -14,9 +14,9 @@ except:
 
 now = lambda: int(time.time())
 
-def debug(s, prefix='debug'):
-	"""Debug msg"""
-	weechat.prnt('', '%s: %s'  %(prefix,s))
+def debug(s, prefix='', buffer=''):
+    """Debug msg"""
+    weechat.prnt(buffer, 'debug:\t%s %s' %(prefix, s))
 
 def error(s, prefix=SCRIPT_NAME, buffer=''):
 	weechat.prnt(buffer, '%s%s: %s' %(weechat.prefix('error'), prefix, s))
@@ -27,27 +27,30 @@ except:
 	error('Failed to import dbus, is the dbus module installed?')
 	import_ok = False
 
-settings = (('ignore_private', ''),)
+settings = (('ignore_private', ''),) # XXX rename to ignore nicks
 #		('ignore_hilight', ''))
 
 def get_config_ignores(config):
 	ignores = weechat.config_get_plugin(config)
 	if ignores:
-		return ignores.split(',')
+		return ignores
 	else:
-		return []
+		return ''
 
 #def match_host(pattern, host):
 #	return fnmatch.fnmatch(host, pattern)
 
 def format_tags(s):
-	s = s.replace('<', '&lt;')
-	s = s.replace('>', '&gt;')
+	if '<' in s:
+		s = s.replace('<', '&lt;')
+	if '>' in s:
+		s = s.replace('>', '&gt;')
 	return s
 
 def notify_hilight(data, buffer, time, tags, display, hilight, prefix, msg ):
-	#debug(';'.join((data, buffer, time, tags, display, hilight, prefix, msg)))
-	if hilight is '1':
+	ignores = get_config_ignores('ignore_private')
+	if hilight is '1' and prefix not in ignores:
+		#debug(';'.join((data, buffer, time, tags, display, hilight, prefix, msg)), prefix='HIGHLIGHT')
 		channel = weechat.buffer_get_string(buffer, 'short_name')
 		if not channel:
 			channel = weechat.buffer_get_string(buffer, 'name')
@@ -56,13 +59,13 @@ def notify_hilight(data, buffer, time, tags, display, hilight, prefix, msg ):
 	return WEECHAT_RC_OK
 
 def notify_priv(data, signal, msg):
-	#debug(','.join((data, signal, message)))
-	ignore = get_config_ignores('ignore_private')
-	for pattern in ignore:
-		if msg.startswith(pattern):
-			return WEECHAT_RC_OK
+	#debug(','.join((data, signal, msg)), prefix='PRIV')
+	nick, msg = msg.split('\t', 1)
+	ignores = get_config_ignores('ignore_private')
+	if nick.lower() in ignores:
+		return WEECHAT_RC_OK
 	msg = format_tags(msg)
-	dbus_notify(*msg.split('\t', 1))
+	dbus_notify(nick, msg)
 	return WEECHAT_RC_OK
 
 timestamp = 0
@@ -85,7 +88,7 @@ def dbus_notify(channel, msg):
 		notify_msg = msg
 		timestamp = now()
 	except:
-		weechat # force exception if we aren't in weechat
+		#weechat # force exception if we aren't in weechat
 		dbus_lost()
 
 
@@ -122,6 +125,7 @@ def dbus_notify_process(channel, msg):
 			"dbusnotify.dbus_notify('%(channel)s', '%(msg)s')\"" \
 					%{'dbus_address':dbus_address, 'channel':channel, 'msg':msg},
 			10000, 'dbus_notify_process_cb', '')
+# FIXME path
 
 def dbus_notify_process_cb(data, command, rc, stdout, stderr):
 	global notify_hooks
@@ -165,11 +169,12 @@ def disable():
 		weechat.unhook(hook)
 	notify_hooks = []
 
-if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, SCRIPT_DESC,
+if __name__ == '__main__' and import_ok and \
+		weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, SCRIPT_DESC,
 		'', ''):
 	for opt, val in settings:
 		if not weechat.config_is_set_plugin(opt):
-			weechat.config_set_plugin(opt, val)
+				weechat.config_set_plugin(opt, val)
 	weechat.hook_command('dbus_test', 'desc', 'help', 'help', '', 'cmd_test', '')
 	enable()
 
