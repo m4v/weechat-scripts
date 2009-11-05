@@ -1042,6 +1042,15 @@ class MultiKickBan(KickBan):
             say("Sorry, found nothing to kickban.", buffer=self.buffer)
             self.queue_clear()
 
+class Topic(CommandNeedsOp):
+    help = ("Changes channel topic.", "asdasd", "asd")
+
+    def command_op(self):
+        self.topic(self.args)
+
+    def topic(self, topic):
+        cmd = '/topic %s' %topic
+        self.queue(cmd)
 
 ### config callbacks ###
 def enable_multi_kick_conf_cb(data, config, value):
@@ -1119,6 +1128,8 @@ if __name__ == '__main__' and import_ok and \
         cmd_unban  = UnBan('ounban', 'cmd_unban')
     # hook /omute
     cmd_mute = Mute('omute', 'cmd_mute')
+
+    cmd_topic = Topic('otopic', 'cmd_topic', '%(irc_channel_topic)||-delete')
 
     if get_config_boolean('invert_kickban_order'):
         cmd_kban.invert = True
