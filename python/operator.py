@@ -241,6 +241,14 @@ def is_ip(s):
     except socket.error:
         return False
 
+def get_nick(hostmask):
+    n = hostmask.find('!')
+    if n > 0:
+        return hostmask[:n]
+    else:
+        return hostmask
+
+
 ### WeeChat Classes
 class Infolist(object):
     """Class for reading WeeChat's infolists."""
@@ -641,18 +649,17 @@ def deop_callback(buffer, count):
     return WEECHAT_RC_OK
 
 class BanObject(object):
-    __slots__ = ('banmask', 'hostmask', 'operator', 'time', 'expires')
-    def __init__(self, banmask, hostmask=None, operator=None, date=None, expires=None):
+    #__slots__ = ('banmask', 'hostmask', 'operator', 'time', 'expires', 'removed')
+    def __init__(self, banmask, hostmask=None, operator=None, date=None, expires=None, removed=False):
         self.banmask = banmask
         self.hostmask = hostmask
         self.operator = operator
         self.time = date or int(time.time())
         self.expires = expires
+        self.removed = removed
 
     def __str__(self):
-        #return "<BanObject(%s, %s, %s)>" %(self.banmask, self.hostmask, self.time)
-        return "Banmask:'%s' Hostmask:'%s' Date: %s" %(self.banmask,
-                self.hostmask, self.time)
+        return "<BanObject(%s, %s)>" %(self.banmask, self.time)
 
 
 class BanList(object):
@@ -662,13 +669,19 @@ class BanList(object):
         return len(self.bans)
 
     def add_ban(self, server, channel, banmask, **kwargs):
-        ban = BanObject(banmask, **kwargs)
         #debug("adding ban: %s" %ban)
         key = (server, channel)
         if key in self.bans:
-            self.bans[key][banmask] = ban
+            if banmask in self.bans[key]:
+                ban = self.bans[key][banmask]
+                for key, value in kwargs.iteritems():
+                    if value and not getattr(ban, key):
+                        setattr(ban, key, value)
+            else:
+                self.bans[key][banmask] = BanObject(banmask, **kwargs)
+
         else:
-            self.bans[key] = { banmask:ban }
+            self.bans[key] = { banmask: BanObject(banmask, **kwargs) }
 
     def remove_ban(self, server, channel, banmask=None, hostmask=None):
         key = (server, channel)
@@ -795,10 +808,10 @@ class Ban(CommandNeedsOp):
 
     banmask = []
     def parse_args(self, *args):
-        CommandOperator.parse_args(self, *args)
-        if not self.args:
-            self.show_ban_list()
-            return
+        CommandNeedsOp.parse_args(self, *args)
+        self._parse_args(self, *args)
+
+    def _parse_args(self, *args):
         args = self.args.split()
         try:
             (opts, args) = getopt.gnu_getopt(args, 'hune', ('host', 'host2', 'host1', 'user', 'nick', 'exact'))
@@ -861,21 +874,7 @@ class Ban(CommandNeedsOp):
     def add_ban(self, banmask, hostmask=None):
         operator_banlist.add_ban(self.server, self.channel, banmask, hostmask=hostmask)
 
-    def show_ban_list(self):
-        if not operator_banlist:
-            say("No bans known.")
-            return
-        # XXX should add methods in BanList for this
-        for server, channel in operator_banlist.bans.iterkeys():
-            say('%s %s' %(server, channel))
-            for ban in operator_banlist.bans[server, channel].itervalues():
-                say(ban)
-
     def command_op(self):
-        #if self.args == 'list':
-        #    self.queue_clear()
-        #    self.show_ban_list()
-        #    return
         args = self.args.split()
         banmasks = []
         for arg in args:
@@ -896,6 +895,49 @@ class Ban(CommandNeedsOp):
     def ban(self, *banmask, **kwargs):
         cmd = '/ban %s' %' '.join(banmask)
         self.queue(cmd, **kwargs)
+
+
+class BanWithList(Ban):
+    _command = 'obanlist'
+    callback = 'cmd_ban_list'
+    def parse_args(self, *args):
+        CommandOperator.parse_args(self, *args)
+        if not self.args:
+            self.show_ban_list()
+            return
+        self._parse_args(self, *args)
+
+    def get_buffer(self):
+        buffer = weechat.buffer_search('python', 'Ban list')
+        if not buffer:
+            buffer = weechat.buffer_new('Ban list', '', '', '', '')
+            weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
+            weechat.buffer_set(buffer, 'time_for_each_line', '0')
+            weechat.buffer_set(buffer, 'title', 'Ban List')
+        return buffer
+
+    def show_ban_list(self):
+        buffer = self.get_buffer()
+        weechat.buffer_clear(buffer)
+        weechat.buffer_set(buffer, 'display', '1')
+        if not operator_banlist:
+            say("No bans known.", buffer=buffer)
+            return
+        # XXX should add methods in BanList for this
+        for server, channel in operator_banlist.bans.iterkeys():
+            #say('%s %s' %(server, channel), buffer=buffer)
+            for ban in operator_banlist.bans[server, channel].itervalues():
+                if ban.hostmask:
+                    hostmask = ' (%s%s%s)' %(weechat.color('cyan'), ban.hostmask,
+                            weechat.color('default'))
+                else:
+                    hostmask = ''
+                weechat.prnt(buffer, '[%s%s %s%s]\t%s%s%s%s set by %s%s%s %s'\
+                        %(weechat.color('green'), server, channel, weechat.color('default'),
+                            weechat.color('white'), ban.banmask, weechat.color('default'),
+                            hostmask, weechat.color('lightgreen'),
+                            ban.operator and get_nick(ban.operator) or self.nick,
+                            weechat.color('default'), ban.time))
 
 
 class UnBan(Ban):
@@ -1153,6 +1195,7 @@ if __name__ == '__main__' and import_ok and \
     cmd_mute = Mute('omute', 'cmd_mute')
 
     cmd_topic = Topic()
+    cmd_ban_list = BanWithList()
 
     if get_config_boolean('invert_kickban_order'):
         cmd_kban.invert = True
