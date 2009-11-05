@@ -304,10 +304,16 @@ class Command(object):
     """Class for hook WeeChat commands."""
     help = ("WeeChat command.", "[define usage template]", "detailed help here")
 
-    def __init__(self, command, callback, completion=''):
-        self._command = command
-        self.callback = callback
-        self.completion = completion
+    _command = ''
+    callback = ''
+    completion = ''
+    def __init__(self, command='', callback='', completion=''):
+        if command:
+            self._command = command
+        if callback:
+            self.callback = callback
+        if completion:
+            self.completion = completion
         self.pointer = ''
         self.hook()
 
@@ -1045,6 +1051,10 @@ class MultiKickBan(KickBan):
 class Topic(CommandNeedsOp):
     help = ("Changes channel topic.", "asdasd", "asd")
 
+    command = 'otopic'
+    callback = 'cmd_topic'
+    completion = '%(irc_channel_topic)||-delete'
+
     def command_op(self):
         self.topic(self.args)
 
@@ -1129,7 +1139,7 @@ if __name__ == '__main__' and import_ok and \
     # hook /omute
     cmd_mute = Mute('omute', 'cmd_mute')
 
-    cmd_topic = Topic('otopic', 'cmd_topic', '%(irc_channel_topic)||-delete')
+    cmd_topic = Topic()
 
     if get_config_boolean('invert_kickban_order'):
         cmd_kban.invert = True
