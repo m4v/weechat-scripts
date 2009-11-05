@@ -641,16 +641,18 @@ def deop_callback(buffer, count):
     return WEECHAT_RC_OK
 
 class BanObject(object):
-    def __init__(self, banmask, hostmask):
+    __slots__ = ('banmask', 'hostmask', 'operator', 'time', 'expires')
+    def __init__(self, banmask, hostmask=None, operator=None, date=None, expires=None):
         self.banmask = banmask
         self.hostmask = hostmask
-        self.time = int(time.time())
+        self.operator = operator
+        self.time = date or int(time.time())
+        self.expires = expires
 
     def __str__(self):
         #return "<BanObject(%s, %s, %s)>" %(self.banmask, self.hostmask, self.time)
         return "Banmask:'%s' Hostmask:'%s' Date: %s" %(self.banmask,
-                self.hostmask, time.strftime('%d/%m/%y %H:%M', time.localtime(self.time)))
-                #XXX change date string to something more meanfull
+                self.hostmask, self.time)
 
 
 class BanList(object):
@@ -659,8 +661,8 @@ class BanList(object):
     def __len__(self):
         return len(self.bans)
 
-    def add_ban(self, server, channel, banmask, hostmask):
-        ban = BanObject(banmask, hostmask)
+    def add_ban(self, server, channel, banmask, **kwargs):
+        ban = BanObject(banmask, **kwargs)
         #debug("adding ban: %s" %ban)
         key = (server, channel)
         if key in self.bans:
@@ -793,9 +795,10 @@ class Ban(CommandNeedsOp):
 
     banmask = []
     def parse_args(self, *args):
-        CommandNeedsOp.parse_args(self, *args)
-        #if self.args == 'list':
-        #    return
+        CommandOperator.parse_args(self, *args)
+        if not self.args:
+            self.show_ban_list()
+            return
         args = self.args.split()
         try:
             (opts, args) = getopt.gnu_getopt(args, 'hune', ('host', 'host2', 'host1', 'user', 'nick', 'exact'))
@@ -856,7 +859,7 @@ class Ban(CommandNeedsOp):
         return banmask
 
     def add_ban(self, banmask, hostmask=None):
-        operator_banlist.add_ban(self.server, self.channel, banmask, hostmask)
+        operator_banlist.add_ban(self.server, self.channel, banmask, hostmask=hostmask)
 
     def show_ban_list(self):
         if not operator_banlist:
@@ -961,7 +964,7 @@ class Mute(Ban):
     @fallback_Ban('add_ban')
     def add_ban(self, banmask, hostmask=None):
         # add '%' to banmask so /ounban can remove it
-        operator_banlist.add_ban(self.server, self.channel, '%' + banmask, hostmask)
+        operator_banlist.add_ban(self.server, self.channel, '%' + banmask, hostmask=hostmask)
 
     @fallback_Ban('ban')
     def ban(self, *banmask, **kwargs):
@@ -1048,10 +1051,11 @@ class MultiKickBan(KickBan):
             say("Sorry, found nothing to kickban.", buffer=self.buffer)
             self.queue_clear()
 
+
 class Topic(CommandNeedsOp):
     help = ("Changes channel topic.", "asdasd", "asd")
 
-    command = 'otopic'
+    _command = 'otopic'
     callback = 'cmd_topic'
     completion = '%(irc_channel_topic)||-delete'
 
@@ -1094,6 +1098,15 @@ def invert_kickban_order_conf_cb(data, config, value):
     else:
         cmd_kban.invert = False
     return WEECHAT_RC_OK
+
+
+def ban_list_msg(data, modifier, modifier_data, string):
+    debug(string)
+    args = string.split()
+    channel, banmask, op, date = args[-4:]
+    operator_banlist.add_ban(modifier_data, channel, banmask, hostmask=None, operator=op, date=date)
+    return string
+
 
 # TODO add code for migrate deop_after_use -> auto_deop
 # default settings
@@ -1149,6 +1162,8 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_config('plugins.var.python.%s.merge_bans' %SCRIPT_NAME, 'merge_bans_conf_cb', '')
     weechat.hook_config('plugins.var.python.%s.invert_kickban_order' %SCRIPT_NAME,
             'invert_kickban_order_conf_cb', '')
+
+    weechat.hook_modifier('irc_in_367', 'ban_list_msg', '')
 
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
