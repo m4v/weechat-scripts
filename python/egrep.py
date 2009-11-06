@@ -48,11 +48,6 @@
 #     egrep will only print the last matched lines that don't surpass the value defined here.
 #
 #
-#   TODO
-#   * add some stats in get_grep_file_status
-#   * search templates or something (?)
-#
-#
 #   History:
 #
 #   2009-
@@ -67,7 +62,7 @@
 #   * grepping for log files runs in a weechat_process.
 #   * added go_to_buffer config option.
 #   * added --buffer for search only in buffers.
-#   * some refactoring.
+#   * refactoring.
 #
 #   2009-10-12, omero
 #   version 0.5.2: made it python-2.4.x compliant
@@ -688,9 +683,9 @@ def buffer_create():
 
 def buffer_input(data, buffer, input_data):
 	"""Repeats last search with 'input_data' as regexp."""
-	global hook_file_grep
-	if hook_file_grep:
-		error(get_grep_file_status(), buffer=buffer)
+	try:
+		cmd_grep_stop(buffer, input_data)
+	except:
 		return WEECHAT_RC_OK
 
 	global search_in_buffers, search_in_files
@@ -798,10 +793,8 @@ def cmd_grep_parsing(args):
 		elif tail:
 			tail = 10
 
-def cmd_grep(data, buffer, args):
-	"""Search in buffers and logs."""
-	global pattern, matchcase, head, tail, number, count, exact, hilight
-	global hook_file_grep
+def cmd_grep_stop(buffer, args):
+	global hook_file_grep, pattern
 	if hook_file_grep:
 		if args == 'stop':
 			weechat.unhook(hook_file_grep)
@@ -809,6 +802,14 @@ def cmd_grep(data, buffer, args):
 			say('Search for \'%s\' stopped.' %pattern, buffer=buffer)
 		else:
 			error(get_grep_file_status(), buffer=buffer)
+		raise Exception
+
+def cmd_grep(data, buffer, args):
+	"""Search in buffers and logs."""
+	global pattern, matchcase, head, tail, number, count, exact, hilight
+	try:
+		cmd_grep_stop(buffer, args)
+	except:
 		return WEECHAT_RC_OK
 
 	if not args:
