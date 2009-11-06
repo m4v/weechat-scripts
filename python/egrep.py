@@ -49,7 +49,6 @@
 #
 #
 #   TODO
-#   * update buffer real time.
 #   * add some stats in get_grep_file_status
 #   * search templates or something (?)
 #
@@ -568,8 +567,8 @@ def buffer_update():
 		return "%s lines matched \"%s%s%s\" in %s%s%s%s" \
 				%(number, c_summary, pattern, c_info, c_summary, name, c_reset, note)
 
-	global weechat_format
-	weechat_format = True # assume yes
+	global weechat_format # needs to be global since bool isn't mutable
+	weechat_format = True
 	nick_dict = {} # nick caching
 	def format_line(s):
 		"""Returns the log line 's' ready for printing in buffer."""
@@ -946,7 +945,8 @@ def completion_egrep_args(data, completion_item, buffer, completion):
 	return WEECHAT_RC_OK
 
 ### Main
-if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
+if __name__ == '__main__' and import_ok and \
+		weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
 		SCRIPT_DESC, '', ''):
 	home_dir = get_home()
 	weechat.hook_command(SCRIPT_COMMAND, cmd_grep.__doc__,
