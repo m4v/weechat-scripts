@@ -723,7 +723,7 @@ def cmd_init():
 def cmd_grep_parsing(args):
 	global pattern, matchcase, head, tail, number, count, exact, hilight
 	global log_name, buffer_name, only_buffers, all
-	opts, args = getopt.gnu_getopt(args.split(), 'cmHeahtin:br', ['count', 'matchcase', 'hilight',
+	opts, args = getopt.gnu_getopt(args.split(), 'cmHeahtin:b', ['count', 'matchcase', 'hilight',
 		'exact', 'all', 'head', 'tail', 'number=', 'buffer'])
 	#debug(opts, 'opts: '); debug(args, 'args: ')
 	if len(args) >= 2:
