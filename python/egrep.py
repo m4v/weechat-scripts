@@ -50,7 +50,7 @@
 #
 #   History:
 #
-#   2009-
+#   2009-11-06
 #   version 0.6: improvements for large log files (WeeChat freezes reduced)
 #   * egrep buffer input accepts the same flags as /egrep for repeat a search with different
 #     options.
@@ -562,7 +562,7 @@ def buffer_update():
 		return "%s lines matched \"%s%s%s\" in %s%s%s%s" \
 				%(number, c_summary, pattern, c_info, c_summary, name, c_reset, note)
 
-	global weechat_format # needs to be global since bool isn't mutable
+	global weechat_format
 	weechat_format = True
 	nick_dict = {} # nick caching
 	def format_line(s):
@@ -610,12 +610,12 @@ def buffer_update():
 		nick_color = weechat.color(color)
 		return '%s%s%s%s' %(mode_color, mode, nick_color, nick)
 
-	weechat.prnt(buffer, '\n')
+	prnt = weechat.prnt
+	prnt(buffer, '\n')
 	print_info('Search for "%s" in %s.' %(pattern, matched_lines), buffer)
 	# print last <max_lines> lines
 	print_count = max_lines
 	if matched_lines:
-		prnt = weechat.prnt
 		print_lines = []
 		for log, lines in matched_lines.iteritems():
 			if lines:
@@ -950,6 +950,7 @@ if __name__ == '__main__' and import_ok and \
 		weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
 		SCRIPT_DESC, '', ''):
 	home_dir = get_home()
+
 	weechat.hook_command(SCRIPT_COMMAND, cmd_grep.__doc__,
 			"[log <file> | buffer <name> | stop] [-a|--all] [-b|--buffer] [-c|--count] [-m|--matchcase] "
 			"[-H|--hilight] [-e|--exact] [(-h|--head)|(-t|--tail) [-n|--number <n>]] <expression>",
@@ -971,7 +972,10 @@ if __name__ == '__main__' and import_ok and \
 			"If no arguments given and there's a search in progress, egrep will display a short"
 			" stat.\n\n"
 			"egrep buffer:\n"
-			"  Accepts the same arguments as /egrep, It'll repeat last search using the new arguments.\n\n"
+			"  Accepts most arguments of /egrep command, It'll repeat last search using the new "
+			"arguments.\n"
+			"  --all, --count, --tail, --head, --hilight, --matchcase and --exact switches are "
+			"toggleable\n\n"
 			"see http://docs.python.org/lib/re-syntax.html for documentation about python regular expressions.\n",
 			# completion template
 			"buffer %(buffers_names) %(egrep_arguments)|%*"
@@ -982,14 +986,17 @@ if __name__ == '__main__' and import_ok and \
 	weechat.hook_command('logs', cmd_logs.__doc__, "[-s|--size] [<filter>]",
 			"-s|--size: Sort logs by size.\n"
 			" <filter>: Only show logs that match <filter>. Use '*' and '?' as jokers.", '--size', 'cmd_logs', '')
+
 	weechat.hook_completion('egrep_log_files', "list of log files",
 			'completion_log_files', '')
 	weechat.hook_completion('egrep_arguments', "list of arguments",
 			'completion_egrep_args', '')
+
 	# settings
 	for opt, val in settings.iteritems():
 		if not weechat.config_is_set_plugin(opt):
 			weechat.config_set_plugin(opt, val)
+
 	# colors
 	color_date = weechat.color('brown')
 	color_script_nick = weechat.color('lightgreen')
