@@ -35,6 +35,7 @@
 #   * /ounban: Remove bans
 #   * /omute : Silences user (disabled by default)
 #   * /okban : Kicks and bans user (or users)
+#   * /otopic: Changes channel topic
 #
 #
 #   Settings:
@@ -138,13 +139,19 @@
 #
 #
 #   History:
+#   2009-11-9
+#   version 0.1.1: fixes
+#   * script renamed to 'chanop' because it was causing conflicts with python
+#   'operator' module
+#   * added /otopic command
+#
 #   2009-10-31
 #   version 0.1: Initial release
 ###
 
 SCRIPT_NAME    = "chanop"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.1"
+SCRIPT_VERSION = "0.1.1"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Helper script for IRC operators"
 
@@ -1006,7 +1013,8 @@ class MultiKickBan(KickBan):
             self.queue_clear()
 
 class Topic(CommandNeedsOp):
-    help = ("Changes channel topic.", "asdasd", "asd")
+    help = ("Changes channel topic.", "[-delete | topic]",
+            "Clear topic if '-delete' is the new topic.")
 
     def command_op(self):
         self.topic(self.args)
