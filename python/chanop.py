@@ -1039,24 +1039,24 @@ def invert_kickban_order_conf_cb(data, config, value):
         cmd_kban.invert = False
     return WEECHAT_RC_OK
 
+# default settings
+settings = {
+        'op_command'       :'/msg chanserv op $channel $nick',
+        'deop_command'     :'/deop',
+        'autodeop'         :'on',
+        'autodeop_delay'   :'180',
+        'default_banmask'  :'host',
+        'enable_remove'    :'off',
+        'kick_reason'      :'kthxbye!',
+        'enable_multi_kick':'off',
+        'merge_bans'       :'off',
+        'enable_mute'      :'off',
+        'invert_kickban_order':'off'}
 
 ### Register Script and set configs ###
-if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
+if __name__ == '__main__' and import_ok and \
+        weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
         SCRIPT_DESC, '', ''):
-
-    # default settings
-    settings = {
-            'op_command'        :'/msg chanserv op $channel $nick',
-            'deop_command'      :'/deop',
-            'autodeop'          :'on',
-            'autodeop_delay'    :'180',
-            'default_banmask'   :'host',
-            'enable_remove'     :'off',
-            'kick_reason'       :'kthxbye!',
-            'enable_multi_kick' :'off',
-            'merge_bans'        :'off',
-            'enable_mute'       :'off',
-            'invert_kickban_order':'off'}
 
     for opt, val in settings.iteritems():
         if not weechat.config_is_set_plugin(opt):
@@ -1085,9 +1085,11 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
     if get_config_boolean('invert_kickban_order'):
         cmd_kban.invert = True
 
-    weechat.hook_config('plugins.var.python.%s.enable_multi_kick' %SCRIPT_NAME, 'enable_multi_kick_conf_cb', '')
+    weechat.hook_config('plugins.var.python.%s.enable_multi_kick' %SCRIPT_NAME,
+            'enable_multi_kick_conf_cb', '')
     weechat.hook_config('plugins.var.python.%s.merge_bans' %SCRIPT_NAME, 'merge_bans_conf_cb', '')
-    weechat.hook_config('plugins.var.python.%s.invert_kickban_order' %SCRIPT_NAME, 'invert_kickban_order_conf_cb', '')
+    weechat.hook_config('plugins.var.python.%s.invert_kickban_order' %SCRIPT_NAME,
+            'invert_kickban_order_conf_cb', '')
 
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
