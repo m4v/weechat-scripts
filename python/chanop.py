@@ -65,12 +65,12 @@
 #     Same as op_command but for deop, really not needed since /deop works anywhere, but it's there.
 #     It accepts the special vars $server, $channel and $nick
 #
-#   * plugins.var.python.chanop.deop_after_use:
+#   * plugins.var.python.chanop.autodeop:
 #     Enables auto-deop'ing after using any of the ban or kick commands.
 #     Note that if you got op manually (like with /oop) then the script won't deop you
 #     Valid values 'on', 'off'
 #
-#   * plugins.var.python.chanop.deop_delay:
+#   * plugins.var.python.chanop.autodeop_delay:
 #     Time it must pass (without using any commands) before auto-deop, in seconds.
 #     Using zero causes to deop immediately.
 #
@@ -598,8 +598,8 @@ class CommandNeedsOp(CommandChanop):
             # don't deop if we weren't auto-op'ed
             manual_op = True
         self.command_op(*args)
-        if not manual_op and self.get_config_boolean('deop_after_use'):
-            delay = self.get_config_int('deop_delay')
+        if not manual_op and self.get_config_boolean('autodeop'):
+            delay = self.get_config_int('autodeop_delay')
             if delay > 0:
                 buffer = self.buffer
                 global deop_hook
@@ -1048,8 +1048,8 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
     settings = {
             'op_command'        :'/msg chanserv op $channel $nick',
             'deop_command'      :'/deop',
-            'deop_after_use'    :'on',
-            'deop_delay'        :'180',
+            'autodeop'          :'on',
+            'autodeop_delay'    :'180',
             'default_banmask'   :'host',
             'enable_remove'     :'off',
             'kick_reason'       :'kthxbye!',
