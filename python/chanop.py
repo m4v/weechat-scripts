@@ -43,11 +43,11 @@
 #   auto-deop in another.
 #
 #   For define the option 'option' in server 'server_name' use:
-#   /set plugins.var.python.operator.option.server_name "value"
+#   /set plugins.var.python.chanop.option.server_name "value"
 #   For define it in the channel '#channel_name':
-#   /set plugins.var.python.operator.option.server_name.#channel_name "value"
+#   /set plugins.var.python.chanop.option.server_name.#channel_name "value"
 #
-#   * plugins.var.python.operator.op_command:
+#   * plugins.var.python.chanop.op_command:
 #     Here you define the command the script must run for request op, normally
 #     is a /msg to a bot, like chanserv in freenode or Q in quakenet.
 #     It accepts the special vars $server, $channel and $nick
@@ -56,25 +56,25 @@
 #     it.
 #
 #     Examples:
-#     /set plugins.var.python.operator.op_command "/msg chanserv op $channel $nick"
+#     /set plugins.var.python.chanop.op_command "/msg chanserv op $channel $nick"
 #     (globally for all servers, like freenode and oftc)
-#     /set plugins.var.python.operator.op_command.quakenet "/msg q op $channel $nick"
+#     /set plugins.var.python.chanop.op_command.quakenet "/msg q op $channel $nick"
 #     (for quakenet only)
 #
-#   * plugins.var.python.operator.deop_command:
+#   * plugins.var.python.chanop.deop_command:
 #     Same as op_command but for deop, really not needed since /deop works anywhere, but it's there.
 #     It accepts the special vars $server, $channel and $nick
 #
-#   * plugins.var.python.operator.deop_after_use:
+#   * plugins.var.python.chanop.deop_after_use:
 #     Enables auto-deop'ing after using any of the ban or kick commands.
 #     Note that if you got op manually (like with /oop) then the script won't deop you
 #     Valid values 'on', 'off'
 #
-#   * plugins.var.python.operator.deop_delay:
+#   * plugins.var.python.chanop.deop_delay:
 #     Time it must pass (without using any commands) before auto-deop, in seconds.
 #     Using zero causes to deop immediately.
 #
-#   * plugins.var.python.operator.default_banmask:
+#   * plugins.var.python.chanop.default_banmask:
 #     List of keywords separated by comas. Defines default banmask, when using /oban, /okban or
 #     /omute
 #     You can use several keywords for build a banmask, each keyword defines how the banmask will be
@@ -82,20 +82,20 @@
 #     Valid keywords are: nick, user, host, exact
 #
 #     Examples:
-#     /set plugins.var.python.operator.default_banmask host (bans with *!*@host)
-#     /set plugins.var.python.operator.default_banmask host,user (bans with *!user@host)
-#     /set plugins.var.python.operator.default_banmask exact
+#     /set plugins.var.python.chanop.default_banmask host (bans with *!*@host)
+#     /set plugins.var.python.chanop.default_banmask host,user (bans with *!user@host)
+#     /set plugins.var.python.chanop.default_banmask exact
 #     (bans with nick!user@host, same as using 'nick,user,host')
 #
-#   * plugins.var.python.operator.kick_reason:
+#   * plugins.var.python.chanop.kick_reason:
 #     Default kick reason if none was given in the command.
 #
-#   * plugins.var.python.operator.enable_remove:
+#   * plugins.var.python.chanop.enable_remove:
 #     If enabled, it will use "/quote remove" command instead of /kick, enable it only in
 #     networks that support it, like freenode.
 #     Valid values 'on', 'off'
 #
-#   * plugins.var.python.operator.enable_mute:
+#   * plugins.var.python.chanop.enable_mute:
 #     Mute is disabled by default, this means /omute will ban instead of silence a user, this is
 #     because not all networks support "/mode +q" and it should be enabled only for those that do.
 #     Valid values 'on', 'off'
@@ -103,7 +103,7 @@
 #
 #   The following configs are global and can't be defined per server or channel.
 #
-#   * plugins.var.python.operator.enable_multi_kick:
+#   * plugins.var.python.chanop.enable_multi_kick:
 #     Enables kicking multiple users with /okick command.
 #     Be careful with this as you can kick somebody by accident if
 #     you're not careful when writting the kick reason.
@@ -111,12 +111,12 @@
 #     This also applies to /okban command, multiple kickbans would be enabled.
 #     Valid values 'on', 'off'
 #
-#   * plugins.var.python.operator.merge_bans:
+#   * plugins.var.python.chanop.merge_bans:
 #     Only if you want to reduce flooding when applying (or removing) several bans and
 #     if the IRC server supports it. Every 4 bans will be merged in a
 #     single command. Valid values 'on', 'off'
 #
-#   * plugins.var.python.operator.invert_kickban_order:
+#   * plugins.var.python.chanop.invert_kickban_order:
 #     /okban kicks first, then bans, this inverts the order.
 #     Valid values 'on', 'off'
 #
@@ -142,7 +142,7 @@
 #   version 0.1: Initial release
 ###
 
-SCRIPT_NAME    = "operator"
+SCRIPT_NAME    = "chanop"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
 SCRIPT_VERSION = "0.1"
 SCRIPT_LICENSE = "GPL3"
@@ -354,7 +354,7 @@ class Command(object):
             self.pointer = ''
 
 
-### Operator Classes
+### Chanop Classes
 class Message(object):
     """Class that stores the command for scheduling in CommandQueue."""
     def __init__(self, cmd, buffer='', wait=0):
@@ -470,7 +470,7 @@ def queue_timeout_cb(channel, count):
     return WEECHAT_RC_OK
 
 
-class CommandOperator(Command):
+class CommandChanop(Command):
     """Base class for our commands, with config and general functions."""
     infolist = None
     def __call__(self, *args):
@@ -576,12 +576,12 @@ class CommandOperator(Command):
 
 
 manual_op = False
-class CommandNeedsOp(CommandOperator):
+class CommandNeedsOp(CommandChanop):
     """Base class for all the commands that requires op status for work."""
 
     def parse_args(self, data, buffer, args):
         """Show help if nothing to parse."""
-        CommandOperator.parse_args(self, data, buffer, args)
+        CommandChanop.parse_args(self, data, buffer, args)
         if not self.args:
             weechat.command('', '/help %s' %self._command)
 
@@ -680,12 +680,12 @@ class BanList(object):
             return []
 
 
-operator_banlist = BanList()
+chanop_banlist = BanList()
 
 ################################
-### Operator Command Classes ###
+### Chanop Command Classes ###
 
-class Op(CommandOperator):
+class Op(CommandChanop):
     help = ("Request operator privileges.", "",
             """
             The command used for ask op is defined globally in plugins.var.python.%(name)s.op_command,
@@ -697,7 +697,7 @@ class Op(CommandOperator):
         self.get_op()
 
 
-class Deop(CommandOperator):
+class Deop(CommandChanop):
     help = ("Drops operator privileges.", "", "")
 
     def command(self):
@@ -813,16 +813,16 @@ class Ban(CommandNeedsOp):
         return banmask
 
     def add_ban(self, banmask, hostmask=None):
-        operator_banlist.add_ban(self.server, self.channel, banmask, hostmask)
+        chanop_banlist.add_ban(self.server, self.channel, banmask, hostmask)
 
     def show_ban_list(self):
-        if not operator_banlist:
+        if not chanop_banlist:
             say("No bans known.")
             return
         # XXX should add methods in BanList for this
-        for server, channel in operator_banlist.bans.iterkeys():
+        for server, channel in chanop_banlist.bans.iterkeys():
             say('%s %s' %(server, channel))
-            for ban in operator_banlist.bans[server, channel].itervalues():
+            for ban in chanop_banlist.bans[server, channel].itervalues():
                 say(ban)
 
     def command_op(self):
@@ -861,11 +861,11 @@ class UnBan(Ban):
                   <nick> is present in the channel.""")
 
     def search_bans(self, hostmask):
-        return operator_banlist.hostmask_match(self.server, self.channel, hostmask)
+        return chanop_banlist.hostmask_match(self.server, self.channel, hostmask)
 
     def remove_ban(self, *banmask):
         for mask in banmask:
-            operator_banlist.remove_ban(self.server, self.channel, mask)
+            chanop_banlist.remove_ban(self.server, self.channel, mask)
 
     def command_op(self):
         args = self.args.split()
@@ -899,7 +899,7 @@ class Mute(Ban):
 
             Note: This command is disabled by default and should be enabled for networks that
                   support "/mode +q hostmask", use:
-                  /set plugins.var.python.operator.enable_mute.your_server_name on""")
+                  /set plugins.var.python.%s.enable_mute.your_server_name on""" %SCRIPT_NAME)
     # I need a way for disable mute per network, since networks that not recognise /mode +q will do
     # nasty stuff with the channel modes, but I can't do it in the Ban class because then KickBan
     # will mute instead of banning, hence this decorator
@@ -918,7 +918,7 @@ class Mute(Ban):
     @fallback_Ban('add_ban')
     def add_ban(self, banmask, hostmask=None):
         # add '%' to banmask so /ounban can remove it
-        operator_banlist.add_ban(self.server, self.channel, '%' + banmask, hostmask)
+        chanop_banlist.add_ban(self.server, self.channel, '%' + banmask, hostmask)
 
     @fallback_Ban('ban')
     def ban(self, *banmask, **kwargs):
