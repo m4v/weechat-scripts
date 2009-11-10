@@ -444,6 +444,25 @@ class CommandQueue(object):
                         str(self.wait)))
 
 
+    class AddChannel(Message):
+        def __init__(self, cmd, server='', channel='', **kwargs):
+            self.server = server
+            self.channel = channel
+
+        def __call__(self):
+            config = 'channels.%s' %self.server
+            value = weechat.config_get_plugin(config)
+            if not value:
+                weechat.config_set_plugin(config, self.channel)
+            else:
+                channels = value.split(',')
+                if self.channel not in channels:
+                    channels.append(self.channel)
+                    value = ','.join(channels)
+                    weechat.config_set_plugin(config, value)
+            return True
+
+
     def queue(self, cmd, type='Normal', wait=1, **kwargs):
         #debug('queue: wait %s' %wait)
         pack = getattr(self, type)(cmd, wait=self.wait, **kwargs)
@@ -597,6 +616,7 @@ class CommandChanop(Command):
                 raise Exception, "No command defined for get op."
             self.queue(self.replace_vars(value), type='WaitForOp', server=self.server,
                     channel=self.channel, nick=self.nick, wait=0)
+            self.queue('', type='AddChannel', server=self.server, channel=self.channel)
         return op
 
     def drop_op(self):
@@ -684,9 +704,7 @@ class BanList(object):
             bans = self.bans[server, channel]
             return bans.iterkeys()
         except KeyError:
-            debug('banmaks keys: %s' %(self.bans.keys(), ))
-            fetch_ban_list(buffer)
-            return []
+            return ()
 
     def add_ban(self, server, channel, banmask, **kwargs):
         #debug("adding ban: %s" %ban)
@@ -960,19 +978,18 @@ class BanWithList(Ban):
                             weechat.color('default'), ban.time))
 
 
-hook_367 = ''
-hook_368 = ''
+hooks_367 = {}
+hooks_368 = {}
 def fetch_ban_list(buffer, channel=None):
-    global hook_368, hook_367
-    if not hook_367:
-        if not channel:
-            channel = weechat.buffer_get_string(buffer, 'localvar_channel')
-        cmd = '/mode %s b' %channel
-        #weechat_queue.queue(cmd, buffer=buffer)
-        weechat.command(buffer, cmd)
-        hook_367 = weechat.hook_modifier('irc_in_367', 'banlist_367', '')
-        hook_368 = weechat.hook_modifier('irc_in_368', 'banlist_368', '')
-        return
+    if not channel:
+        channel = weechat.buffer_get_string(buffer, 'localvar_channel')
+    cmd = '/mode %s b' %channel
+    #weechat_queue.queue(cmd, buffer=buffer)
+    debug('fetching bans %r' %cmd)
+    weechat.command(buffer, cmd)
+    hooks_367[buffer, channel] = weechat.hook_modifier('irc_in_367', 'banlist_367', '')
+    hooks_368[buffer, channel] = weechat.hook_modifier('irc_in_368', 'banlist_368', '%s,%s' \
+        %(buffer, channel))
 
 def banlist_367(data, modifier, modifier_data, string):
     #debug(string)
@@ -982,12 +999,12 @@ def banlist_367(data, modifier, modifier_data, string):
     return ''
 
 def banlist_368(data, modifier, modifier_data, string):
-    global hook_368, hook_367
-    weechat.unhook(hook_367)
-    weechat.unhook(hook_368)
+    key = tuple(data.split(','))
+    weechat.unhook(hooks_367[key])
+    weechat.unhook(hooks_368[key])
     #cmd_ban_list.show_ban_list()
-    hook_367 = ''
-    hook_368 = ''
+    del hooks_367[key]
+    del hooks_368[key]
     return ''
 
 
@@ -1163,6 +1180,19 @@ class Topic(CommandNeedsOp):
         self.queue(cmd)
 
 
+def chanop_init():
+    servers = Infolist('irc_server')
+    while servers.next():
+        server = servers['name']
+        config = 'channels.%s' %server
+        value = weechat.config_get_plugin(config)
+        if value:
+            buffer = weechat.buffer_search('irc', 'server.%s' %server)
+            channels = value.split(',')
+            for channel in channels:
+                fetch_ban_list(buffer, channel)
+
+
 ### config callbacks ###
 def enable_multi_kick_conf_cb(data, config, value):
     global cmd_kick, cmd_kban
@@ -1216,13 +1246,16 @@ settings = {
         'enable_multi_kick':'off',
         'merge_bans'       :'off',
         'enable_mute'      :'off',
-        'invert_kickban_order':'off'}
+        'invert_kickban_order':'off',
+        }
 
 
 ### Register Script and set configs ###
 if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
         SCRIPT_DESC, '', ''):
+
+    chanop_init()
 
     for opt, val in settings.iteritems():
         if not weechat.config_is_set_plugin(opt):
