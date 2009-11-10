@@ -167,6 +167,8 @@ except ImportError:
 
 import getopt, time, fnmatch
 
+now = lambda: int(time.time())
+
 ### messages
 def debug(s, prefix='', buffer=''):
     """Debug msg"""
@@ -681,12 +683,12 @@ class BanObject(object):
         self.banmask = banmask
         self.hostmask = hostmask
         self.operator = operator
-        self.time = date or int(time.time())
+        self.date = date or int(time.time())
         self.expires = expires
         self.removed = removed
 
     def __str__(self):
-        return "<BanObject(%s, %s)>" %(self.banmask, self.time)
+        return "<BanObject(%s, %s)>" %(self.banmask, self.date)
 
 
 class BanList(object):
@@ -695,7 +697,7 @@ class BanList(object):
     def __len__(self):
         return len(self.bans)
 
-    def banmasks(self, buffer=None):
+    def banmasks(self, buffer):
         assert buffer
         channel = weechat.buffer_get_string(buffer, 'localvar_channel')
         server = weechat.buffer_get_string(buffer, 'localvar_server')
@@ -748,6 +750,38 @@ class BanList(object):
             return ban_list
         except KeyError:
             return []
+
+    def get_buffer(self):
+        buffer = weechat.buffer_search('python', 'Ban list')
+        if not buffer:
+            buffer = weechat.buffer_new('Ban list', '', '', '', '')
+            weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
+            weechat.buffer_set(buffer, 'time_for_each_line', '0')
+            weechat.buffer_set(buffer, 'title', 'Ban List')
+        return buffer
+
+    def show_ban_list(self):
+        buffer = self.get_buffer()
+        weechat.buffer_clear(buffer)
+        weechat.buffer_set(buffer, 'display', '1')
+        if not chanop_banlist:
+            say("No bans known.", buffer=buffer)
+            return
+        # XXX should add methods in BanList for this
+        for server, channel in self.bans.iterkeys():
+            #say('%s %s' %(server, channel), buffer=buffer)
+            for ban in self.bans[server, channel].itervalues():
+                if ban.hostmask:
+                    hostmask = ' (%s%s%s)' %(weechat.color('cyan'), ban.hostmask,
+                            weechat.color('default'))
+                else:
+                    hostmask = ''
+                weechat.prnt(buffer, '[%s%s %s%s]\t%s%s%s%s set by %s%s%s %s'\
+                        %(weechat.color('green'), server, channel, weechat.color('default'),
+                            weechat.color('white'), ban.banmask, weechat.color('default'),
+                            hostmask, weechat.color('lightgreen'),
+                            ban.operator and get_nick(ban.operator) or self.nick,
+                            weechat.color('default'), ban.date))
 
 
 chanop_banlist = BanList()
@@ -939,57 +973,30 @@ class BanWithList(Ban):
     callback = 'cmd_ban_list'
     def parse_args(self, *args):
         CommandChanop.parse_args(self, *args)
-        if not self.args:
-            self.show_ban_list()
-            fetch_ban_list(self.buffer, self.channel)
-            return
-        self._parse_args(self, *args)
-
-    def get_buffer(self):
-        buffer = weechat.buffer_search('python', 'Ban list')
-        if not buffer:
-            buffer = weechat.buffer_new('Ban list', '', '', '', '')
-            weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
-            weechat.buffer_set(buffer, 'time_for_each_line', '0')
-            weechat.buffer_set(buffer, 'title', 'Ban List')
-        return buffer
-
-    def show_ban_list(self):
-        buffer = self.get_buffer()
-        weechat.buffer_clear(buffer)
-        weechat.buffer_set(buffer, 'display', '1')
-        if not chanop_banlist:
-            say("No bans known.", buffer=buffer)
-            return
-        # XXX should add methods in BanList for this
-        for server, channel in chanop_banlist.bans.iterkeys():
-            #say('%s %s' %(server, channel), buffer=buffer)
-            for ban in chanop_banlist.bans[server, channel].itervalues():
-                if ban.hostmask:
-                    hostmask = ' (%s%s%s)' %(weechat.color('cyan'), ban.hostmask,
-                            weechat.color('default'))
-                else:
-                    hostmask = ''
-                weechat.prnt(buffer, '[%s%s %s%s]\t%s%s%s%s set by %s%s%s %s'\
-                        %(weechat.color('green'), server, channel, weechat.color('default'),
-                            weechat.color('white'), ban.banmask, weechat.color('default'),
-                            hostmask, weechat.color('lightgreen'),
-                            ban.operator and get_nick(ban.operator) or self.nick,
-                            weechat.color('default'), ban.time))
+        chanop_banlist.show_ban_list()
 
 
-hooks_367 = {}
-hooks_368 = {}
+hooks_banlist = {}
 def fetch_ban_list(buffer, channel=None):
     if not channel:
         channel = weechat.buffer_get_string(buffer, 'localvar_channel')
+    key = (buffer, channel)
+    if key in hooks_banlist:
+        last_time = hooks_banlist[key][2]
+        if now() - last_time > 30:
+            del hooks_banlist[key]
+        else:
+            # don't fetch it again too quickly
+            return
     cmd = '/mode %s b' %channel
     #weechat_queue.queue(cmd, buffer=buffer)
     debug('fetching bans %r' %cmd)
     weechat.command(buffer, cmd)
-    hooks_367[buffer, channel] = weechat.hook_modifier('irc_in_367', 'banlist_367', '')
-    hooks_368[buffer, channel] = weechat.hook_modifier('irc_in_368', 'banlist_368', '%s,%s' \
-        %(buffer, channel))
+    hooks_banlist[key] = (
+            weechat.hook_modifier('irc_in_367', 'banlist_367', ''),
+            weechat.hook_modifier('irc_in_368', 'banlist_368', '%s,%s' %key),
+            now()
+            )
 
 def banlist_367(data, modifier, modifier_data, string):
     #debug(string)
@@ -1000,11 +1007,8 @@ def banlist_367(data, modifier, modifier_data, string):
 
 def banlist_368(data, modifier, modifier_data, string):
     key = tuple(data.split(','))
-    weechat.unhook(hooks_367[key])
-    weechat.unhook(hooks_368[key])
-    #cmd_ban_list.show_ban_list()
-    del hooks_367[key]
-    del hooks_368[key]
+    weechat.unhook(hooks_banlist[key][0])
+    weechat.unhook(hooks_banlist[key][1])
     return ''
 
 
@@ -1228,6 +1232,7 @@ def invert_kickban_order_conf_cb(data, config, value):
 
 ### completion
 def banmask_completion(data, completion_item, buffer, completion):
+    fetch_ban_list(buffer)
     banmasks = chanop_banlist.banmasks(buffer)
     debug('banmask completion: %s' %(banmasks, ))
     for ban in banmasks:
