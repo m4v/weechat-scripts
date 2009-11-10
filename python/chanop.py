@@ -675,6 +675,19 @@ class BanList(object):
     def __len__(self):
         return len(self.bans)
 
+    def banmasks(self, buffer=None):
+        assert buffer
+        channel = weechat.buffer_get_string(buffer, 'localvar_channel')
+        server = weechat.buffer_get_string(buffer, 'localvar_server')
+        debug('%s, %s' %(server, channel))
+        try:
+            bans = self.bans[server, channel]
+            return bans.iterkeys()
+        except KeyError:
+            debug('banmaks keys: %s' %(self.bans.keys(), ))
+            fetch_ban_list(buffer)
+            return []
+
     def add_ban(self, server, channel, banmask, **kwargs):
         #debug("adding ban: %s" %ban)
         key = (server, channel)
@@ -686,7 +699,6 @@ class BanList(object):
                         setattr(ban, key, value)
             else:
                 self.bans[key][banmask] = BanObject(banmask, **kwargs)
-
         else:
             self.bans[key] = { banmask: BanObject(banmask, **kwargs) }
 
@@ -911,6 +923,7 @@ class BanWithList(Ban):
         CommandChanop.parse_args(self, *args)
         if not self.args:
             self.show_ban_list()
+            fetch_ban_list(self.buffer, self.channel)
             return
         self._parse_args(self, *args)
 
@@ -947,6 +960,37 @@ class BanWithList(Ban):
                             weechat.color('default'), ban.time))
 
 
+hook_367 = ''
+hook_368 = ''
+def fetch_ban_list(buffer, channel=None):
+    global hook_368, hook_367
+    if not hook_367:
+        if not channel:
+            channel = weechat.buffer_get_string(buffer, 'localvar_channel')
+        cmd = '/mode %s b' %channel
+        #weechat_queue.queue(cmd, buffer=buffer)
+        weechat.command(buffer, cmd)
+        hook_367 = weechat.hook_modifier('irc_in_367', 'banlist_367', '')
+        hook_368 = weechat.hook_modifier('irc_in_368', 'banlist_368', '')
+        return
+
+def banlist_367(data, modifier, modifier_data, string):
+    #debug(string)
+    args = string.split()
+    channel, banmask, op, date = args[-4:]
+    chanop_banlist.add_ban(modifier_data, channel.lower(), banmask, hostmask=None, operator=op, date=date)
+    return ''
+
+def banlist_368(data, modifier, modifier_data, string):
+    global hook_368, hook_367
+    weechat.unhook(hook_367)
+    weechat.unhook(hook_368)
+    #cmd_ban_list.show_ban_list()
+    hook_367 = ''
+    hook_368 = ''
+    return ''
+
+
 class UnBan(Ban):
     help = ("Remove bans.",
             "<nick|banmask> [<nick|banmask> ..]",
@@ -954,6 +998,8 @@ class UnBan(Ban):
             Note: Unbaning with <nick> is not very useful at the momment, only the bans known by the
                   script (bans that were applied with this script) will be removed and only *if*
                   <nick> is present in the channel.""")
+
+    completion = '%(chanop_banmask)'
 
     def search_bans(self, hostmask):
         return chanop_banlist.hostmask_match(self.server, self.channel, hostmask)
@@ -1116,6 +1162,7 @@ class Topic(CommandNeedsOp):
         cmd = '/topic %s' %topic
         self.queue(cmd)
 
+
 ### config callbacks ###
 def enable_multi_kick_conf_cb(data, config, value):
     global cmd_kick, cmd_kban
@@ -1149,12 +1196,13 @@ def invert_kickban_order_conf_cb(data, config, value):
         cmd_kban.invert = False
     return WEECHAT_RC_OK
 
-def ban_list_msg(data, modifier, modifier_data, string):
-    debug(string)
-    args = string.split()
-    channel, banmask, op, date = args[-4:]
-    chanop_banlist.add_ban(modifier_data, channel, banmask, hostmask=None, operator=op, date=date)
-    return string
+### completion
+def banmask_completion(data, completion_item, buffer, completion):
+    banmasks = chanop_banlist.banmasks(buffer)
+    debug('banmask completion: %s' %(banmasks, ))
+    for ban in banmasks:
+        weechat.hook_completion_list_add(completion, ban, 0, weechat.WEECHAT_LIST_POS_SORT)
+    return WEECHAT_RC_OK
 
 # default settings
 settings = {
@@ -1212,7 +1260,8 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_config('plugins.var.python.%s.invert_kickban_order' %SCRIPT_NAME,
             'invert_kickban_order_conf_cb', '')
 
-    weechat.hook_modifier('irc_in_367', 'ban_list_msg', '')
+    weechat.hook_completion('chanop_banmask', '', 'banmask_completion', '')
+
 
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
