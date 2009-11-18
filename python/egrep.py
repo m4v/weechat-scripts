@@ -48,18 +48,19 @@
 #     egrep will only print the last matched lines that don't surpass the value defined here.
 #
 #
-#   History:
+#   TODO:
+#   * grepping should run in background for big logs
 #
+#
+#   History:
 #   2009-11-06
-#   version 0.6: improvements for large log files (WeeChat freezes reduced)
+#   version 0.5.3: improvements for long grep output
 #   * egrep buffer input accepts the same flags as /egrep for repeat a search with different
 #     options.
-#   * added /egrep stop.
 #   * tweaks in egrep's output.
 #   * max_lines option added for limit egrep's output.
 #   * code in update_buffer() optimized.
 #   * time stats in buffer title.
-#   * grepping for log files runs in a weechat_process.
 #   * added go_to_buffer config option.
 #   * added --buffer for search only in buffers.
 #   * refactoring.
@@ -105,7 +106,7 @@ except ImportError:
 
 SCRIPT_NAME    = "egrep"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.6"
+SCRIPT_VERSION = "0.5.3"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Search in buffers and logs"
 SCRIPT_COMMAND = "egrep"
@@ -452,47 +453,17 @@ def show_matching_lines():
 	matched_lines = linesDict()
 	#debug('buffers:%s \nlogs:%s' %(search_in_buffers, search_in_files))
 	time_start = now()
+	regexp = make_regexp(pattern, matchcase)
 	if search_in_buffers:
-		regexp = make_regexp(pattern, matchcase)
 		for buffer in search_in_buffers:
 			buffer_name = weechat.buffer_get_string(buffer, 'name')
 			matched_lines[buffer_name] = grep_buffer(buffer, head, tail, regexp, hilight, exact)
 	if search_in_files:
-		# we hook a process so grepping runs in background.
-		global hook_file_grep
-		timeout = 1000*60*10 # 10 min
-
-		files_string = search_in_files[:]
-		for id in range(len(search_in_files)):
-			# nicks might have ` characters, must be escaped in the shell cmd
-			if '`' in search_in_files[id]:
-				files_string[id] = search_in_files[id].replace('`', '\`')
-		files_string = ', '.join(map(repr, files_string)).replace('\\\\','\\')
-		cmd = str(
-			"python -c \"\n"
-			"import sys\n"
-			"sys.path.append('%(home)s/python')\n" # add WeeChat script dir so we can import egrep
-			"from egrep import make_regexp, grep_file\n"
-			"logs = (%(logs)s, )\n"
-			"try:\n"
-			"   regexp = make_regexp('%(pattern)s', %(matchcase)s)\n"
-			"   for log in logs:\n"
-			"      log_name = log[%(len_home)s:]\n"
-			"      matched_lines = grep_file(log, %(head)s, %(tail)s, regexp, '%(hilight)s', %(exact)s)\n"
-			"      print log_name\n"           # print logname first
-			"      for l in matched_lines:\n"  # then our matched lines
-			"         print l[:-1]\n"          # remove tailing \n
-			"      print\n"                    # print \n as delimiter between logs
-			"except Exception, e:\n"
-			"   print >> sys.stderr, e\"\n" \
-				%dict(logs=files_string, head=head, pattern=pattern, tail=tail, hilight=hilight,
-						exact=exact, matchcase=matchcase, len_home=len(home_dir),
-						home=weechat.info_get('weechat_dir', '')))
-
-		#debug(cmd)
-		hook_file_grep = weechat.hook_process(cmd, timeout, 'grep_file_callback', '')
-	else:
-		buffer_update()
+		len_home = len(home_dir)
+		for log in search_in_files:
+			log_name = log[len_home:]
+			matched_lines[log_name] = grep_file(log, head, tail, regexp, hilight, exact)
+	buffer_update()
 
 grep_stdout = grep_stderr = ''
 def grep_file_callback(data, command, rc, stdout, stderr):
@@ -683,10 +654,6 @@ def buffer_create():
 
 def buffer_input(data, buffer, input_data):
 	"""Repeats last search with 'input_data' as regexp."""
-	try:
-		cmd_grep_stop(buffer, input_data)
-	except:
-		return WEECHAT_RC_OK
 
 	global search_in_buffers, search_in_files
 	global pattern, matchcase, head, tail, number, count, exact, hilight
@@ -702,7 +669,10 @@ def buffer_input(data, buffer, input_data):
 			except Exception, e:
 				error('Argument error, %s' %e, buffer=buffer)
 				return WEECHAT_RC_OK
-			show_matching_lines()
+			try:
+				show_matching_lines()
+			except Exception, e:
+				error(e)
 	except NameError:
 		error("There isn't any previous search to repeat.", buffer=buffer)
 	return WEECHAT_RC_OK
@@ -807,10 +777,6 @@ def cmd_grep_stop(buffer, args):
 def cmd_grep(data, buffer, args):
 	"""Search in buffers and logs."""
 	global pattern, matchcase, head, tail, number, count, exact, hilight
-	try:
-		cmd_grep_stop(buffer, args)
-	except:
-		return WEECHAT_RC_OK
 
 	if not args:
 		weechat.command('', '/help %s' %SCRIPT_COMMAND)
@@ -952,12 +918,11 @@ if __name__ == '__main__' and import_ok and \
 	home_dir = get_home()
 
 	weechat.hook_command(SCRIPT_COMMAND, cmd_grep.__doc__,
-			"[log <file> | buffer <name> | stop] [-a|--all] [-b|--buffer] [-c|--count] [-m|--matchcase] "
+			"[log <file> | buffer <name>] [-a|--all] [-b|--buffer] [-c|--count] [-m|--matchcase] "
 			"[-H|--hilight] [-e|--exact] [(-h|--head)|(-t|--tail) [-n|--number <n>]] <expression>",
 			# help
 			"     log <file>: Search in one log that matches <file> in the logger path. Use '*' and '?' as jokers.\n"
 			"  buffer <name>: Search in buffer <name>, if there's no buffer with <name> it will try to search for a log file.\n"
-			"           stop: Stops a currently running search.\n"
 			"       -a --all: Search in all open buffers.\n"
 			"                 If used with 'log <file>' search in all logs that matches <file>.\n"
 			"    -b --buffer: Search only in buffers, not in file logs.\n"
@@ -969,8 +934,6 @@ if __name__ == '__main__' and import_ok and \
 			"      -h --head: Print the first 10 matching lines.\n"
 			"-n --number <n>: Overrides default number of lines for --tail or --head.\n"
 			"   <expression>: Expression to search.\n\n"
-			"If no arguments given and there's a search in progress, egrep will display a short"
-			" stat.\n\n"
 			"egrep buffer:\n"
 			"  Accepts most arguments of /egrep command, It'll repeat last search using the new "
 			"arguments.\n"
@@ -980,7 +943,6 @@ if __name__ == '__main__' and import_ok and \
 			# completion template
 			"buffer %(buffers_names) %(egrep_arguments)|%*"
 			"||log %(egrep_log_files) %(egrep_arguments)|%*"
-			"||stop"
 			"||%(egrep_arguments)|%*",
 			'cmd_grep' ,'')
 	weechat.hook_command('logs', cmd_logs.__doc__, "[-s|--size] [<filter>]",
