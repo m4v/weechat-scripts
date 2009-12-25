@@ -591,6 +591,18 @@ class CommandChanop(Command):
         except:
             error('Not in a IRC channel.')
 
+    def has_voice(self, nick):
+        try:
+            nicks = self._nick_infolist()
+            while nicks.next():
+                if nicks['name'] == nick:
+                    if nicks['flags'] & 32:
+                        return True
+                    else:
+                        return False
+        except:
+            error('Not in a IRC channel.')
+
     def is_nick(self, nick):
         nicks = self._nick_infolist()
         while nicks.next():
@@ -668,6 +680,15 @@ class CommandNeedsOp(CommandChanop):
     def command_op(self, *args):
         """Commands in this method will be run with op privileges."""
         pass
+
+    def voice(self, args):
+        cmd = '/voice %s' %args
+        self.queue(cmd)
+
+    def devoice(self, args):
+        cmd = '/devoice %s' %args
+        self.queue(cmd)
+
 
 
 deop_hook = {}
@@ -1184,6 +1205,26 @@ class Topic(CommandNeedsOp):
         self.queue(cmd)
 
 
+class Voice(CommandNeedsOp):
+    help = ("Gives voice to somebody.", "nick", "")
+
+    _command = 'ovoice'
+    callback = 'cmd_voice'
+
+    def command_op(self):
+        self.voice(self.args)
+
+
+class DeVoice(Voice):
+    help = ("Removes voice from somebody.", "nick", "")
+
+    _command = 'odevoice'
+    callback = 'cmd_devoice'
+
+    def command_op(self):
+        self.devoice(self.args)
+
+
 def chanop_init():
     servers = Infolist('irc_server')
     while servers.next():
@@ -1288,6 +1329,9 @@ if __name__ == '__main__' and import_ok and \
 
     cmd_topic = Topic()
     cmd_ban_list = BanWithList()
+
+    cmd_voice = Voice()
+    cmd_devoice = DeVoice()
 
     if get_config_boolean('invert_kickban_order'):
         cmd_kban.invert = True
