@@ -6,176 +6,161 @@ SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = ""
 
 try:
-    import weechat, time
+    import weechat
     WEECHAT_RC_OK = weechat.WEECHAT_RC_OK
     import_ok = True
 except:
     import_ok = False
 
-now = lambda: int(time.time())
+import xmlrpclib, socket, fnmatch
 
-def debug(s, prefix='', buffer=''):
+### messages
+def debug(s, prefix=''):
     """Debug msg"""
-    weechat.prnt(buffer, 'debug:\t%s %s' %(prefix, s))
+    buffer = weechat.buffer_search('python', 'debug ' + SCRIPT_NAME)
+    if not buffer:
+        buffer = weechat.buffer_new('debug ' + SCRIPT_NAME, '', '', '', '')
+        weechat.buffer_set(buffer, 'nicklist', '0')
+        weechat.buffer_set(buffer, 'time_for_each_line', '0')
+        weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
+    weechat.prnt(buffer, '%s\t%s' %(prefix, s))
 
 def error(s, prefix=SCRIPT_NAME, buffer=''):
     """Error msg"""
     weechat.prnt(buffer, '%s%s: %s' %(weechat.prefix('error'), prefix, s))
 
-try:
-    import dbus
-except:
-    error('Failed to import dbus, is the dbus module installed?')
-    import_ok = False
+def say(s, prefix='', buffer=''):
+    """Normal msg"""
+    weechat.prnt(buffer, '%s\t%s' %(prefix, s))
+
+### config and value validation
+boolDict = {'on':True, 'off':False}
+def get_config_boolean(config):
+    value = weechat.config_get_plugin(config)
+    try:
+        return boolDict[value]
+    except KeyError:
+        default = settings[config]
+        error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
+        error("'%s' is invalid, allowed: 'on', 'off'" %value)
+        return boolDict[default]
+
+def get_config_int(config):
+    value = weechat.config_get_plugin(config)
+    try:
+        return int(value)
+    except ValueError:
+        default = settings[config]
+        error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
+        error("'%s' is not a number." %value)
+        return int(default)
 
 settings = {
-        'ignore_nick': '',
+           'server_host': 'localhost',
+           'server_port': '7766',
+         'server_method': 'kde4',
+        'ignore_channel': '',
+           'ignore_nick': '',
         }
 
-def get_nick_ignores():
-    return weechat.config_get_plugin('ignore_nick')
+class Ignores(object):
+    ignore_type = None
+    def __init__(self):
+        self.ignores = []
+        self._get_ignores()
 
-def format_tags(s):
-    if '<' in s:
-        s = s.replace('<', '&lt;')
-    if '>' in s:
-        s = s.replace('>', '&gt;')
-    return s
+    def _get_ignores(self):
+        assert self.ignore_type is not None
+        ignores = weechat.config_get_plugin(self.ignore_type).split(',')
+        self.ignores = [ s.lower() for s in ignores if s ]
 
-def notify_hilight(data, buffer, time, tags, display, hilight, prefix, msg ):
-    ignores = get_nick_ignores()
-    if hilight is '1' and prefix not in ignores:
-        #debug(';'.join((data, buffer, time, tags, display, hilight, prefix, msg)), prefix='HIGHLIGHT')
-        channel = weechat.buffer_get_string(buffer, 'short_name')
-        if not channel:
-            channel = weechat.buffer_get_string(buffer, 'name')
-        msg = format_tags(msg)
-        call_dbus_notify(channel, '<b>%s</b>: %s' %(prefix, msg))
-    return WEECHAT_RC_OK
+    def __contains__(self, s):
+        s = s.lower()
+        for p in self.ignores:
+            if fnmatch.fnmatch(s, p):
+                return True
+        return False
 
-def notify_priv(data, signal, msg):
-    #debug(','.join((data, signal, msg)), prefix='PRIV')
-    nick, msg = msg.split('\t', 1)
-    ignores = get_nick_ignores()
-    if nick.lower() in ignores:
+class IgnoreChannel(Ignores):
+    ignore_type = 'ignore_channel'
+
+class IgnoreNick(Ignores):
+    ignore_type = 'ignore_nick'
+
+class Server(object):
+    def __init__(self):
+        self._create_server()
+        self.send_rpc('Notification script loaded')
+
+    def _create_server(self):
+        address = weechat.config_get_plugin('host')
+        port = get_config_int('port')
+        self.server = xmlrpclib.Server('http://%s:%s' %(address, port))
+        self.method = weechat.config_get_plugin('method')
+
+    def send_rpc(self, *args):
+        try:
+            rt = self.server.notify(self.method, *args)
+            debug('Success: %s' % rt)
+        except xmlrpclib.Fault, e:
+            debug('Error: %s' % e.faultString.split(':', 1)[1])
+
+
+def send_notify(s, channel='', nick='', raw=False):
+    #command = getattr(server, 'kde4')
+    server.send_rpc(s, channel, nick, raw)
+
+def notify_msg(data, buffer, time, tags, display, hilight, prefix, msg):
+    if 'notify_message' not in tags:
+        # XXX weechat bug?
+        debug('Got bad tags: %s' %tags)
         return WEECHAT_RC_OK
-    msg = format_tags(msg)
-    call_dbus_notify(nick, msg)
+    debug('  '.join((data, buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
+            prefix='MESSAGE')
+    if hilight == '1' and display == '1':
+        channel = weechat.buffer_get_string(buffer, 'short_name')
+        if prefix[0] in '@+#!': # strip user modes
+            _prefix = prefix[1:]
+        else:
+            _prefix = prefix
+        if weechat.info_get('irc_is_channel', channel) \
+                and channel not in ignore_channel \
+                and _prefix not in ignore_nick:
+            debug('%sSending notification: %s' %(weechat.color('lightgreen'), channel), prefix='NOTIFY')
+            send_notify(msg, channel=channel, nick=prefix)
     return WEECHAT_RC_OK
 
-timestamp = 0
-notify_id = ''
-notify_msg = ''
-notify_title = ''
-def dbus_notify(channel, msg):
-    global notify_id, notify_title, notify_msg, timestamp
-    try:
-        debug("mark 0")
-        bus = dbus.SessionBus()
-        debug("mark 1")
-        notify_object = bus.get_object('org.freedesktop.Notifications', '/org/freedesktop/Notifications')
-        debug("mark 2")
-        notify = dbus.Interface(notify_object, 'org.freedesktop.Notifications')
-        debug("mark 3")
-        if ((now() - timestamp) < 10) and (channel == notify_title):
-            id = notify_id
-            msg = '%s<br>%s' %(notify_msg, msg)
+def notify_priv(data, buffer, time, tags, display, hilight, prefix, msg):
+    if 'notify_private' not in tags:
+        # XXX weechat bug?
+        debug('Got bad tags: %s' %tags)
+        return WEECHAT_RC_OK
+    debug('  '.join((data, buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
+            prefix='PRIVATE')
+    if display == '1':
+        if prefix not in ignore_nick:
+            debug('%sSending notification: %s' %(weechat.color('lightgreen'), nick), prefix='NOTIFY')
+            send_notify(msg, channel=prefix)
         else:
-            id = 0
-        debug("mark 4")
-        notify_id = notify.Notify('', id, '', channel, msg, '', {}, 50000)
-        debug("mark 5")
-        notify_title = channel
-        debug("mark 6")
-        notify_msg = msg
-        debug("mark 7")
-        timestamp = now()
-    except:
-        error('Looks like we lost the dbus daemon, disabling notices...')
-        disable()
-        #weechat # force exception if we aren't in weechat
-        #dbus_lost()
-
-call_dbus_notify = dbus_notify
-
-# If you use weechat with screen, dbusnotify will lose dbus when you close your X session and later
-# reattach, this is because the local dbus daemon was restarted and it has now a different address,
-# which is exported in the DBUS_SESSION_BUS_ADDRESS env var, this is a hack for allow me to update
-# that address, this is ugly, but I don't know enough python-dbus-fu for write a better way
-#################################################
-### Ugly hack for get dbus back if we lost it ###
-
-def dbus_lost():
-   global hook_dbus_update, notify_hooks
-   if notify_hooks:
-       error('Looks like we lost the dbus daemon, disabling notices...')
-       error('See /help dbus_update_address for update dbus address.')
-       hook_dbus_update = weechat.hook_command('dbus_update_address',
-               'Temporal command for update dbus address', '',
-               'First find the address of you dbus daemon, "echo $DBUS_SESSION_BUS_ADDRESS" in a'
-               ' new shell should be enough.\n'
-               'The pass it as an argument.\n\n'
-               'Example: /dbus_update_address '
-               'unix:abstract=/tmp/dbus-kVLRzw8Bke,guid=6aeebd17c1264df1f21377314a932099',
-               '', 'cmd_dbus_update', '')
-       disable()
-
-dbus_address = ''
-def dbus_notify_process(channel, msg):
-   global dbus_address
-   assert dbus_address
-   weechat.hook_process("export DBUS_SESSION_BUS_ADDRESS=%(dbus_address)s; python -c \""
-           "import sys\n"
-           "sys.path.append('/home/m4v/dev/weechat/scripts-git/python')\n"
-           "import dbusnotify\n"
-           "dbusnotify.dbus_notify('%(channel)s', '%(msg)s')\"" \
-                   %{'dbus_address':dbus_address, 'channel':channel, 'msg':msg},
-           10000, 'dbus_notify_process_cb', '')
-# FIXME path
-
-def dbus_notify_process_cb(data, command, rc, stdout, stderr):
-   global notify_hooks
-   debug("%s @ stderr: '%s', stdout: '%s'" %(rc, stderr.strip('\n'), stdout.strip('\n')))
-   if rc is not '0' and notify_hooks:
-       # dbus lost, again ...
-       dbus_lost()
-   return WEECHAT_RC_OK
-
-def cmd_dbus_update(data, buffer, args):
-   global hook_dbus_update
-   global call_dbus_notify, dbus_address
-   dbus_address = args
-   enable()
-   weechat.unhook(hook_dbus_update)
-   call_dbus_notify = dbus_notify_process
-   call_dbus_notify('dbusnotify', 'Address update successful.')
-   return WEECHAT_RC_OK
-
-###             End of ugly hack              ###
-#################################################
+            debug('private ignored')
+    return WEECHAT_RC_OK
 
 def cmd_test(data, buffer, args):
     if not args:
-        call_dbus_notify('test', 'test')
+        send_notify('test', channel='#test')
     else:
-        call_dbus_notify('test', args)
+        send_notify(args, channel='#test', raw=True)
     return WEECHAT_RC_OK
 
-notify_hooks = ''
-def enable():
-    global notify_hooks
-    if notify_hooks:
-        disable()
-    notify_hooks = weechat.hook_print('', '', '', 1, 'notify_hilight', '')
-#           weechat.hook_signal('weechat_pv', 'notify_priv', ''),
-#           ]
-    #debug(notify_hooks)
+def ignore_update(*args):
+    ignore_channel._get_ignores()
+    ignore_nick._get_ignores()
+    return WEECHAT_RC_OK
 
-def disable():
-    global notify_hooks
-    #for hook in notify_hooks:
-    weechat.unhook(notify_hooks)
-    notify_hooks = ''
+def server_update(*args):
+    server._create_server()
+    return WEECHAT_RC_OK
+
 
 if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, SCRIPT_DESC,
@@ -183,10 +168,17 @@ if __name__ == '__main__' and import_ok and \
 
     for opt, val in settings.iteritems():
         if not weechat.config_is_set_plugin(opt):
-                weechat.config_set_plugin(opt, val)
+            weechat.config_set_plugin(opt, val)
+
+    ignore_channel = IgnoreChannel()
+    ignore_nick = IgnoreNick()
+    server = Server()
 
     weechat.hook_command('dbus_test', 'desc', 'help', 'help', '', 'cmd_test', '')
-    #enable()
-    notify_hooks = weechat.hook_print('', '', '', 1, 'notify_hilight', '')
+    weechat.hook_config('plugins.var.python.%s.ignore_*' %SCRIPT_NAME, 'ignore_update', '')
+    weechat.hook_config('plugins.var.python.%s.server_*' %SCRIPT_NAME, 'server_update', '')
+
+    weechat.hook_print('', 'notify_message', '', 1, 'notify_msg', ''),
+    weechat.hook_print('', 'notify_private', '', 1, 'notify_priv', ''),
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
