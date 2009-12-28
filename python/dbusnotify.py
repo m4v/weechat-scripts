@@ -56,11 +56,10 @@ def get_config_int(config):
         return int(default)
 
 settings = {
-           'server_host': 'localhost',
-           'server_port': '7766',
-         'server_method': 'kde4',
-        'ignore_channel': '',
-           'ignore_nick': '',
+         'server_uri': 'http://localhost:7766',
+      'server_method': 'kde4',
+     'ignore_channel': '',
+        'ignore_nick': '',
         }
 
 class Ignores(object):
@@ -90,30 +89,70 @@ class IgnoreNick(Ignores):
 class Server(object):
     def __init__(self):
         self._create_server()
+        self._reset()
         self.send_rpc('Notification script loaded')
 
+    @staticmethod
+    def format(s, nick=''):
+        if '<' in s:
+            s = s.replace('<', '&lt;')
+        if '>' in s:
+            s = s.replace('>', '&gt;')
+        if nick:
+            s = '<b>&lt;%s&gt;</b> %s' %(nick, s)
+        return s
+
+    def _reset(self):
+        self.msg = {}
+        self.timer = None
+
+    def enqueue(self, s, channel, nick=''):
+        msg = self.format(s, nick)
+        if channel not in self.msg:
+            self.msg[channel] = msg
+        else:
+            s = self.msg[channel]
+            msg = '%s\n%s' %(s, msg)
+            self.msg[channel] = msg
+        if self.timer is None:
+            self.timer = weechat.hook_timer(3000, 0, 0, 'msg_flush', '')
+
+    def flush(self):
+        for channel, msg in self.msg.iteritems():
+            self.send_rpc(msg, channel)
+        self._reset()
+
     def _create_server(self):
-        address = weechat.config_get_plugin('host')
-        port = get_config_int('port')
-        self.server = xmlrpclib.Server('http://%s:%s' %(address, port))
+        self.address = weechat.config_get_plugin('server_uri')
+        self.server = xmlrpclib.Server(self.address)
         self.method = weechat.config_get_plugin('method')
 
     def send_rpc(self, *args):
         try:
             rt = self.server.notify(self.method, *args)
-            debug('Success: %s' % rt)
+            if rt == 'OK':
+                debug('Success: %s' % rt)
+            else:
+                error('Error: %s' %rt)
         except xmlrpclib.Fault, e:
-            debug('Error: %s' % e.faultString.split(':', 1)[1])
+            error('Error: %s' % e.faultString.split(':', 1)[1])
+        except socket.error, e:
+            error('Error: Failed to connect to our notification daemon, check if the address'
+                   ' \'%s\' is correct and if it\'s running.' %self.address)
 
 
-def send_notify(s, channel='', nick='', raw=False):
+def msg_flush(*args):
+    server.flush()
+    return WEECHAT_RC_OK
+
+def send_notify(s, channel='', nick=''):
     #command = getattr(server, 'kde4')
-    server.send_rpc(s, channel, nick, raw)
+    server.enqueue(s, channel, nick)
 
 def notify_msg(data, buffer, time, tags, display, hilight, prefix, msg):
     if 'notify_message' not in tags:
         # XXX weechat bug?
-        debug('Got bad tags: %s' %tags)
+#        debug('Got bad tags: %s' %tags)
         return WEECHAT_RC_OK
     debug('  '.join((data, buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
             prefix='MESSAGE')
@@ -133,13 +172,13 @@ def notify_msg(data, buffer, time, tags, display, hilight, prefix, msg):
 def notify_priv(data, buffer, time, tags, display, hilight, prefix, msg):
     if 'notify_private' not in tags:
         # XXX weechat bug?
-        debug('Got bad tags: %s' %tags)
+#        debug('Got bad tags: %s' %tags)
         return WEECHAT_RC_OK
     debug('  '.join((data, buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
             prefix='PRIVATE')
     if display == '1':
         if prefix not in ignore_nick:
-            debug('%sSending notification: %s' %(weechat.color('lightgreen'), nick), prefix='NOTIFY')
+            debug('%sSending notification: %s' %(weechat.color('lightgreen'), prefix), prefix='NOTIFY')
             send_notify(msg, channel=prefix)
         else:
             debug('private ignored')
@@ -147,9 +186,9 @@ def notify_priv(data, buffer, time, tags, display, hilight, prefix, msg):
 
 def cmd_test(data, buffer, args):
     if not args:
-        send_notify('test', channel='#test')
+        server.send_rpc('test', channel='#test')
     else:
-        send_notify(args, channel='#test', raw=True)
+        server.send_rpc(args, channel='#test')
     return WEECHAT_RC_OK
 
 def ignore_update(*args):
