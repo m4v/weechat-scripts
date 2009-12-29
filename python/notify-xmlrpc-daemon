@@ -1,0 +1,128 @@
+#! /usr/bin/env python
+# -*- coding: utf-8 -*-
+###
+# Copyright (c) 2009 by Elián Hanisch <lambdae2@gmail.com>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+###
+
+__version__   = '0.1'
+__author__    = 'Elián Hanisch <lambdae2@gmail.com>'
+__copyright__ = 'Copyright (c) 2009 by Elián Hanisch <lambdae2@gmail.com>'
+
+
+import xmlrpclib, socket, os, sys
+from SimpleXMLRPCServer import SimpleXMLRPCServer
+
+host = 'localhost'
+port = 7766
+
+class Daemon(SimpleXMLRPCServer):
+    stopped = False
+    def __init__(self, *args, **kwargs):
+        SimpleXMLRPCServer.__init__(self, *args, **kwargs)
+        self.register_function(self.quit)
+
+    def serve_forever(self):
+        while not self.stopped:
+            self.handle_request()
+
+    def quit(self):
+        """Allows to kill the server remotelly."""
+        self.server_close()
+        self.stopped = True
+        return 'OK'
+
+
+class Notifications(object):
+    def notify(self, type, text, channel=None):
+        try:
+            import dbus
+        except:
+            return 'Failed to import dbus, is the dbus module installed?'
+        else:
+            try:
+                bus = dbus.SessionBus()
+                notify_object = bus.get_object('org.freedesktop.Notifications', '/org/freedesktop/Notifications')
+                notify = dbus.Interface(notify_object, 'org.freedesktop.Notifications')
+                notify.Notify('', 0, '', channel or 'notification', text, '', {}, 5000)
+            except:
+                return 'Failed to connect with the dbus daemon.'
+        return 'OK'
+
+
+def main(host='localhost', port=7766):
+    """
+    Main daemon loop."""
+
+    try:
+        server = Daemon((host, port))
+    except socket.error, e:
+        # another server is running? lets try to kill it
+        try:
+            server = xmlrpclib.Server('http://%s:%s' %(host, port))
+            rt = server.quit()
+            if rt == 'OK':
+                print 'Closed current daemon.'
+                server = Daemon((host, port))
+            else:
+                raise Exception
+        except:
+            print >>sys.stderr, 'Failed to start daemon: %s' %e
+            return
+    print 'Running notification daemon...'
+    server.register_instance(Notifications())
+    server.serve_forever()
+
+
+def daemonize(PIDFILE='/tmp/notify-xmlrpc-daemon.pid'):
+    """
+    Forks current process into a daemon, there are several examples in the web for do this, but a
+    double fork is needed."""
+
+    # Do first fork.
+    try:
+        pid = os.fork()
+        if pid > 0:
+            # exit first parent
+            sys.exit(0)
+    except OSError, e:
+        print >>sys.stderr, "fork #1 failed: %d (%s)" % (e.errno, e.strerror)
+        sys.exit(1)
+
+    # Decouple from parent environment.
+    os.chdir("/")
+    os.setsid()
+    os.umask(0)
+
+    # Do second fork.
+    try:
+        pid = os.fork()
+        if pid > 0:
+            # exit from second parent, print eventual PID before
+            print "Daemon PID %d" % pid
+            open(PIDFILE,'w').write("%d"%pid)
+            sys.exit(0)
+    except OSError, e:
+        print >>sys.stderr, "fork #2 failed: %d (%s)" % (e.errno, e.strerror)
+        sys.exit(1)
+
+    # Now I am a daemon!
+
+
+if __name__ == '__main__':
+    daemonize()
+    main()
+
+# vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
