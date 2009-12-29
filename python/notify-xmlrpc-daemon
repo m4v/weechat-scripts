@@ -22,14 +22,16 @@ __author__    = 'Elián Hanisch <lambdae2@gmail.com>'
 __copyright__ = 'Copyright (c) 2009 by Elián Hanisch <lambdae2@gmail.com>'
 
 
-import xmlrpclib, socket, os, sys
+import xmlrpclib, socket, os, sys, subprocess
 from SimpleXMLRPCServer import SimpleXMLRPCServer
 
 host = 'localhost'
 port = 7766
 
+
 class Daemon(SimpleXMLRPCServer):
     stopped = False
+    shutdown = False
     def __init__(self, *args, **kwargs):
         SimpleXMLRPCServer.__init__(self, *args, **kwargs)
         self.register_function(self.quit)
@@ -37,6 +39,8 @@ class Daemon(SimpleXMLRPCServer):
     def serve_forever(self):
         while not self.stopped:
             self.handle_request()
+            if self.shutdown:
+                self._restart_daemon()
 
     def quit(self):
         """Allows to kill the server remotelly."""
@@ -44,27 +48,102 @@ class Daemon(SimpleXMLRPCServer):
         self.stopped = True
         return 'OK'
 
+    def create_dummy_request(self):
+        print 'sending dummy request'
+        server = xmlrpclib.Server('http://%s:%s' % self.server_address)
+        server.ping()
+
+    def force_restart(self):
+        self.shutdown = True
+
+    def _restart_daemon(self):
+        self.server_close()
+        self.stopped = True
+        # spawn a new daemon and exit
+        subprocess.Popen(' '.join(sys.argv), shell=True)
+        sys.exit(0)
+
 
 class Notifications(object):
-    def notify(self, type, text, channel=None):
+    def kde4(self, text, channel=None):
         try:
             import dbus
         except:
-            return 'Failed to import dbus, is the dbus module installed?'
+            return 'Failed to import dbus, is the dbus module installed in %s?' %host
         else:
             try:
                 bus = dbus.SessionBus()
-                notify_object = bus.get_object('org.freedesktop.Notifications', '/org/freedesktop/Notifications')
-                notify = dbus.Interface(notify_object, 'org.freedesktop.Notifications')
-                notify.Notify('', 0, '', channel or 'notification', text, '', {}, 5000)
             except:
-                return 'Failed to connect with the dbus daemon.'
+                print >>sys.stderr, 'Lost dbus daemon, trying to find a new one... '
+                try:
+                    address = getDBUS()
+                    #print >>sys.stderr, 'got %s' %address
+                except Exception, e:
+                    #print >>sys.stderr, 'failed: %s' %e
+                    return 'Failed to connect with the dbus daemon in %s.' %host
+
+                os.environ[dbus_env] = address
+                global server
+                print >>sys.stderr, 'Updated dbus addres, restarting daemon...'
+                server.force_restart()
+                return 'warning:Lost dbus, notification daemon is being restarted with new address.'
+
+            notify_object = bus.get_object('org.freedesktop.Notifications', '/org/freedesktop/Notifications')
+            notify = dbus.Interface(notify_object, 'org.freedesktop.Notifications')
+            notify.Notify('', 0, '', channel or 'notification', text, '', {}, 5000)
         return 'OK'
 
+dbus_env = 'DBUS_SESSION_BUS_ADDRESS'
+def testDBUS(address):
+    """Test if the dbus address is correct."""
+    cmd = """
+python -c '
+import dbus, sys
+try:
+    dbus.SessionBus()
+except:
+    sys.exit(0)
+else:
+    sys.exit(1)'"""
 
+    os.environ[dbus_env] = address
+    return subprocess.call(cmd, shell=True)
+
+def getDBUS():
+    """
+    There might be times where the dbus daemon is restarted and its address changes, making
+    notifications impossible. Here we'll try for fetch another from our user processes. This isn't
+    nice but I couldn't find other way, dbus actually doesn't have a nice method for get a session
+    address from outside the session."""
+    
+    process_list = [ s for s in os.listdir('/proc') if s.isdigit() ]
+    our_uid = os.getuid()
+    dbus_invalid_address = set(os.environ[dbus_env])
+    dbus_address = None
+    for process in process_list:
+        environ = os.path.join('/proc', process, 'environ')
+        if os.stat(environ).st_uid == our_uid:
+            fd = open(environ)
+            for line in fd.read().split('\x00'):
+                if line.startswith(dbus_env):
+                    dbus_address = line[len(dbus_env)+1:]
+                    if dbus_address not in dbus_invalid_address:
+                        print >>sys.stderr, 'Testing with %s ... ' %dbus_address,
+                        if testDBUS(dbus_address):
+                            print >>sys.stderr, 'OK'
+                            return dbus_address
+                        else:
+                            print >>sys.stderr, 'Failed'
+                            dbus_invalid_address.add(dbus_address)
+                    break
+    raise Exception, 'No dbus address found.'
+
+
+global server
 def main(host='localhost', port=7766):
     """
     Main daemon loop."""
+    global server
 
     try:
         server = Daemon((host, port))
@@ -101,6 +180,10 @@ def daemonize(PIDFILE='/tmp/notify-xmlrpc-daemon.pid'):
         print >>sys.stderr, "fork #1 failed: %d (%s)" % (e.errno, e.strerror)
         sys.exit(1)
 
+    # make sure our executable is in absolute path
+    daemon_abs_path = os.path.join(os.path.abspath(os.curdir), sys.argv[0])
+    sys.argv[0] = daemon_abs_path
+
     # Decouple from parent environment.
     os.chdir("/")
     os.setsid()
@@ -117,7 +200,6 @@ def daemonize(PIDFILE='/tmp/notify-xmlrpc-daemon.pid'):
     except OSError, e:
         print >>sys.stderr, "fork #2 failed: %d (%s)" % (e.errno, e.strerror)
         sys.exit(1)
-
     # Now I am a daemon!
 
 

@@ -3,7 +3,7 @@ SCRIPT_NAME    = "notify-xmlrpc"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
 SCRIPT_VERSION = "0.1"
 SCRIPT_LICENSE = "GPL3"
-SCRIPT_DESC    = ""
+SCRIPT_DESC    = "Notification system using xmlrpc protocol."
 
 try:
     import weechat
@@ -17,9 +17,10 @@ import xmlrpclib, socket, fnmatch
 ### messages
 def debug(s, prefix=''):
     """Debug msg"""
-    buffer = weechat.buffer_search('python', 'debug ' + SCRIPT_NAME)
+    buffer_name = 'DEBUG:' + SCRIPT_NAME
+    buffer = weechat.buffer_search('python', buffer_name)
     if not buffer:
-        buffer = weechat.buffer_new('debug ' + SCRIPT_NAME, '', '', '', '')
+        buffer = weechat.buffer_new(buffer_name, '', '', '', '')
         weechat.buffer_set(buffer, 'nicklist', '0')
         weechat.buffer_set(buffer, 'time_for_each_line', '0')
         weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
@@ -108,6 +109,9 @@ class Server(object):
 
     def enqueue(self, s, channel, nick=''):
         msg = self.format(s, nick)
+        self._enqueue(msg, channel)
+
+    def _enqueue(self, msg, channel=''):
         if channel not in self.msg:
             self.msg[channel] = msg
         else:
@@ -125,13 +129,17 @@ class Server(object):
     def _create_server(self):
         self.address = weechat.config_get_plugin('server_uri')
         self.server = xmlrpclib.Server(self.address)
-        self.method = weechat.config_get_plugin('method')
+        self.method = weechat.config_get_plugin('server_method')
 
     def send_rpc(self, *args):
         try:
-            rt = self.server.notify(self.method, *args)
+            rt = getattr(self.server, self.method)(*args)
             if rt == 'OK':
                 debug('Success: %s' % rt)
+            elif rt.startswith('warning:'):
+                error(rt[8:])
+                # put the msg again in queue
+                self._enqueue(*args)
             else:
                 error(rt)
         except xmlrpclib.Fault, e:
@@ -139,6 +147,9 @@ class Server(object):
         except socket.error, e:
             error('Failed to connect to our notification daemon, check if the address'
                    ' \'%s\' is correct and if it\'s running.' %self.address)
+
+    def quit(self):
+        self.server.quit()
 
 
 def msg_flush(*args):
@@ -184,11 +195,15 @@ def notify_priv(data, buffer, time, tags, display, hilight, prefix, msg):
             debug('private ignored')
     return WEECHAT_RC_OK
 
-def cmd_test(data, buffer, args):
-    if not args:
-        server.send_rpc('test', '#test')
-    else:
-        server.send_rpc(args, '#test')
+def cmd_notify(data, buffer, args):
+    if args:
+        args = args.split()
+        cmd = args[0]
+        if cmd == 'test':
+            server.send_rpc(args[1:] or 'test', '#test')
+        elif cmd == 'quit':
+            server.send_rpc('Shutting down notification daemon...')
+            server.quit()
     return WEECHAT_RC_OK
 
 def ignore_update(*args):
@@ -213,7 +228,7 @@ if __name__ == '__main__' and import_ok and \
     ignore_nick = IgnoreNick()
     server = Server()
 
-    weechat.hook_command('dbus_test', 'desc', 'help', 'help', '', 'cmd_test', '')
+    weechat.hook_command('notify-xmlrpc', 'desc', 'help', 'help', '', 'cmd_notify', '')
     weechat.hook_config('plugins.var.python.%s.ignore_*' %SCRIPT_NAME, 'ignore_update', '')
     weechat.hook_config('plugins.var.python.%s.server_*' %SCRIPT_NAME, 'server_update', '')
 
