@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-SCRIPT_NAME    = "dbusnotify"
+SCRIPT_NAME    = "notify-xmlrpc"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
 SCRIPT_VERSION = "0.1"
 SCRIPT_LICENSE = "GPL3"
@@ -133,11 +133,11 @@ class Server(object):
             if rt == 'OK':
                 debug('Success: %s' % rt)
             else:
-                error('Error: %s' %rt)
+                error(rt)
         except xmlrpclib.Fault, e:
-            error('Error: %s' % e.faultString.split(':', 1)[1])
+            error(e.faultString.split(':', 1)[1])
         except socket.error, e:
-            error('Error: Failed to connect to our notification daemon, check if the address'
+            error('Failed to connect to our notification daemon, check if the address'
                    ' \'%s\' is correct and if it\'s running.' %self.address)
 
 
@@ -186,9 +186,9 @@ def notify_priv(data, buffer, time, tags, display, hilight, prefix, msg):
 
 def cmd_test(data, buffer, args):
     if not args:
-        server.send_rpc('test', channel='#test')
+        server.send_rpc('test', '#test')
     else:
-        server.send_rpc(args, channel='#test')
+        server.send_rpc(args, '#test')
     return WEECHAT_RC_OK
 
 def ignore_update(*args):
