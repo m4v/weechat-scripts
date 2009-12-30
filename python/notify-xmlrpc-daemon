@@ -22,11 +22,13 @@ __author__    = 'Elián Hanisch <lambdae2@gmail.com>'
 __copyright__ = 'Copyright (c) 2009 by Elián Hanisch <lambdae2@gmail.com>'
 
 
-import xmlrpclib, socket, os, sys, subprocess
+import xmlrpclib, socket, os, sys, subprocess, optparse
 from SimpleXMLRPCServer import SimpleXMLRPCServer
 
-host = 'localhost'
-port = 7766
+global host, port, server
+
+class NotifyError(Exception):
+    pass
 
 class Daemon(SimpleXMLRPCServer):
     stopped = False
@@ -65,19 +67,26 @@ class Daemon(SimpleXMLRPCServer):
 
 dbus_env = 'DBUS_SESSION_BUS_ADDRESS'
 class Notifications(object):
-    method = 'libnotify'
     timeout = 5000
+    def __init__(self, method):
+        self.method = method
+
     def _dispatch(self, method, args):
+        if method == 'notify':
+            method = self.method
         if not hasattr(self, method):
             return 'Invalid notifycation method'
         self.method = method
         return getattr(self, method)(*args)
 
     def _getDBUSSession(self):
+        print >>sys.stderr, 'Lost dbus daemon, trying to find a new one... '
         if self.method == 'dbus':
             testMethod = lambda address : testDBUS(test_dbus, address)
         elif self.method == 'libnotify':
             testMethod = lambda address : testDBUS(test_libnotify, address)
+        else:
+            raise NotifyError, 'No suitable method for test dbus found.'
 
         return getDBUS(testMethod)
 
@@ -89,6 +98,7 @@ class Notifications(object):
         return 'warning:Lost dbus, notification daemon is being restarted with new address.'
 
     def dbus(self, text, channel=None):
+        global host
         try:
             import dbus
         except:
@@ -97,10 +107,10 @@ class Notifications(object):
             try:
                 bus = dbus.SessionBus()
             except:
-                print >>sys.stderr, 'Lost dbus daemon, trying to find a new one... '
                 try:
                     address = self._getDBUSSession()
-                except Exception, e:
+                except NotifyError, e:
+                    print >>sys.stderr, str(e)
                     return 'Failed to connect with the dbus daemon in %s.' %host
 
                 return self._updateDBUS(address)
@@ -111,6 +121,7 @@ class Notifications(object):
         return 'OK'
 
     def libnotify(self, text, channel=None):
+        global host
         try:
             import pynotify
         except:
@@ -121,13 +132,13 @@ class Notifications(object):
                 notify.set_timeout(self.timeout)
                 notify.show()
             else:
-                print >>sys.stderr, 'Lost dbus daemon, trying to find a new one... '
                 try:
-                    address = self.getDBUSSession()
-                except Exception, e:
+                    address = self._getDBUSSession()
+                except NotifyError, e:
+                    print >>sys.stderr, str(e)
                     return 'Failed to connect with the dbus daemon in %s.' %host
 
-                return self.updateDBUS(address)
+                return self._updateDBUS(address)
         return 'OK'
 
 # cmd used for test dbus session with dbus module
@@ -148,7 +159,7 @@ import pynotify, sys
 if pynotify.init("test"):
     sys.exit(1)
 else:
-    sys.exit(0)'"""
+    sys.exit(0)' 2> /dev/null"""
 
 def testDBUS(cmd, address):
     os.environ[dbus_env] = address
@@ -183,11 +194,10 @@ def getDBUS(testMethod):
                             print >>sys.stderr, 'Failed'
                             dbus_invalid_address.add(dbus_address)
                     break
-    raise Exception, 'No dbus address found.'
+    raise NotifyError, 'No dbus address found.'
 
 
-global server
-def main(host='localhost', port=7766):
+def main(host='localhost', port=7766, method=None):
     """
     Main daemon loop."""
     global server
@@ -197,8 +207,8 @@ def main(host='localhost', port=7766):
     except socket.error, e:
         # another server is running? lets try to kill it
         try:
-            server = xmlrpclib.Server('http://%s:%s' %(host, port))
-            rt = server.quit()
+            daemon = xmlrpclib.Server('http://%s:%s' %(host, port))
+            rt = daemon.quit()
             if rt == 'OK':
                 print 'Closed current daemon.'
                 server = Daemon((host, port))
@@ -208,7 +218,7 @@ def main(host='localhost', port=7766):
             print >>sys.stderr, 'Failed to start daemon: %s' %e
             return
     print 'Running notification daemon...'
-    server.register_instance(Notifications())
+    server.register_instance(Notifications(method))
     server.serve_forever()
 
 
@@ -251,7 +261,40 @@ def daemonize(PIDFILE='/tmp/notify-xmlrpc-daemon.pid'):
 
 
 if __name__ == '__main__':
-    daemonize()
-    main()
+    # argument parsing
+    usage = 'usage: %prog -H <hostname> -p <port>'
+    parser = optparse.OptionParser(usage=usage)
+    parser.add_option('-p', '--port', dest='port', type='int', help='Port to listen', default=7766)
+    parser.add_option('-H', '--host', dest='host', help='Daemon hostname. [Default: %default]', default='localhost')
+    parser.add_option('-t', '--test', dest='test', action='store_true',
+            help='Send a test notification to an already running daemon and exit.',
+            default=False)
+    opts, args = parser.parse_args(sys.argv)
+
+    method = None
+    port = opts.port
+    host = opts.host
+    
+    if opts.test:
+        daemon = xmlrpclib.Server('http://%s:%s' %(host, port))
+        daemon.notify('This is a test')
+        sys.exit(0)
+
+    try:
+        import pynotify
+        method = 'libnotify'
+    except ImportError:
+        try:
+            import dbus
+            method = 'dbus'
+        except ImportError:
+            pass
+
+    if method is None:
+        print >>sys.stderr, \
+        'Couldn\'t import pynotify nor dbus modules. No supported notification methods found.'
+    else:
+        daemonize()
+        main(host=host, port=port, method=method)
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:

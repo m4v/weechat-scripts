@@ -17,6 +17,7 @@ import xmlrpclib, socket, fnmatch
 ### messages
 def debug(s, prefix=''):
     """Debug msg"""
+    return #disable debug msg
     buffer_name = 'DEBUG:' + SCRIPT_NAME
     buffer = weechat.buffer_search('python', buffer_name)
     if not buffer:
@@ -58,7 +59,7 @@ def get_config_int(config):
 
 settings = {
          'server_uri': 'http://localhost:7766',
-      'server_method': 'kde4',
+      'server_method': 'notify',
      'ignore_channel': '',
         'ignore_nick': '',
         }
@@ -111,7 +112,7 @@ class Server(object):
         msg = self.format(s, nick)
         self._enqueue(msg, channel)
 
-    def _enqueue(self, msg, channel=''):
+    def _enqueue(self, msg, channel='', timeout=3000):
         if channel not in self.msg:
             self.msg[channel] = msg
         else:
@@ -119,12 +120,16 @@ class Server(object):
             msg = '%s\n%s' %(s, msg)
             self.msg[channel] = msg
         if self.timer is None:
-            self.timer = weechat.hook_timer(3000, 0, 0, 'msg_flush', '')
+            self.timer = weechat.hook_timer(timeout, 0, 0, 'msg_flush', '')
 
     def flush(self):
         for channel, msg in self.msg.iteritems():
             self.send_rpc(msg, channel)
         self._reset()
+
+    def unqueue(self):
+        if self.timer is not None:
+            weechat.unhook(self.timer)
 
     def _create_server(self):
         self.address = weechat.config_get_plugin('server_uri')
@@ -139,6 +144,7 @@ class Server(object):
             elif rt.startswith('warning:'):
                 error(rt[8:])
                 # put the msg again in queue
+                self.unqueue()
                 self._enqueue(*args)
             else:
                 error(rt)
