@@ -28,7 +28,6 @@ from SimpleXMLRPCServer import SimpleXMLRPCServer
 host = 'localhost'
 port = 7766
 
-
 class Daemon(SimpleXMLRPCServer):
     stopped = False
     shutdown = False
@@ -64,39 +63,75 @@ class Daemon(SimpleXMLRPCServer):
         sys.exit(0)
 
 
+dbus_env = 'DBUS_SESSION_BUS_ADDRESS'
 class Notifications(object):
-    def kde4(self, text, channel=None):
+    method = 'libnotify'
+    timeout = 5000
+    def _dispatch(self, method, args):
+        if not hasattr(self, method):
+            return 'Invalid notifycation method'
+        self.method = method
+        return getattr(self, method)(*args)
+
+    def _getDBUSSession(self):
+        if self.method == 'dbus':
+            testMethod = lambda address : testDBUS(test_dbus, address)
+        elif self.method == 'libnotify':
+            testMethod = lambda address : testDBUS(test_libnotify, address)
+
+        return getDBUS(testMethod)
+
+    def _updateDBUS(self, address):
+        os.environ[dbus_env] = address
+        global server
+        print >>sys.stderr, 'Updated dbus addres, restarting daemon...'
+        server.force_restart()
+        return 'warning:Lost dbus, notification daemon is being restarted with new address.'
+
+    def dbus(self, text, channel=None):
         try:
             import dbus
         except:
-            return 'Failed to import dbus, is the dbus module installed in %s?' %host
+            return 'Failed to import dbus, is the module installed in %s?' %host
         else:
             try:
                 bus = dbus.SessionBus()
             except:
                 print >>sys.stderr, 'Lost dbus daemon, trying to find a new one... '
                 try:
-                    address = getDBUS()
-                    #print >>sys.stderr, 'got %s' %address
+                    address = self._getDBUSSession()
                 except Exception, e:
-                    #print >>sys.stderr, 'failed: %s' %e
                     return 'Failed to connect with the dbus daemon in %s.' %host
 
-                os.environ[dbus_env] = address
-                global server
-                print >>sys.stderr, 'Updated dbus addres, restarting daemon...'
-                server.force_restart()
-                return 'warning:Lost dbus, notification daemon is being restarted with new address.'
+                return self._updateDBUS(address)
 
             notify_object = bus.get_object('org.freedesktop.Notifications', '/org/freedesktop/Notifications')
             notify = dbus.Interface(notify_object, 'org.freedesktop.Notifications')
-            notify.Notify('', 0, '', channel or 'notification', text, '', {}, 5000)
+            notify.Notify('', 0, '', channel or 'notification', text, '', {}, self.timeout)
         return 'OK'
 
-dbus_env = 'DBUS_SESSION_BUS_ADDRESS'
-def testDBUS(address):
-    """Test if the dbus address is correct."""
-    cmd = """
+    def libnotify(self, text, channel=None):
+        try:
+            import pynotify
+        except:
+            return 'Failed to import pynotify, is the module installed in %s?' %host
+        else:
+            if pynotify.init('WeeChat notification'):
+                notify = pynotify.Notification(channel or 'notification', text)
+                notify.set_timeout(self.timeout)
+                notify.show()
+            else:
+                print >>sys.stderr, 'Lost dbus daemon, trying to find a new one... '
+                try:
+                    address = self.getDBUSSession()
+                except Exception, e:
+                    return 'Failed to connect with the dbus daemon in %s.' %host
+
+                return self.updateDBUS(address)
+        return 'OK'
+
+# cmd used for test dbus session with dbus module
+test_dbus = """
 python -c '
 import dbus, sys
 try:
@@ -106,10 +141,20 @@ except:
 else:
     sys.exit(1)'"""
 
+# cmd used for test dbus session with pynotify module
+test_libnotify = """
+python -c '
+import pynotify, sys
+if pynotify.init("test"):
+    sys.exit(1)
+else:
+    sys.exit(0)'"""
+
+def testDBUS(cmd, address):
     os.environ[dbus_env] = address
     return subprocess.call(cmd, shell=True)
 
-def getDBUS():
+def getDBUS(testMethod):
     """
     There might be times where the dbus daemon is restarted and its address changes, making
     notifications impossible. Here we'll try for fetch another from our user processes. This isn't
@@ -118,7 +163,8 @@ def getDBUS():
     
     process_list = [ s for s in os.listdir('/proc') if s.isdigit() ]
     our_uid = os.getuid()
-    dbus_invalid_address = set(os.environ[dbus_env])
+    dbus_invalid_address = set()
+    dbus_current_address = os.environ[dbus_env]
     dbus_address = None
     for process in process_list:
         environ = os.path.join('/proc', process, 'environ')
@@ -129,8 +175,9 @@ def getDBUS():
                     dbus_address = line[len(dbus_env)+1:]
                     if dbus_address not in dbus_invalid_address:
                         print >>sys.stderr, 'Testing with %s ... ' %dbus_address,
-                        if testDBUS(dbus_address):
+                        if testMethod(dbus_address):
                             print >>sys.stderr, 'OK'
+                            os.environ[dbus_env] = dbus_current_address
                             return dbus_address
                         else:
                             print >>sys.stderr, 'Failed'

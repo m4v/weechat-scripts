@@ -200,7 +200,7 @@ def cmd_notify(data, buffer, args):
         args = args.split()
         cmd = args[0]
         if cmd == 'test':
-            server.send_rpc(args[1:] or 'test', '#test')
+            server.send_rpc(' '.join(args[1:]) or 'test', '#test')
         elif cmd == 'quit':
             server.send_rpc('Shutting down notification daemon...')
             server.quit()
