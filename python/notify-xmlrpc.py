@@ -12,7 +12,8 @@ try:
 except:
     import_ok = False
 
-import xmlrpclib, socket, fnmatch
+import xmlrpclib, socket
+from fnmatch import fnmatch
 
 ### messages
 def debug(s, prefix=''):
@@ -62,23 +63,30 @@ settings = {
       'server_method': 'notify',
      'ignore_channel': '',
         'ignore_nick': '',
+         'color_nick': 'off',
         }
 
 class Ignores(object):
     ignore_type = None
     def __init__(self):
         self.ignores = []
+        self.exceptions = []
         self._get_ignores()
 
     def _get_ignores(self):
         assert self.ignore_type is not None
         ignores = weechat.config_get_plugin(self.ignore_type).split(',')
-        self.ignores = [ s.lower() for s in ignores if s ]
+        ignores = [ s.lower() for s in ignores if s ]
+        self.ignores = [ s for s in ignores if s[0] != '!' ]
+        self.exceptions = [ s[1:] for s in ignores if s[0] == '!' ]
 
     def __contains__(self, s):
         s = s.lower()
         for p in self.ignores:
-            if fnmatch.fnmatch(s, p):
+            if fnmatch(s, p):
+                for e in self.exceptions:
+                    if fnmatch(s, e):
+                        return False
                 return True
         return False
 
