@@ -103,8 +103,21 @@ settings = {
      'ignore_channel': '',
         'ignore_nick': '',
 #        'ignore_text': '',
-#         'color_nick': 'off',
+         'color_nick': 'off',
         }
+
+color_table = (
+        'darkcyan',
+        'darkmagenta',
+        'darkgreen',
+        'brown',
+        'blue',
+        'darkblue',
+        'red', # should be cyan, but is barely visible
+        'magenta',
+        'green',
+        'grey',
+        )
 
 class Ignores(object):
     def __init__(self, ignore_type):
@@ -136,22 +149,11 @@ class Server(object):
         self._reset()
         self.send_rpc('Notification script loaded')
 
-    @staticmethod
-    def format(s, nick=''):
-        if '<' in s:
-            s = s.replace('<', '&lt;')
-        if '>' in s:
-            s = s.replace('>', '&gt;')
-        if nick:
-            s = '<b>&lt;%s&gt;</b> %s' %(nick, s)
-        return s
-
     def _reset(self):
         self.msg = {}
         self.timer = None
 
-    def enqueue(self, s, channel, nick=''):
-        msg = self.format(s, nick)
+    def enqueue(self, msg, channel):
         self._enqueue(msg, channel)
 
     def _enqueue(self, msg, channel='', timeout=3000):
@@ -216,9 +218,31 @@ def msg_flush(*args):
     server.flush()
     return WEECHAT_RC_OK
 
+def color_tag(nick):
+    n = len(color_table)
+    generic_nick = nick.lower()
+    id = (sum(map(ord, generic_nick))%n)
+    debug('%s:%s' %(nick, id))
+    return '<font color=%s>%s</font>' %(color_table[id], nick)
+
+def format(s, nick=''):
+    if '<' in s:
+        s = s.replace('<', '&lt;')
+    if '>' in s:
+        s = s.replace('>', '&gt;')
+    if nick:
+        if get_config_boolean('color_nick'):
+            nick_color = color_tag(nick)
+            nick = nick_color.replace(nick, '&lt;%s&gt;' %nick) #put the <> inside the color tag
+        else:
+            nick = '&lt;%s&gt;' %nick
+        s = '<b>%s</b> %s' %(nick, s)
+    return s
+
 def send_notify(s, channel='', nick=''):
     #command = getattr(server, 'kde4')
-    server.enqueue(s, channel, nick)
+    s = format(s, nick)
+    server.enqueue(s, channel)
 
 def notify_msg(data, buffer, time, tags, display, hilight, prefix, msg):
     if 'notify_message' not in tags:
