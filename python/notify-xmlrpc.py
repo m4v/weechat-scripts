@@ -1,9 +1,33 @@
 # -*- coding: utf-8 -*-
+###
+# Copyright (c) 2009 by Elián Hanisch <lambdae2@gmail.com>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+###
+
+###
+#
+###
+
 SCRIPT_NAME    = "notify-xmlrpc"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.1"
+SCRIPT_VERSION = "0.2"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Notification system using xmlrpc protocol."
+SCRIPT_COMMAND = "notify-xmlrpc"
+
+DAEMON_URL = ''
 
 try:
     import weechat
@@ -15,10 +39,13 @@ except:
 import xmlrpclib, socket
 from fnmatch import fnmatch
 
+# remote daemon timeout
+socket.setdefaulttimeout(3)
+
 ### messages
 def debug(s, prefix=''):
     """Debug msg"""
-    return #disable debug msg
+    #return #disable debug msg
     buffer_name = 'DEBUG:' + SCRIPT_NAME
     buffer = weechat.buffer_search('python', buffer_name)
     if not buffer:
@@ -58,17 +85,30 @@ def get_config_int(config):
         error("'%s' is not a number." %value)
         return int(default)
 
+valid_methods = set(('any', 'dbus', 'libnotify'))
+def get_config_valid_string(config, valid_strings=valid_methods):
+    value = weechat.config_get_plugin(config)
+    if value not in valid_strings:
+        default = settings[config]
+        error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
+        error("'%s' is an invalid value, allowed: %s." %(value, ', '.join(valid_strings)))
+        return default
+    #debug("default banmask: %s" %values)
+    return values
+
+
 settings = {
          'server_uri': 'http://localhost:7766',
-      'server_method': 'notify',
+      'server_method': 'any',
      'ignore_channel': '',
         'ignore_nick': '',
-         'color_nick': 'off',
+#        'ignore_text': '',
+#         'color_nick': 'off',
         }
 
 class Ignores(object):
-    ignore_type = None
-    def __init__(self):
+    def __init__(self, ignore_type):
+        self.ignore_type = ignore_type
         self.ignores = []
         self.exceptions = []
         self._get_ignores()
@@ -89,12 +129,6 @@ class Ignores(object):
                         return False
                 return True
         return False
-
-class IgnoreChannel(Ignores):
-    ignore_type = 'ignore_channel'
-
-class IgnoreNick(Ignores):
-    ignore_type = 'ignore_nick'
 
 class Server(object):
     def __init__(self):
@@ -140,26 +174,35 @@ class Server(object):
             weechat.unhook(self.timer)
 
     def _create_server(self):
+        self.error_count = 0
         self.address = weechat.config_get_plugin('server_uri')
         self.server = xmlrpclib.Server(self.address)
-        self.method = weechat.config_get_plugin('server_method')
+        self.method = get_config_valid_string('server_method')
+
+    def _error(self, s):
+        if self.error_count < 5: # stop sending error msg after 5 errors in a row
+            error(s)
+        self.error_count += 1
 
     def send_rpc(self, *args):
+        global error_count
         try:
             rt = getattr(self.server, self.method)(*args)
             if rt == 'OK':
-                debug('Success: %s' % rt)
+                self.error_count = 0 
+                #debug('Success: %s' % rt)
             elif rt.startswith('warning:'):
-                error(rt[8:])
-                # put the msg again in queue
-                self.unqueue()
-                self._enqueue(*args)
+                self._error(rt[8:])
+                if self.error_count < 10: # don't requeue after 10 errors
+                    # put the msg again in queue
+                    self.unqueue()
+                    self._enqueue(*args)
             else:
                 error(rt)
         except xmlrpclib.Fault, e:
-            error(e.faultString.split(':', 1)[1])
+            self._error(e.faultString.split(':', 1)[1])
         except socket.error, e:
-            error('Failed to connect to our notification daemon, check if the address'
+            self._error('Failed to connect to our notification daemon, check if the address'
                    ' \'%s\' is correct and if it\'s running.' %self.address)
 
     def quit(self):
@@ -177,10 +220,10 @@ def send_notify(s, channel='', nick=''):
 def notify_msg(data, buffer, time, tags, display, hilight, prefix, msg):
     if 'notify_message' not in tags:
         # XXX weechat bug?
-#        debug('Got bad tags: %s' %tags)
+        #debug('Got bad tags: %s' %tags)
         return WEECHAT_RC_OK
-    debug('  '.join((data, buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
-            prefix='MESSAGE')
+    #debug('  '.join((data, buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
+    #        prefix='MESSAGE')
     if hilight == '1' and display == '1':
         channel = weechat.buffer_get_string(buffer, 'short_name')
         if prefix[0] in '@+#!': # strip user modes
@@ -190,39 +233,42 @@ def notify_msg(data, buffer, time, tags, display, hilight, prefix, msg):
         if weechat.info_get('irc_is_channel', channel) \
                 and channel not in ignore_channel \
                 and _prefix not in ignore_nick:
-            debug('%sSending notification: %s' %(weechat.color('lightgreen'), channel), prefix='NOTIFY')
+            #debug('%sSending notification: %s' %(weechat.color('lightgreen'), channel), prefix='NOTIFY')
             send_notify(msg, channel=channel, nick=prefix)
     return WEECHAT_RC_OK
 
 def notify_priv(data, buffer, time, tags, display, hilight, prefix, msg):
     if 'notify_private' not in tags:
         # XXX weechat bug?
-#        debug('Got bad tags: %s' %tags)
+        #debug('Got bad tags: %s' %tags)
         return WEECHAT_RC_OK
-    debug('  '.join((data, buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
-            prefix='PRIVATE')
+    #debug('  '.join((data, buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
+    #        prefix='PRIVATE')
     if display == '1':
         if prefix not in ignore_nick:
-            debug('%sSending notification: %s' %(weechat.color('lightgreen'), prefix), prefix='NOTIFY')
+            #debug('%sSending notification: %s' %(weechat.color('lightgreen'), prefix), prefix='NOTIFY')
             send_notify(msg, channel=prefix)
-        else:
-            debug('private ignored')
     return WEECHAT_RC_OK
 
 def cmd_notify(data, buffer, args):
     if args:
         args = args.split()
         cmd = args[0]
-        if cmd == 'test':
-            server.send_rpc(' '.join(args[1:]) or 'test', '#test')
-        elif cmd == 'quit':
-            server.send_rpc('Shutting down notification daemon...')
-            server.quit()
+        if cmd in ('test', 'quit'):
+            if cmd == 'test':
+                server.send_rpc(' '.join(args[1:]) or 'This is a test.', '#test')
+            elif cmd == 'quit':
+                server.send_rpc('Shutting down notification daemon...')
+                server.quit()
+            return WEECHAT_RC_OK
+
+    weechat.command('', '/help %s' %SCRIPT_COMMAND)
     return WEECHAT_RC_OK
 
 def ignore_update(*args):
     ignore_channel._get_ignores()
     ignore_nick._get_ignores()
+    #ignore_text._get_ignores()
     return WEECHAT_RC_OK
 
 def server_update(*args):
@@ -238,11 +284,29 @@ if __name__ == '__main__' and import_ok and \
         if not weechat.config_is_set_plugin(opt):
             weechat.config_set_plugin(opt, val)
 
-    ignore_channel = IgnoreChannel()
-    ignore_nick = IgnoreNick()
+    ignore_channel = Ignores('ignore_channel')
+    ignore_nick = Ignores('ignore_nick')
+    #ignore_text = Ignores('ignore_text')
+
     server = Server()
 
-    weechat.hook_command('notify-xmlrpc', 'desc', 'help', 'help', '', 'cmd_notify', '')
+    weechat.hook_command(SCRIPT_COMMAND, SCRIPT_DESC, '[test [text] | quit ]', 
+            "test: sends a test notification, with 'text' if provided.\n"
+            "quit: forces remote daemon to shutdown, after this notifications won't be available"
+            " and the daemon should be started again manually.\n\n"
+            "Setting notification ignores:\n"
+            "  It's possible to filter notification by channel or by nick, with the config options\n"
+            "   'ignore_channel' and 'ignore_nick' in plugins.var.python.%s\n"
+            "  Each config option accepts a comma separated list of patterns that should be\n"
+            "   ignored. Wildcards '*', '?' and char groups [..] can be used.\n"
+            "  An ignore exception can be added by prefixing '!' in the pattern.\n\n"
+            "Examples:\n"
+            "  Setting 'ignore_nick' to 'troll,b[0o]t':\n"
+            "   will ignore notifications from troll, bot and b0t.\n"
+            "  Setting 'ignore_channel' to '*ubuntu*,!#ubuntu-es':\n"
+            "   will ignore notifications from any channel with the word 'ubuntu' except from\n"
+            "   #ubuntu-es.\n" %SCRIPT_NAME
+            ,'test|quit', 'cmd_notify', '')
     weechat.hook_config('plugins.var.python.%s.ignore_*' %SCRIPT_NAME, 'ignore_update', '')
     weechat.hook_config('plugins.var.python.%s.server_*' %SCRIPT_NAME, 'server_update', '')
 

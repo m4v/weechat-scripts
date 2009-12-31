@@ -72,7 +72,7 @@ class Notifications(object):
         self.method = method
 
     def _dispatch(self, method, args):
-        if method == 'notify':
+        if method == 'any':
             method = self.method
         if not hasattr(self, method):
             return 'Invalid notifycation method'
@@ -262,10 +262,12 @@ def daemonize(PIDFILE='/tmp/notify-xmlrpc-daemon.pid'):
 
 if __name__ == '__main__':
     # argument parsing
-    usage = 'usage: %prog -H <hostname> -p <port>'
+    usage = 'usage: %prog --host <hostname> --port <port> [--test] [--help]'
     parser = optparse.OptionParser(usage=usage)
-    parser.add_option('-p', '--port', dest='port', type='int', help='Port to listen', default=7766)
-    parser.add_option('-H', '--host', dest='host', help='Daemon hostname. [Default: %default]', default='localhost')
+    parser.add_option('-p', '--port', dest='port', type='int', 
+            help='Port to listen. [Default: %default]', default=7766)
+    parser.add_option('-H', '--host', dest='host',
+            help='Daemon hostname. [Default: %default]', default='localhost')
     parser.add_option('-t', '--test', dest='test', action='store_true',
             help='Send a test notification to an already running daemon and exit.',
             default=False)
@@ -292,7 +294,7 @@ if __name__ == '__main__':
 
     if method is None:
         print >>sys.stderr, \
-        'Couldn\'t import pynotify nor dbus modules. No supported notification methods found.'
+                'Error: No supported notification methods found.'
     else:
         daemonize()
         main(host=host, port=port, method=method)
