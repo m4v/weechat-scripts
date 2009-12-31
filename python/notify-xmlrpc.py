@@ -94,7 +94,7 @@ def get_config_valid_string(config, valid_strings=valid_methods):
         error("'%s' is an invalid value, allowed: %s." %(value, ', '.join(valid_strings)))
         return default
     #debug("default banmask: %s" %values)
-    return values
+    return value
 
 
 settings = {
@@ -178,6 +178,9 @@ class Server(object):
         self.address = weechat.config_get_plugin('server_uri')
         self.server = xmlrpclib.Server(self.address)
         self.method = get_config_valid_string('server_method')
+        version = self.server.version()
+        if version != '0.1':
+            error('Incorrect server version, should be 0.1, but got %s' %version)
 
     def _error(self, s):
         if self.error_count < 5: # stop sending error msg after 5 errors in a row

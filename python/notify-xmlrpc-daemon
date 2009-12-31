@@ -36,6 +36,7 @@ class Daemon(SimpleXMLRPCServer):
     def __init__(self, *args, **kwargs):
         SimpleXMLRPCServer.__init__(self, *args, **kwargs)
         self.register_function(self.quit)
+        self.register_function(lambda : __version__, 'version')
 
     def serve_forever(self):
         while not self.stopped:
@@ -75,8 +76,7 @@ class Notifications(object):
         if method == 'any':
             method = self.method
         if not hasattr(self, method):
-            return 'Invalid notifycation method'
-        self.method = method
+            return 'Invalid notification method.'
         return getattr(self, method)(*args)
 
     def _getDBUSSession(self):
