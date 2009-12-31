@@ -103,21 +103,20 @@ class Notifications(object):
             import dbus
         except:
             return 'Failed to import dbus, is the module installed in %s?' %host
-        else:
+
+        try:
+            bus = dbus.SessionBus()
+        except:
             try:
-                bus = dbus.SessionBus()
-            except:
-                try:
-                    address = self._getDBUSSession()
-                except NotifyError, e:
-                    print >>sys.stderr, str(e)
-                    return 'Failed to connect with the dbus daemon in %s.' %host
+                address = self._getDBUSSession()
+            except NotifyError, e:
+                print >>sys.stderr, str(e)
+                return 'Failed to connect with the dbus daemon in %s.' %host
+            return self._updateDBUS(address)
 
-                return self._updateDBUS(address)
-
-            notify_object = bus.get_object('org.freedesktop.Notifications', '/org/freedesktop/Notifications')
-            notify = dbus.Interface(notify_object, 'org.freedesktop.Notifications')
-            notify.Notify('', 0, '', channel or 'notification', text, '', {}, self.timeout)
+        notify_object = bus.get_object('org.freedesktop.Notifications', '/org/freedesktop/Notifications')
+        notify = dbus.Interface(notify_object, 'org.freedesktop.Notifications')
+        notify.Notify('', 0, '', channel or 'notification', text, '', {}, self.timeout)
         return 'OK'
 
     def libnotify(self, text, channel=None):
@@ -126,20 +125,19 @@ class Notifications(object):
             import pynotify
         except:
             return 'Failed to import pynotify, is the module installed in %s?' %host
-        else:
-            if pynotify.init('WeeChat notification'):
-                notify = pynotify.Notification(channel or 'notification', text)
-                notify.set_timeout(self.timeout)
-                notify.show()
-            else:
-                try:
-                    address = self._getDBUSSession()
-                except NotifyError, e:
-                    print >>sys.stderr, str(e)
-                    return 'Failed to connect with the dbus daemon in %s.' %host
 
-                return self._updateDBUS(address)
-        return 'OK'
+        if pynotify.init('WeeChat notification'):
+            notify = pynotify.Notification(channel or 'notification', text)
+            notify.set_timeout(self.timeout)
+            notify.show()
+            return 'OK'
+        else:
+            try:
+                address = self._getDBUSSession()
+            except NotifyError, e:
+                print >>sys.stderr, str(e)
+                return 'Failed to connect with the dbus daemon in %s.' %host
+            return self._updateDBUS(address)
 
 # cmd used for test dbus session with dbus module
 test_dbus = """
@@ -259,6 +257,25 @@ def daemonize(PIDFILE='/tmp/notify-xmlrpc-daemon.pid'):
         sys.exit(1)
     # Now I am a daemon!
 
+def getDefaultMethod():
+    method = None
+    # I need to do this for filter annoying error messages when importing pynotify
+    null = open('/dev/null', 'a+', 0)
+    sys.stderr.flush()
+    os.dup2(null.fileno(), sys.stderr.fileno())
+    try:
+        import pynotify
+        method = 'libnotify'
+    except ImportError:
+        try:
+            import dbus
+            method = 'dbus'
+        except ImportError:
+            pass
+    # revert redirection
+    err = open('/dev/stderr', 'a+', 0)
+    os.dup2(err.fileno(), sys.stderr.fileno())
+    return method
 
 if __name__ == '__main__':
     # argument parsing
@@ -273,7 +290,6 @@ if __name__ == '__main__':
             default=False)
     opts, args = parser.parse_args(sys.argv)
 
-    method = None
     port = opts.port
     host = opts.host
     
@@ -282,16 +298,7 @@ if __name__ == '__main__':
         daemon.notify('This is a test')
         sys.exit(0)
 
-    try:
-        import pynotify
-        method = 'libnotify'
-    except ImportError:
-        try:
-            import dbus
-            method = 'dbus'
-        except ImportError:
-            pass
-
+    method = getDefaultMethod()
     if method is None:
         print >>sys.stderr, \
                 'Error: No supported notification methods found.'
