@@ -164,16 +164,22 @@ class Server(object):
             msg = '%s\n%s' %(s, msg)
             self.msg[channel] = msg
         if self.timer is None:
-            self.timer = weechat.hook_timer(timeout, 0, 0, 'msg_flush', '')
+            self.timer = weechat.hook_timer(timeout, 0, 1, 'msg_flush', '')
+            #debug('set timer: %s %s' %(self.timer, timeout))
 
     def flush(self):
         for channel, msg in self.msg.iteritems():
-            self.send_rpc(msg, channel)
+            if self.send_rpc(msg, channel):
+                # daemon is restarting, try again later
+                self._restart_timer()
+                return
         self._reset()
 
-    def unqueue(self):
+    def _restart_timer(self):
         if self.timer is not None:
+            #debug('reset and set timer')
             weechat.unhook(self.timer)
+        self.timer = weechat.hook_timer(5000, 0, 1, 'msg_flush', '')
 
     def _create_server(self):
         self.error_count = 0
@@ -190,7 +196,6 @@ class Server(object):
         self.error_count += 1
 
     def send_rpc(self, *args):
-        global error_count
         try:
             rt = getattr(self.server, self.method)(*args)
             if rt == 'OK':
@@ -199,9 +204,9 @@ class Server(object):
             elif rt.startswith('warning:'):
                 self._error(rt[8:])
                 if self.error_count < 10: # don't requeue after 10 errors
-                    # put the msg again in queue
-                    self.unqueue()
-                    self._enqueue(*args)
+                    #debug('repeating queue')
+                    # returning True will cause flush() to try to send msgs again later
+                    return True
             else:
                 error(rt)
         except xmlrpclib.Fault, e:
@@ -222,7 +227,7 @@ def color_tag(nick):
     n = len(color_table)
     generic_nick = nick.lower()
     id = (sum(map(ord, generic_nick))%n)
-    debug('%s:%s' %(nick, id))
+    #debug('%s:%s' %(nick, id))
     return '<font color=%s>%s</font>' %(color_table[id], nick)
 
 def format(s, nick=''):
@@ -284,6 +289,7 @@ def cmd_notify(data, buffer, args):
         if cmd in ('test', 'quit'):
             if cmd == 'test':
                 server.send_rpc(' '.join(args[1:]) or 'This is a test.', '#test')
+                #send_notify(' '.join(args[1:]) or 'This is a test.', '#test')
             elif cmd == 'quit':
                 server.send_rpc('Shutting down notification daemon...')
                 server.quit()
