@@ -68,7 +68,6 @@ class Daemon(SimpleXMLRPCServer):
 
 dbus_env = 'DBUS_SESSION_BUS_ADDRESS'
 class Notifications(object):
-    timeout = 5000
     def __init__(self, method):
         self.method = method
 
@@ -78,6 +77,17 @@ class Notifications(object):
         if not hasattr(self, method):
             return 'Invalid notification method.'
         return getattr(self, method)(*args)
+
+    def _timeout(self, s=None):
+        if s is not None:
+            t = len(s) * 100
+            if t < 5000:
+                return 5000
+            elif t > 60000:
+                return 60000
+        else:
+            t = 10000
+        return t
 
     def _getDBUSSession(self):
         print >>sys.stderr, 'Lost dbus daemon, trying to find a new one... '
@@ -116,7 +126,7 @@ class Notifications(object):
 
         notify_object = bus.get_object('org.freedesktop.Notifications', '/org/freedesktop/Notifications')
         notify = dbus.Interface(notify_object, 'org.freedesktop.Notifications')
-        notify.Notify('', 0, '', channel or 'notification', text, '', {}, self.timeout)
+        notify.Notify('', 0, '', channel or 'notification', text, '', {}, self._timeout(text))
         return 'OK'
 
     def libnotify(self, text, channel=None):
@@ -128,7 +138,7 @@ class Notifications(object):
 
         if pynotify.init('WeeChat notification'):
             notify = pynotify.Notification(channel or 'notification', text)
-            notify.set_timeout(self.timeout)
+            notify.set_timeout(self._timeout(text))
             notify.show()
             return 'OK'
         else:
