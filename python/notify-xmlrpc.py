@@ -34,6 +34,8 @@ try:
     WEECHAT_RC_OK = weechat.WEECHAT_RC_OK
     import_ok = True
 except:
+    print "This script must be run under WeeChat."
+    print "Get WeeChat now at: http://www.weechat.org/"
     import_ok = False
 
 import xmlrpclib, socket
