@@ -304,9 +304,9 @@ def inactive():
         return False
 
 def notify_msg(data, buffer, time, tags, display, hilight, prefix, msg):
-    if 'notify_message' not in tags:
-        # XXX weechat bug?
-        #debug('Got bad tags: %s' %tags)
+    if data and 'notify_message' not in tags:
+        # weechat 0.3.0 bug
+        #debug('Got bad tags, wanted "notify_message" got "%s"' %tags)
         return WEECHAT_RC_OK
     #debug('  '.join((data, buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
     #        prefix='MESSAGE')
@@ -323,9 +323,9 @@ def notify_msg(data, buffer, time, tags, display, hilight, prefix, msg):
     return WEECHAT_RC_OK
 
 def notify_priv(data, buffer, time, tags, display, hilight, prefix, msg):
-    if 'notify_private' not in tags:
-        # XXX weechat bug?
-        #debug('Got bad tags: %s' %tags)
+    if data and 'notify_private' not in tags:
+        # weechat 0.3.0 bug
+        #debug('Got bad tags, wanted "notify_private" got "%s"' %tags)
         return WEECHAT_RC_OK
     #debug('  '.join((data, buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
     #        prefix='PRIVATE')
@@ -367,6 +367,13 @@ if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, SCRIPT_DESC,
         '', ''):
 
+    # check if we need to workaround a bug in 0.3.0
+    workaround = ''
+    version = weechat.info_get('version', '')
+    if version == '0.3.0':
+        workaround = '1'
+        #debug('workaround enabled')
+
     for opt, val in settings.iteritems():
         if not weechat.config_is_set_plugin(opt):
             weechat.config_set_plugin(opt, val)
@@ -397,7 +404,7 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_config('plugins.var.python.%s.ignore_*' %SCRIPT_NAME, 'ignore_update', '')
     weechat.hook_config('plugins.var.python.%s.server_*' %SCRIPT_NAME, 'server_update', '')
 
-    weechat.hook_print('', 'notify_message', '', 1, 'notify_msg', ''),
-    weechat.hook_print('', 'notify_private', '', 1, 'notify_priv', ''),
+    weechat.hook_print('', 'notify_message', '', 1, 'notify_msg', workaround)
+    weechat.hook_print('', 'notify_private', '', 1, 'notify_priv', workaround)
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
