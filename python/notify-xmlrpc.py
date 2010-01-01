@@ -107,13 +107,13 @@ settings = {
         }
 
 color_table = (
-        'darkcyan',
+        'teal',
         'darkmagenta',
         'darkgreen',
         'brown',
         'blue',
         'darkblue',
-        'red', # should be cyan, but is barely visible
+        'darkcyan',
         'magenta',
         'green',
         'grey',
@@ -224,8 +224,8 @@ def msg_flush(*args):
 
 def color_tag(nick):
     n = len(color_table)
-    generic_nick = nick.lower()
-    id = (sum(map(ord, generic_nick))%n)
+    #generic_nick = nick.strip('_`').lower()
+    id = (sum(map(ord, nick))%n)
     #debug('%s:%s' %(nick, id))
     return '<font color=%s>%s</font>' %(color_table[id], nick)
 
@@ -248,6 +248,61 @@ def send_notify(s, channel='', nick=''):
     s = format(s, nick)
     server.enqueue(s, channel)
 
+class Infolist(object):
+    """Class for reading WeeChat's infolists."""
+
+    fields = {
+            'buffer':'pointer',
+            }
+
+    def __init__(self, name, args=''):
+        self.cursor = 0
+        self.pointer = weechat.infolist_get(name, '', args)
+        if self.pointer == '':
+            raise Exception('Infolist initialising failed')
+
+    def __del__(self):
+        """Purge infolist if is no longer referenced."""
+        self.free()
+
+    def __getitem__(self, name):
+        """Implement the evaluation of self[name]."""
+        type = self.fields[name]
+        return getattr(self, 'get_%s' %type)(name)
+
+    def get_pointer(self, name):
+        return weechat.infolist_pointer(self.pointer, name)
+
+    def next(self):
+        self.cursor = weechat.infolist_next(self.pointer)
+        return self.cursor
+
+    def free(self):
+        if self.pointer:
+            #debug('Freeing Infolist')
+            weechat.infolist_free(self.pointer)
+            self.pointer = ''
+
+
+def in_window(buffer):
+    """Returns True if buffer is in a window and the user is active. This is for not show
+    notifications of a visible buffer while the user is doing something and wouldn't need to be
+    notified."""
+    windows = Infolist('window')
+    while windows.next():
+        if windows['buffer'] == buffer:
+            #debug('in current window')
+            return not inactive()
+    return False
+
+def inactive():
+    inactivity = int(weechat.info_get('inactivity', ''))
+    #debug('user inactivity: %s' %inactivity)
+    if inactivity > 10:
+        return True
+    else:
+        return False
+
 def notify_msg(data, buffer, time, tags, display, hilight, prefix, msg):
     if 'notify_message' not in tags:
         # XXX weechat bug?
@@ -261,7 +316,8 @@ def notify_msg(data, buffer, time, tags, display, hilight, prefix, msg):
             prefix = prefix[1:]
         if weechat.info_get('irc_is_channel', channel) \
                 and channel not in ignore_channel \
-                and prefix not in ignore_nick:
+                and prefix not in ignore_nick \
+                and not in_window(buffer):
             #debug('%sSending notification: %s' %(weechat.color('lightgreen'), channel), prefix='NOTIFY')
             send_notify(msg, channel=channel, nick=prefix)
     return WEECHAT_RC_OK
@@ -273,10 +329,11 @@ def notify_priv(data, buffer, time, tags, display, hilight, prefix, msg):
         return WEECHAT_RC_OK
     #debug('  '.join((data, buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
     #        prefix='PRIVATE')
-    if display == '1':
-        if prefix not in ignore_nick:
-            #debug('%sSending notification: %s' %(weechat.color('lightgreen'), prefix), prefix='NOTIFY')
-            send_notify(msg, channel=prefix)
+    if display == '1' \
+            and prefix not in ignore_nick \
+            and not in_window(buffer):
+        #debug('%sSending notification: %s' %(weechat.color('lightgreen'), prefix), prefix='NOTIFY')
+        send_notify(msg, channel=prefix)
     return WEECHAT_RC_OK
 
 def cmd_notify(data, buffer, args):
