@@ -46,6 +46,7 @@ class Daemon(SimpleXMLRPCServer):
 
     def quit(self):
         """Allows to kill the server remotelly."""
+        print >>sys.stderr, 'Stopping server.'
         self.server_close()
         self.stopped = True
         return 'OK'
@@ -72,7 +73,7 @@ class Notifications(object):
         self.method = method
 
     def _dispatch(self, method, args):
-        if method == 'any':
+        if method in ('any', 'notify'):
             method = self.method
         if not hasattr(self, method):
             return 'Invalid notification method.'
@@ -136,12 +137,15 @@ class Notifications(object):
         except:
             return 'Failed to import pynotify, is the module installed in %s?' %host
 
-        if pynotify.init('WeeChat notification'):
-            notify = pynotify.Notification(channel or 'notification', text)
-            notify.set_timeout(self._timeout(text))
-            notify.show()
-            return 'OK'
-        else:
+        try:
+            if pynotify.init('WeeChat notification'):
+                notify = pynotify.Notification(channel or 'notification', text)
+                notify.set_timeout(self._timeout(text))
+                notify.show()
+                return 'OK'
+            else:
+                raise Exception
+        except:
             try:
                 address = self._getDBUSSession()
             except NotifyError, e:
@@ -269,10 +273,10 @@ def daemonize(PIDFILE='/tmp/notify-xmlrpc-daemon.pid'):
 
 def getDefaultMethod():
     method = None
-    # I need to do this for filter annoying error messages when importing pynotify
-    null = open('/dev/null', 'a+', 0)
-    sys.stderr.flush()
-    os.dup2(null.fileno(), sys.stderr.fileno())
+    # I need to do this for filter some annoying error messages when importing pynotify
+    #null = open('/dev/null', 'a+', 0)
+    stderr = sys.stderr
+    sys.stderr = open('/dev/null', 'w')
     try:
         import pynotify
         method = 'libnotify'
@@ -283,8 +287,9 @@ def getDefaultMethod():
         except ImportError:
             pass
     # revert redirection
-    err = open('/dev/stderr', 'a+', 0)
-    os.dup2(err.fileno(), sys.stderr.fileno())
+    #err = open('/dev/stderr', 'a+', 0)
+    sys.stderr = stderr
+    #os.dup2(err.fileno(), sys.stderr.fileno())
     return method
 
 if __name__ == '__main__':

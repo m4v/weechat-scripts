@@ -218,7 +218,6 @@ class Server(object):
     def quit(self):
         self.server.quit()
 
-
 def msg_flush(*args):
     server.flush()
     return WEECHAT_RC_OK
@@ -259,12 +258,10 @@ def notify_msg(data, buffer, time, tags, display, hilight, prefix, msg):
     if hilight == '1' and display == '1':
         channel = weechat.buffer_get_string(buffer, 'short_name')
         if prefix[0] in '@+#!': # strip user modes
-            _prefix = prefix[1:]
-        else:
-            _prefix = prefix
+            prefix = prefix[1:]
         if weechat.info_get('irc_is_channel', channel) \
                 and channel not in ignore_channel \
-                and _prefix not in ignore_nick:
+                and prefix not in ignore_nick:
             #debug('%sSending notification: %s' %(weechat.color('lightgreen'), channel), prefix='NOTIFY')
             send_notify(msg, channel=channel, nick=prefix)
     return WEECHAT_RC_OK
