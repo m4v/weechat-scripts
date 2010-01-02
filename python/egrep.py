@@ -378,32 +378,37 @@ def grep_file(file, head, tail, after_context, before_context, *args):
 	#debug(' '.join(map(str, (file, head, tail, after_context, before_context))))
 	lines = []
 	file_object = open(file, 'r')
-	if tail or before_context:
-		# instead of searching in the whole file and later pick the last few lines, we read the
-		# log, reverse it, search until count reached and reverse it again, that way is a lot
-		# faster
-		fd = file_object.readlines()
-		fd.reverse()
+	if tail or after_context or before_context:
+		# I need a full list of file's lines for there options, and only for these options, since
+		# it makes the search take a bit more of time
+		file_lines = file_object.readlines()
 	else:
-		fd = file_object
+		file_lines = file_object
+	if tail:
+		# instead of searching in the whole file and later pick the last few lines, we
+		# reverse the log, search until count reached and reverse it again, that way is a lot
+		# faster
+		file_lines.reverse()
 	limit = head or tail
-	context = after_context or before_context
 
 	append = lines.append
 	check = check_string
-	match_count = 0 
-	for line in fd:
-		if match_count == 0:
-			line = check(line, *args)
-			if line and context:
-				match_count = context
-				append('...')
-		else:
-			match_count -= 1
+	line_idx = 0
+	for line in file_lines:
+		line = check(line, *args)
 		if line:
+			if before_context:
+				append('...')
+				for id in reversed(range(1, before_context + 1)):
+					append(file_lines[line_idx - id])
 			append(line)
+			if after_context:
+				for id in range(1, after_context + 1):
+					append(file_lines[line_idx + id])
+				append('...')
 			if limit and len(lines) >= limit: break
-	if tail or before_context:
+		line_idx += 1
+	if tail:
 		lines.reverse()
 	return lines
 
@@ -412,48 +417,68 @@ def grep_buffer(buffer, head, tail, after_context, before_context, *args):
 	lines = []
 	# Using /grep in grep's buffer can lead to some funny effects
 	# We should take measures if that's the case
-	grep_buffer = weechat.buffer_search('python', SCRIPT_NAME)
-	grep_buffer = buffer == grep_buffer
+	def make_get_line_funcion():
+		"""Returns a function for get lines from the infolist, depending if the buffer is egrep's or
+		not."""
+		string_remove_color = weechat.string_remove_color
+		infolist_string = weechat.infolist_string
+		get_prefix = lambda infolist : string_remove_color(infolist_string(infolist, 'prefix'), '')
+		get_message = lambda infolist : string_remove_color(infolist_string(infolist, 'message'), '')
+		grep_buffer = weechat.buffer_search('python', SCRIPT_NAME)
+		if buffer == grep_buffer:
+			def function(infolist):
+				prefix = get_prefix(infolist)
+				message = get_message(infolist)
+				if script_nick == prefix: # ignore our lines
+					return None
+				return '%s\t%s' %(prefix, message.replace(' ', '\t', 1))
+		else:
+			infolist_time = weechat.infolist_time
+			def function(infolist):
+				prefix = get_prefix(infolist)
+				message = get_message(infolist)
+				date = infolist_time(infolist, 'date')
+				return '%s\t%s\t%s' %(date, prefix, message)
+		return function
+	get_line = make_get_line_funcion()
+
 	infolist = weechat.infolist_get('buffer_lines', buffer, '')
-	if tail or before_context:
+	if tail:
 		# like with grep_file() if we need the last few matching lines, we move the cursor to
 		# the end and search backwards
 		infolist_next = weechat.infolist_prev
+		infolist_prev = weechat.infolist_next
 	else:
 		infolist_next = weechat.infolist_next
+		infolist_prev = weechat.infolist_prev
 	limit = head or tail
-	context = after_context or before_context
 
 	append = lines.append
 	check = check_string
-	infolist_time = weechat.infolist_time
-	match_count = 0
 	while infolist_next(infolist):
-		prefix = weechat.infolist_string(infolist, 'prefix')
-		message = weechat.infolist_string(infolist, 'message')
-		prefix = weechat.string_remove_color(prefix, '')
-		message = weechat.string_remove_color(message, '')
-		if grep_buffer:
-			if script_nick == prefix: # ignore our lines
-				continue
-			date = prefix
-			line = '%s\t%s' %(date, message.replace(' ', '\t', 1))
-		else:
-			date = infolist_time(infolist, 'date')
-			line = '%s\t%s\t%s' %(date, prefix, message)
-		if match_count == 0:
-			line = check(line, *args)
-			if line and context:
-				match_count = context
-				append('...')
-		else:
-			match_count -= 1
+		line = get_line(infolist)
+		if line is None: continue
+		line = check(line, *args)
 		if line:
+			if before_context:
+				append('...')
+				for id in range(before_context):
+					infolist_prev(infolist)
+				for id in range(before_context):
+					append(get_line(infolist))
+					infolist_next(infolist)
 			append(line)
+			if after_context:
+				for id in range(after_context):
+					infolist_next(infolist)
+					append(get_line(infolist))
+				for id in range(after_context):
+					infolist_prev(infolist)
+				append('...')
 			if limit and len(lines) >= limit:
 				break
 	weechat.infolist_free(infolist)
-	if tail or before_context:
+	if tail:
 		lines.reverse()
 	return lines
 
