@@ -143,6 +143,23 @@ class linesDict(dict):
 		else:
 			return ''
 
+class linesList(list):
+	"""Class for list of matches, since sometimes I need to add lines that aren't matches, __len__
+	should be independent of the items count in the list."""
+	def __init__(self):
+		self._len = 0
+
+	def append_separator(self):
+		"""adds a separator into the list, makes sure it doen't add two together."""
+		s = '...'
+		if (self and self[-1] != s) or not self:
+				self.append(s)
+	
+	def count_match(self):
+		self._len += 1
+
+	def __len__(self):
+		return self._len
 
 ### config
 settings = {
@@ -376,7 +393,7 @@ def check_string(s, regexp, hilight='', exact=False):
 def grep_file(file, head, tail, after_context, before_context, *args):
 	"""Return a list of lines that match 'regexp' in 'file', if no regexp returns all lines."""
 	#debug(' '.join(map(str, (file, head, tail, after_context, before_context))))
-	lines = []
+	lines = linesList()
 	file_object = open(file, 'r')
 	if tail or after_context or before_context:
 		# I need a full list of file's lines for there options, and only for these options, since
@@ -391,30 +408,42 @@ def grep_file(file, head, tail, after_context, before_context, *args):
 		file_lines.reverse()
 	limit = head or tail
 
+	# define these locally as it makes the loop run slightly faster
 	append = lines.append
+	count = lines.count_match
+	separator = lines.append_separator
 	check = check_string
+	
+	if before_context:
+		before_context_range = range(1, before_context + 1)
+		before_context_range.reverse()
+	if after_context:
+		after_context_range = range(1, after_context + 1)
+
 	line_idx = 0
 	for line in file_lines:
 		line = check(line, *args)
 		if line:
 			if before_context:
-				append('...')
-				for id in reversed(range(1, before_context + 1)):
+				separator()
+				for id in before_context_range:
 					append(file_lines[line_idx - id])
 			append(line)
+			count()
 			if after_context:
-				for id in range(1, after_context + 1):
+				for id in after_context_range:
 					append(file_lines[line_idx + id])
-				append('...')
+				separator()
 			if limit and len(lines) >= limit: break
 		line_idx += 1
+
 	if tail:
 		lines.reverse()
 	return lines
 
 def grep_buffer(buffer, head, tail, after_context, before_context, *args):
 	"""Return a list of lines that match 'regexp' in 'buffer', if no regexp returns all lines."""
-	lines = []
+	lines = linesList()
 	# Using /grep in grep's buffer can lead to some funny effects
 	# We should take measures if that's the case
 	def make_get_line_funcion():
@@ -453,31 +482,42 @@ def grep_buffer(buffer, head, tail, after_context, before_context, *args):
 		infolist_prev = weechat.infolist_prev
 	limit = head or tail
 
+	# define these locally as it makes the loop run slightly faster
 	append = lines.append
+	count = lines.count_match
+	separator = lines.append_separator
 	check = check_string
+
+	if before_context:
+		before_context_range = range(before_context)
+	if after_context:
+		after_context_range = range(after_context)
+
 	while infolist_next(infolist):
 		line = get_line(infolist)
 		if line is None: continue
 		line = check(line, *args)
 		if line:
 			if before_context:
-				append('...')
-				for id in range(before_context):
+				separator()
+				for id in before_context_range:
 					infolist_prev(infolist)
-				for id in range(before_context):
+				for id in before_context_range:
 					append(get_line(infolist))
 					infolist_next(infolist)
 			append(line)
+			count()
 			if after_context:
-				for id in range(after_context):
+				for id in after_context_range:
 					infolist_next(infolist)
 					append(get_line(infolist))
-				for id in range(after_context):
+				for id in after_context_range:
 					infolist_prev(infolist)
-				append('...')
+				separator()
 			if limit and len(lines) >= limit:
 				break
 	weechat.infolist_free(infolist)
+
 	if tail:
 		lines.reverse()
 	return lines
@@ -807,6 +847,10 @@ def cmd_grep_parsing(args):
 			hilight = '' # why hilight if we're just going to count?
 		if exact:
 			exact = False # see hilight
+		if after_context:
+			after_context = False
+		if before_context:
+			before_context = False
 	if head and tail: # it won't work
 		raise Exception, "can't use --tail and --head simultaneously."
 	if number is not None:
