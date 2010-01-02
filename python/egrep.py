@@ -53,6 +53,10 @@
 #
 #
 #   History:
+#   2010-01-
+#   version 0.: new features
+#   * added --after-context and --before-context options
+#
 #   2009-11-06
 #   version 0.5.3: improvements for long grep output
 #   * egrep buffer input accepts the same flags as /egrep for repeat a search with different
@@ -171,6 +175,7 @@ class linesList(list):
 		self.matches_count += 1
 
 	def strip_separator(self):
+		"""removes separators if there are first or/and last in the list."""
 		if self:
 			s = self._sep
 			if self[0] == s:
@@ -337,7 +342,7 @@ def get_file_by_name(buffer_name):
 			masks = mask.split('$')
 			masks = map(lambda s: s.lstrip(chars), masks)
 			mask = '*'.join(masks)
-			if not mask.startswith('*'):
+			if mask[0] != '*':
 				mask = '*' + mask
 		#debug('get_file_by_name: using mask %s' %mask)
 		file = get_file_by_pattern(mask)
@@ -414,7 +419,7 @@ def grep_file(file, head, tail, after_context, before_context, *args):
 	lines = linesList()
 	file_object = open(file, 'r')
 	if tail or after_context or before_context:
-		# I need a full list of file's lines for there options, and only for these options, since
+		# I need a full list of file's lines for these options, and only for these options, since
 		# it makes the search take a bit more of time
 		file_lines = file_object.readlines()
 	else:
@@ -830,7 +835,7 @@ def cmd_grep_parsing(args):
 				opt = '-' + opt
 			else:
 				opt = '--' + opt
-			raise Exception, "argument for %s must be a integer positive number." %opt
+			raise Exception, "argument for %s must be a positive integer." %opt
 
 	for opt, val in opts:
 		opt = opt.strip('-')
@@ -845,7 +850,7 @@ def cmd_grep_parsing(args):
 			else:
 				hilight = '%s,%s' %(color_hilight, color_reset)
 			# we pass the colors in the variable itself because check_string() must not use
-			# weechat's module when applying the colors
+			# weechat's module when applying the colors (this is for grep in a hooked process)
 		elif opt in ('e', 'exact'):
 			exact = not exact
 		elif opt in ('a', 'all'):
@@ -1068,6 +1073,8 @@ if __name__ == '__main__' and import_ok and \
 			"      -t --tail: Print the last 10 matching lines.\n"
 			"      -h --head: Print the first 10 matching lines.\n"
 			"-n --number <n>: Overrides default number of lines for --tail or --head.\n"
+			" -A --after-context:\n"
+			"-B --before-context:\n"
 			"   <expression>: Expression to search.\n\n"
 			"egrep buffer:\n"
 			"  Accepts most arguments of /egrep command, It'll repeat last search using the new "
