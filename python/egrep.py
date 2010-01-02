@@ -643,6 +643,9 @@ def buffer_update():
 	def format_line(s):
 		"""Returns the log line 's' ready for printing in buffer."""
 		global weechat_format
+		if s == linesList._sep:
+			# ignore lines separator
+			return s
 		if weechat_format and s.count('\t') >= 2:
 			date, nick, msg = s.split('\t', 2) # date, nick, message
 		else:
