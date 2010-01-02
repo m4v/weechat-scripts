@@ -755,6 +755,20 @@ def cmd_grep_parsing(args):
 		pattern = args
 	elif not pattern:
 		raise Exception, 'No pattern for grep the logs.'
+
+	def positive_number(opt, val):
+		try:
+			number = int(val)
+			if number < 0:
+				raise ValueError
+			return number
+		except ValueError:
+			if len(opt) == 1:
+				opt = '-' + opt
+			else:
+				opt = '--' + opt
+			raise Exception, "argument for %s must be a integer positive number." %opt
+
 	for opt, val in opts:
 		opt = opt.strip('-')
 		if opt in ('c', 'count'):
@@ -775,21 +789,18 @@ def cmd_grep_parsing(args):
 			all = not all
 		elif opt in ('h', 'head'):
 			head = not head
+			tail = False
 		elif opt in ('t', 'tail'):
 			tail = not tail
+			head = False
 		elif opt in ('b', 'buffer'):
 			only_buffers = True
 		elif opt in ('n', 'number'):
-			try:
-				number = int(val)
-				if number < 0:
-					raise ValueError
-			except ValueError:
-				raise Exception, "argument for --number must be a integer positive number."
+			number = positive_number(opt, val)
 		elif opt in ('A', 'after-context'):
-			after_context = int(val)
+			after_context = positive_number(opt, val)
 		elif opt in ('B', 'before-context'):
-			before_context = int(val)
+			before_context = positive_number(opt, val)
 	# more checks
 	if count:
 		if hilight:
