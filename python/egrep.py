@@ -126,6 +126,13 @@ class linesDict(dict):
 		else:
 			dict.__getitem__(self, key).extend(value)
 
+	def get_matches_count(self):
+		"""Return the sum of total matches stored."""
+		if dict.__len__(self):
+			return sum(map(lambda L: L.matches_count, self.itervalues()))
+		else:
+			return 0
+
 	def __len__(self):
 		"""Return the sum of total lines stored."""
 		if dict.__len__(self):
@@ -143,23 +150,34 @@ class linesDict(dict):
 		else:
 			return ''
 
+	def strip_separator(self):
+		for L in self.itervalues():
+			L.strip_separator()
+
 class linesList(list):
-	"""Class for list of matches, since sometimes I need to add lines that aren't matches, __len__
-	should be independent of the items count in the list."""
+	"""Class for list of matches, since sometimes I need to add lines that aren't matches, I need an
+	independent counter."""
+	_sep = '...'
 	def __init__(self):
-		self._len = 0
+		self.matches_count = 0
 
 	def append_separator(self):
 		"""adds a separator into the list, makes sure it doen't add two together."""
-		s = '...'
+		s = self._sep
 		if (self and self[-1] != s) or not self:
 				self.append(s)
-	
-	def count_match(self):
-		self._len += 1
 
-	def __len__(self):
-		return self._len
+	def count_match(self):
+		self.matches_count += 1
+
+	def strip_separator(self):
+		if self:
+			s = self._sep
+			if self[0] == s:
+				del self[0]
+			if self[-1] == s:
+				del self[-1]
+
 
 ### config
 settings = {
@@ -586,9 +604,11 @@ def buffer_update():
 	time_grep = now()
 
 	buffer = buffer_create()
-	len_matched_lines = len(matched_lines)
+	matched_lines.strip_separator() # remove first and last separators of each list
+	len_total_lines = len(matched_lines)
+	len_matched_lines = matched_lines.get_matches_count()
 	max_lines = get_config_int('max_lines')
-	if not count and len_matched_lines > max_lines:
+	if not count and len_total_lines > max_lines:
 		weechat.buffer_clear(buffer)
 
 	# color variables defined locally
@@ -602,20 +622,20 @@ def buffer_update():
 	# formatting functions declared locally.
 	def make_title(name, number):
 		note = ''
-		if len_matched_lines > max_lines and not count:
-			note = ' (only last %s shown)' %max_lines
-		return "Search in %s%s%s | %s lines%s | pattern \"%s%s%s\" | %.4f seconds (%.2f%%)" \
+		if len_total_lines > max_lines and not count:
+			note = ' (last %s lines shown)' %max_lines
+		return "Search in %s%s%s | %s matches%s | pattern \"%s%s%s\" | %.4f seconds (%.2f%%)" \
 				%(c_title, name, c_reset, number, note, c_title, pattern, c_reset, time_total, time_grep_pct)
 
-	def make_summary(name, number, printed=0):
+	def make_summary(name, lines, printed=0):
 		note = ''
-		if printed != number:
+		if printed != len(lines):
 			if printed:
-				note = ' (only last %s shown)' %printed
+				note = ' (last %s lines shown)' %printed
 			else:
 				note = ' (not shown)'
-		return "%s lines matched \"%s%s%s\" in %s%s%s%s" \
-				%(number, c_summary, pattern, c_info, c_summary, name, c_reset, note)
+		return "%s matches \"%s%s%s\" in %s%s%s%s" \
+				%(lines.matches_count, c_summary, pattern, c_info, c_summary, name, c_reset, note)
 
 	global weechat_format
 	weechat_format = True
@@ -691,7 +711,7 @@ def buffer_update():
 
 				# summary
 				if count or get_config_boolean('show_summary'):
-					summary = make_summary(log, len(lines), len(print_lines))
+					summary = make_summary(log, lines, len(print_lines))
 					print_info(summary, buffer)
 
 				# separator
