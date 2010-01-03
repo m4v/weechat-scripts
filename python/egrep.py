@@ -459,7 +459,7 @@ def grep_file(file, head, tail, after_context, before_context, *args):
 				for id in after_context_range:
 					append(file_lines[line_idx + id])
 				separator()
-			if limit and len(lines) >= limit: break
+			if limit and lines.matches_count >= limit: break
 		line_idx += 1
 
 	if tail:
@@ -539,7 +539,7 @@ def grep_buffer(buffer, head, tail, after_context, before_context, *args):
 				for id in after_context_range:
 					infolist_prev(infolist)
 				separator()
-			if limit and len(lines) >= limit:
+			if limit and lines.matches_count >= limit:
 				break
 	weechat.infolist_free(infolist)
 
@@ -770,7 +770,7 @@ def buffer_input(data, buffer, input_data):
 	"""Repeats last search with 'input_data' as regexp."""
 
 	global search_in_buffers, search_in_files
-	global pattern, matchcase, head, tail, number, count, exact, hilight
+	global pattern
 	try:
 		if pattern and (search_in_files or search_in_buffers):
 			for pointer in search_in_buffers:
@@ -869,9 +869,9 @@ def cmd_grep_parsing(args):
 		elif opt in ('n', 'number'):
 			number = positive_number(opt, val)
 		elif opt in ('C', 'context'):
-			number = positive_number(opt, val)
-			after_context = number
-			before_context = number
+			n = positive_number(opt, val)
+			after_context = n
+			before_context = n
 		elif opt in ('A', 'after-context'):
 			after_context = positive_number(opt, val)
 		elif opt in ('B', 'before-context'):
