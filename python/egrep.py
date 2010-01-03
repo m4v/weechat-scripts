@@ -171,7 +171,7 @@ class linesList(list):
 		"""adds a separator into the list, makes sure it doen't add two together."""
 		s = self._sep
 		if (self and self[-1] != s) or not self:
-				self.append(s)
+			self.append(s)
 
 	def count_match(self):
 		self.matches_count += 1
@@ -1080,7 +1080,7 @@ if __name__ == '__main__' and import_ok and \
 			"      -t --tail: Print the last 10 matching lines.\n"
 			"      -h --head: Print the first 10 matching lines.\n"
 			"-n --number <n>: Overrides default number of lines for --tail or --head.\n"
-			" -A --after-context <n>: Shows <n> lines of trailing context after matching lines.\n"
+			"-A --after-context <n>: Shows <n> lines of trailing context after matching lines.\n"
 			"-B --before-context <n>: Shows <n> lines of leading context before matching lines.\n"
 			"-C --context <n>: Same as using both --after-context and --before-context simultaneously.\n"
 			"   <expression>: Expression to search.\n\n"
