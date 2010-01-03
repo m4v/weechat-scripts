@@ -50,12 +50,14 @@
 #
 #   TODO:
 #   * grepping should run in background for big logs
+#   * possibly add option for defining time intervals
 #
 #
 #   History:
-#   2010-01-
-#   version 0.: new features
-#   * added --after-context and --before-context options
+#   2010-01-03
+#   version 0.5.4: new features
+#   * added --after-context and --before-context options.
+#   * added --context as a shortcut for using both -A -B options.
 #
 #   2009-11-06
 #   version 0.5.3: improvements for long grep output
@@ -110,7 +112,7 @@ except ImportError:
 
 SCRIPT_NAME    = "egrep"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.5.3-dev"
+SCRIPT_VERSION = "0.5.4"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Search in buffers and logs"
 SCRIPT_COMMAND = "egrep"
@@ -808,8 +810,9 @@ def cmd_grep_parsing(args):
 	global pattern, matchcase, number, count, exact, hilight
 	global tail, head, after_context, before_context
 	global log_name, buffer_name, only_buffers, all
-	opts, args = getopt.gnu_getopt(args.split(), 'cmHeahtin:bA:B:', ['count', 'matchcase', 'hilight',
-		'exact', 'all', 'head', 'tail', 'number=', 'buffer', 'after-context=', 'before-context='])
+	opts, args = getopt.gnu_getopt(args.split(), 'cmHeahtin:bA:B:C:', ['count', 'matchcase', 'hilight',
+		'exact', 'all', 'head', 'tail', 'number=', 'buffer', 'after-context=', 'before-context=',
+		'context='])
 	#debug(opts, 'opts: '); debug(args, 'args: ')
 	if len(args) >= 2:
 		if args[0] == 'log':
@@ -865,6 +868,10 @@ def cmd_grep_parsing(args):
 			only_buffers = True
 		elif opt in ('n', 'number'):
 			number = positive_number(opt, val)
+		elif opt in ('C', 'context'):
+			number = positive_number(opt, val)
+			after_context = number
+			before_context = number
 		elif opt in ('A', 'after-context'):
 			after_context = positive_number(opt, val)
 		elif opt in ('B', 'before-context'):
@@ -1046,7 +1053,7 @@ def completion_log_files(data, completion_item, buffer, completion):
 
 def completion_egrep_args(data, completion_item, buffer, completion):
 	for arg in ('count', 'all', 'matchcase', 'hilight', 'exact', 'head', 'tail', 'number', 'buffer',
-			'after-context', 'before-context'):
+			'after-context', 'before-context', 'context'):
 		weechat.hook_completion_list_add(completion, '--' + arg, 0, weechat.WEECHAT_LIST_POS_SORT)
 	return WEECHAT_RC_OK
 
@@ -1059,7 +1066,7 @@ if __name__ == '__main__' and import_ok and \
 	weechat.hook_command(SCRIPT_COMMAND, cmd_grep.__doc__,
 			"[log <file> | buffer <name>] [-a|--all] [-b|--buffer] [-c|--count] [-m|--matchcase] "
 			"[-H|--hilight] [-e|--exact] [(-h|--head)|(-t|--tail) [-n|--number <n>]] "
-			"[-A|--after-context <n>] [-B|--before-context <n>] <expression>",
+			"[-A|--after-context <n>] [-B|--before-context <n>] [-C|--context <n> ] <expression>",
 			# help
 			"     log <file>: Search in one log that matches <file> in the logger path. Use '*' and '?' as jokers.\n"
 			"  buffer <name>: Search in buffer <name>, if there's no buffer with <name> it will try to search for a log file.\n"
@@ -1073,8 +1080,9 @@ if __name__ == '__main__' and import_ok and \
 			"      -t --tail: Print the last 10 matching lines.\n"
 			"      -h --head: Print the first 10 matching lines.\n"
 			"-n --number <n>: Overrides default number of lines for --tail or --head.\n"
-			" -A --after-context:\n"
-			"-B --before-context:\n"
+			" -A --after-context <n>: Shows <n> lines of trailing context after matching lines.\n"
+			"-B --before-context <n>: Shows <n> lines of leading context before matching lines.\n"
+			"-C --context <n>: Same as using both --after-context and --before-context simultaneously.\n"
 			"   <expression>: Expression to search.\n\n"
 			"egrep buffer:\n"
 			"  Accepts most arguments of /egrep command, It'll repeat last search using the new "
