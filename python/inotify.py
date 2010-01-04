@@ -17,17 +17,37 @@
 ###
 
 ###
+# Notifycation system
+#
+#
+#   Commands:
+#   * /inotify
+#     See /help inotify
+#
+#   Notify methods:
+#
+#   Settings:
+#   * plugins.var.python.inotify: #TODO
+#
+#
+#   TODO:
+#   * add support for more notification methods
+#
+#
+#   History:
+#   2010-
+#   version:
 #
 ###
 
-SCRIPT_NAME    = "notify-xmlrpc"
+SCRIPT_NAME    = "inotify"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.2"
+SCRIPT_VERSION = "0.1-dev"
 SCRIPT_LICENSE = "GPL3"
-SCRIPT_DESC    = "Notification system using xmlrpc protocol."
-SCRIPT_COMMAND = "notify-xmlrpc"
+SCRIPT_DESC    = "Notification system, using dbus or libnotify. Works with WeeChat in screen."
+SCRIPT_COMMAND = "inotify"
 
-DAEMON_URL = ''
+DAEMON_URL = 'http://github.com/m4v/weechat-scripts/blob/m4v/python/inotify-daemon'
 
 try:
     import weechat
@@ -95,7 +115,6 @@ def get_config_valid_string(config, valid_strings=valid_methods):
         error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
         error("'%s' is an invalid value, allowed: %s." %(value, ', '.join(valid_strings)))
         return default
-    #debug("default banmask: %s" %values)
     return value
 
 
@@ -147,8 +166,8 @@ class Ignores(object):
 
 class Server(object):
     def __init__(self):
-        self._create_server()
         self._reset()
+        self._create_server()
         self.send_rpc('Notification script loaded')
 
     def _reset(self):
@@ -186,16 +205,23 @@ class Server(object):
     def _create_server(self):
         self.error_count = 0
         self.address = weechat.config_get_plugin('server_uri')
-        self.server = xmlrpclib.Server(self.address)
         self.method = get_config_valid_string('server_method')
-        version = self.server.version()
-        if version != '0.1':
-            error('Incorrect server version, should be 0.1, but got %s' %version)
+        try:
+            self.server = xmlrpclib.Server(self.address)
+            version = self.server.version()
+            if version != '0.1':
+                error('Incorrect server version, should be 0.1, but got %s' %version)
+        except socket.error, e:
+            self._error_connect()
 
     def _error(self, s):
         if self.error_count < 5: # stop sending error msg after 5 errors in a row
             error(s)
         self.error_count += 1
+
+    def _error_connect(self):
+        self._error('Failed to connect to our notification daemon, check if the address'
+               ' \'%s\' is correct and if it\'s running.' %self.address)
 
     def send_rpc(self, *args):
         try:
@@ -214,11 +240,14 @@ class Server(object):
         except xmlrpclib.Fault, e:
             self._error(e.faultString.split(':', 1)[1])
         except socket.error, e:
-            self._error('Failed to connect to our notification daemon, check if the address'
-                   ' \'%s\' is correct and if it\'s running.' %self.address)
+            self._error_connect()
 
     def quit(self):
         self.server.quit()
+
+    def restart(self):
+        self.server.restart()
+
 
 def msg_flush(*args):
     server.flush()
@@ -300,7 +329,7 @@ def in_window(buffer):
 def inactive():
     inactivity = int(weechat.info_get('inactivity', ''))
     #debug('user inactivity: %s' %inactivity)
-    if inactivity > 10:
+    if inactivity > 20:
         return True
     else:
         return False
@@ -342,13 +371,16 @@ def cmd_notify(data, buffer, args):
     if args:
         args = args.split()
         cmd = args[0]
-        if cmd in ('test', 'quit'):
+        if cmd in ('test', 'quit', 'restart'):
             if cmd == 'test':
                 server.send_rpc(' '.join(args[1:]) or 'This is a test.', '#test')
                 #send_notify(' '.join(args[1:]) or 'This is a test.', '#test')
             elif cmd == 'quit':
                 server.send_rpc('Shutting down notification daemon...')
                 server.quit()
+            elif cmd == 'restart':
+                server.send_rpc('Restarting notification daemon...')
+                server.restart()
             return WEECHAT_RC_OK
 
     weechat.command('', '/help %s' %SCRIPT_COMMAND)
@@ -402,7 +434,7 @@ if __name__ == '__main__' and import_ok and \
             "  Setting 'ignore_channel' to '*ubuntu*,!#ubuntu-es':\n"
             "   will ignore notifications from any channel with the word 'ubuntu' except from\n"
             "   #ubuntu-es.\n" %SCRIPT_NAME
-            ,'test|quit', 'cmd_notify', '')
+            ,'test|restart|quit', 'cmd_notify', '')
     weechat.hook_config('plugins.var.python.%s.ignore_*' %SCRIPT_NAME, 'ignore_update', '')
     weechat.hook_config('plugins.var.python.%s.server_*' %SCRIPT_NAME, 'server_update', '')
 
