@@ -36,6 +36,7 @@ class Daemon(SimpleXMLRPCServer):
     def __init__(self, *args, **kwargs):
         SimpleXMLRPCServer.__init__(self, *args, **kwargs)
         self.register_function(self.quit)
+        self.register_function(self.restart)
         self.register_function(lambda : __version__, 'version')
 
     def serve_forever(self):
@@ -49,6 +50,12 @@ class Daemon(SimpleXMLRPCServer):
         print >>sys.stderr, 'Stopping server.'
         self.server_close()
         self.stopped = True
+        return 'OK'
+
+    def restart(self):
+        """Allows to restart the server remotelly."""
+        print >>sys.stderr, 'Restarting server.'
+        self.force_restart()
         return 'OK'
 
     def create_dummy_request(self):
@@ -222,7 +229,7 @@ def main(host='localhost', port=7766, method=None):
             daemon = xmlrpclib.Server('http://%s:%s' %(host, port))
             rt = daemon.quit()
             if rt == 'OK':
-                print 'Closed current daemon.'
+                print 'Current daemon closed.'
                 server = Daemon((host, port))
             else:
                 raise Exception

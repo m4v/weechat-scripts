@@ -124,7 +124,7 @@ settings = {
      'ignore_channel': '',
         'ignore_nick': '',
 #        'ignore_text': '',
-         'color_nick': 'off',
+         'color_nick': 'on',
         }
 
 color_table = (
