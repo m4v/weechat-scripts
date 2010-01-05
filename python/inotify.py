@@ -204,8 +204,13 @@ class Server(object):
 
     def _create_server(self):
         self.error_count = 0
-        self.address = weechat.config_get_plugin('server_uri')
         self.method = get_config_valid_string('server_method')
+        self.address = weechat.config_get_plugin('server_uri')
+        # detect if we're going to connect to localhost.
+        if self.address[:17] in ('http://localhost:', 'http://127.0.0.1:'):
+            self.remote = False
+        else:
+            self.remote = True
         try:
             self.server = xmlrpclib.Server(self.address)
             version = self.server.version()
@@ -224,6 +229,9 @@ class Server(object):
                ' \'%s\' is correct and if it\'s running.' %self.address)
 
     def send_rpc(self, *args):
+        if self.remote:
+            self._send_rpc_process(*args)
+            return
         try:
             rt = getattr(self.server, self.method)(*args)
             if rt == 'OK':
@@ -242,6 +250,21 @@ class Server(object):
         except socket.error, e:
             self._error_connect()
 
+    def _send_rpc_process(self, *args):
+        cmd = """
+python -c \"
+import xmlrpclib
+
+try:
+    server = xmlrpclib.Server('%(server_uri)s')
+    print getattr(server, '%(method)s')(%(args)s)
+except:
+    print 'error'\"
+""" 
+        cmd = cmd %{'server_uri':self.address, 'method':self.method, 'args':', '.join(map(repr, args))}
+        #debug(cmd)
+        weechat.hook_process(cmd, 30000, 'msg_process', '')
+
     def quit(self):
         self.server.quit()
 
@@ -251,6 +274,10 @@ class Server(object):
 
 def msg_flush(*args):
     server.flush()
+    return WEECHAT_RC_OK
+
+def msg_process(data, command, rc, stdout, stderr):
+    #debug("%s @ stderr: '%s', stdout: '%s'" %(rc, stderr.strip('\n'), stdout.strip('\n')))
     return WEECHAT_RC_OK
 
 def color_tag(nick):
