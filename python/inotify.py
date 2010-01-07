@@ -230,8 +230,7 @@ class Server(object):
 
     def send_rpc(self, *args):
         if self.remote:
-            self._send_rpc_process(*args)
-            return
+            return self._send_rpc_process(*args)
         try:
             rt = getattr(self.server, self.method)(*args)
             if rt == 'OK':
@@ -259,11 +258,10 @@ try:
     server = xmlrpclib.Server('%(server_uri)s')
     print getattr(server, '%(method)s')(%(args)s)
 except:
-    print 'error'\"
-""" 
+    print 'error'\""""
         cmd = cmd %{'server_uri':self.address, 'method':self.method, 'args':', '.join(map(repr, args))}
         #debug(cmd)
-        weechat.hook_process(cmd, 30000, 'msg_process', '')
+        weechat.hook_process(cmd, 30000, 'rpc_process', '')
 
     def quit(self):
         self.server.quit()
@@ -276,8 +274,18 @@ def msg_flush(*args):
     server.flush()
     return WEECHAT_RC_OK
 
-def msg_process(data, command, rc, stdout, stderr):
-    #debug("%s @ stderr: '%s', stdout: '%s'" %(rc, stderr.strip('\n'), stdout.strip('\n')))
+def rpc_process(data, command, rc, stdout, stderr):
+    debug("%s @ stderr: '%s', stdout: '%s'" %(rc, stderr.strip('\n'), stdout.strip('\n')))
+    if stdout:
+        if stdout == 'OK\n':
+            pass
+        elif stdout.startswith('warning:'):
+            # crap
+            debug(stdout)
+        else:
+            error(stdout)
+    if stderr:
+        debug(stderr)
     return WEECHAT_RC_OK
 
 def color_tag(nick):
