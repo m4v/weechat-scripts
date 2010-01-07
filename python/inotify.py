@@ -259,7 +259,8 @@ try:
     print getattr(server, '%(method)s')(%(args)s)
 except:
     print 'error'\""""
-        cmd = cmd %{'server_uri':self.address, 'method':self.method, 'args':', '.join(map(repr, args))}
+        args = ', '.join(map(repr, args))
+        cmd = cmd %{'server_uri':self.address, 'method':self.method, 'args':args}
         #debug(cmd)
         weechat.hook_process(cmd, 30000, 'rpc_process', '')
 
@@ -300,6 +301,8 @@ def format(s, nick=''):
         s = s.replace('<', '&lt;')
     if '>' in s:
         s = s.replace('>', '&gt;')
+    if '"' in s:
+        s = s.replace('"', '&quot;')
     if nick:
         if get_config_boolean('color_nick'):
             nick_color = color_tag(nick)
@@ -406,10 +409,11 @@ def cmd_notify(data, buffer, args):
     if args:
         args = args.split()
         cmd = args[0]
-        if cmd in ('test', 'quit', 'restart'):
+        if cmd in ('test', 'quit', 'restart', 'notify'):
             if cmd == 'test':
                 server.send_rpc(' '.join(args[1:]) or 'This is a test.', '#test')
-                #send_notify(' '.join(args[1:]) or 'This is a test.', '#test')
+            elif cmd == 'notify':
+                send_notify(' '.join(args[1:]) or 'This is a test.', '#test')
             elif cmd == 'quit':
                 server.send_rpc('Shutting down notification daemon...')
                 server.quit()
