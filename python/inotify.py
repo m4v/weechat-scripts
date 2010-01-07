@@ -194,6 +194,10 @@ class Server(object):
                 # daemon is restarting, try again later
                 self._restart_timer()
                 return
+        if self.remote:
+            #  we can't stop flushing if we're in remote mode, so save a copy as we might need
+            #  to repeat the queue later
+            self.msg_bak = self.msg.copy()
         self._reset()
 
     def _restart_timer(self):
@@ -265,6 +269,8 @@ except:
                 s = s.replace("'", r"\'")
             if '"' in s:
                 s = s.replace('"', r'\"')
+            if '\n' in s:
+                s = s.replace('\n', r'\n')
             return  "'%s'" %s
 
         args = ', '.join(map(quotes, args))
@@ -289,10 +295,12 @@ def rpc_process(data, command, rc, stdout, stderr):
         if stdout == 'OK\n':
             pass
         elif stdout.startswith('warning:'):
-            # crap
-            debug(stdout)
+            server._error(stdout[8:])
+            if server.error_count < 10:
+                server.msg = server.msg_bak
+                server._restart_timer()
         else:
-            error(stdout)
+            server._error(stdout)
     if stderr:
         debug(stderr)
     return WEECHAT_RC_OK
@@ -311,6 +319,8 @@ def format(s, nick=''):
         s = s.replace('>', '&gt;')
     if '"' in s:
         s = s.replace('"', '&quot;')
+    if '\n' in s:
+        s = s.replace('\n', '<br/>')
     if nick:
         if get_config_boolean('color_nick'):
             nick_color = color_tag(nick)
