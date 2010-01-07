@@ -67,7 +67,7 @@ socket.setdefaulttimeout(3)
 ### messages
 def debug(s, prefix=''):
     """Debug msg"""
-    #return #disable debug msg
+    if not weechat.config_get_plugin('debug'): return
     buffer_name = 'DEBUG:' + SCRIPT_NAME
     buffer = weechat.buffer_search('python', buffer_name)
     if not buffer:
