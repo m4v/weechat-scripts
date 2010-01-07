@@ -259,9 +259,17 @@ try:
     print getattr(server, '%(method)s')(%(args)s)
 except:
     print 'error'\""""
-        args = ', '.join(map(repr, args))
+        
+        def quotes(s):
+            if "'" in s:
+                s = s.replace("'", r"\'")
+            if '"' in s:
+                s = s.replace('"', r'\"')
+            return  "'%s'" %s
+
+        args = ', '.join(map(quotes, args))
         cmd = cmd %{'server_uri':self.address, 'method':self.method, 'args':args}
-        #debug(cmd)
+        debug(cmd)
         weechat.hook_process(cmd, 30000, 'rpc_process', '')
 
     def quit(self):
