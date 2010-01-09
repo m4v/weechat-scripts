@@ -355,6 +355,7 @@ def get_file_by_name(buffer_name):
 				mask = '*' + mask
 		#debug('get_file_by_name: using mask %s' %mask)
 		file = get_file_by_pattern(mask)
+		#debug('get_file_by_name: got file %s' %file)
 		if file:
 			return file
 	return None
@@ -366,8 +367,9 @@ def get_buffer_by_name(buffer_name):
 	if not pointer:
 		infolist = weechat.infolist_get('buffer', '', '')
 		while weechat.infolist_next(infolist) and not pointer:
+			short_name = weechat.infolist_string(infolist, 'short_name')
 			name = weechat.infolist_string(infolist, 'name')
-			if buffer_name in name:
+			if buffer_name in (short_name, name):
 				#debug('get_buffer_by_name: found %s' %name)
 				pointer = weechat.buffer_search('', name)
 		weechat.infolist_free(infolist)
