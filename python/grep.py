@@ -55,6 +55,10 @@
 #
 #   History:
 #
+#   2010-
+#   version
+#   * improved context lines presentation.
+#
 #   2010-01-05
 #   version 0.5.5: rename script to 'grep.py' (FlashCode <flashcode@flashtux.org>).
 #
@@ -119,7 +123,7 @@ except ImportError:
 
 SCRIPT_NAME    = "grep"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.5.5"
+SCRIPT_VERSION = "0.5.5-dev"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Search in buffers and logs"
 SCRIPT_COMMAND = "grep"
@@ -429,12 +433,7 @@ def grep_file(file, head, tail, after_context, before_context, *args):
 	#debug(' '.join(map(str, (file, head, tail, after_context, before_context))))
 	lines = linesList()
 	file_object = open(file, 'r')
-	if tail or after_context or before_context:
-		# I need a full list of file's lines for these options, and only for these options, since
-		# it makes the search take a bit more of time
-		file_lines = file_object.readlines()
-	else:
-		file_lines = file_object
+	file_lines = file_object.readlines()
 	if tail:
 		# instead of searching in the whole file and later pick the last few lines, we
 		# reverse the log, search until count reached and reverse it again, that way is a lot
@@ -451,29 +450,47 @@ def grep_file(file, head, tail, after_context, before_context, *args):
 	if before_context:
 		before_context_range = range(1, before_context + 1)
 		before_context_range.reverse()
-	if after_context:
-		after_context_range = range(1, after_context + 1)
 
 	line_idx = 0
-	for line in file_lines:
+	while line_idx < len(file_lines):
+		line = file_lines[line_idx]
 		line = check(line, *args)
 		if line:
 			if before_context:
 				separator()
+				trimmed = False
 				for id in before_context_range:
 					try:
-						append(file_lines[line_idx - id])
+						context_line = file_lines[line_idx - id]
+						if check(context_line, *args):
+							# match in before context, that means we appended these same lines in a
+							# previous match, so we delete them merging both paragraphs
+							if not trimmed:
+								del lines[id - before_context - 1:]
+								trimmed = True
+						else:
+							append(context_line)
 					except IndexError:
 						pass
 			append(line)
 			count()
 			if after_context:
-				for id in after_context_range:
+				id = 0
+				offset = 0
+				while id < after_context + offset:
+					id += 1
 					try:
-						append(file_lines[line_idx + id])
+						context_line = file_lines[line_idx + id]
+						_context_line = check(context_line, *args)
+						if _context_line:
+							offset = id
+							context_line = _context_line # so match is hilighted with --hilight
+							count()
+						append(context_line)
 					except IndexError:
 						pass
 				separator()
+				line_idx += id
 			if limit and lines.matches_count >= limit: break
 		line_idx += 1
 
