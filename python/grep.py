@@ -664,12 +664,14 @@ def show_matching_lines():
 			files_string = ', '.join(map(repr, files_string)).replace('\\\\','\\')
 
 			cmd = """
-python -c \"
+python -c "
 import sys, tempfile, cPickle
 sys.path.append('%(home)s/python') # add WeeChat script dir so we can import grep
-from grep import make_regexp, grep_file
+from grep import make_regexp, grep_file, SCRIPT_VERSION
 logs = (%(logs)s, )
 try:
+	if '%(version)s' != SCRIPT_VERSION:
+		raise Exception, 'Can\\'t spawn new process, script version mismatch'
 	regexp = make_regexp('%(pattern)s', %(matchcase)s)
 	d = {}
 	for log in logs:
@@ -685,7 +687,7 @@ except Exception, e:
 	print >> sys.stderr, e\""""
 			cmd = cmd %dict(logs=files_string, head=head, pattern=pattern, tail=tail, hilight=hilight,
 							after_context=after_context, before_context=before_context, exact=exact,
-							matchcase=matchcase, len_home=len_home,
+							matchcase=matchcase, len_home=len_home, version=SCRIPT_VERSION,
 							home=weechat.info_get('weechat_dir', ''))
 
 			#debug(cmd)
