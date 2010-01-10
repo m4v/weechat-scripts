@@ -47,9 +47,14 @@
 #   * plugins.var.python.grep.max_lines:
 #     grep will only print the last matched lines that don't surpass the value defined here.
 #
+#   * plugins.var.python.grep.size_limit:
+#     size limit in KiB, is used for decide whenever grepping should run in background or not. If
+#     the logs to grep have a total size bigger than this value then grep run as a new process.
+#     It can be used for force or disable background process, using '0' forces to always grep in
+#     background, while using '' (empty string) will disable it.
+#
 #
 #   TODO:
-#   * grepping should run in background for big logs
 #   * possibly add option for defining time intervals
 #
 #
@@ -58,6 +63,9 @@
 #   2010-
 #   version
 #   * improved context lines presentation.
+#   * added /grep stop.
+#   * grepping for big (or many) log files runs in a weechat_process.
+#   * added 'size_limit' option
 #
 #   2010-01-05
 #   version 0.5.5: rename script to 'grep.py' (FlashCode <flashcode@flashtux.org>).
@@ -1190,7 +1198,7 @@ if __name__ == '__main__' and import_ok and \
 	home_dir = get_home()
 
 	weechat.hook_command(SCRIPT_COMMAND, cmd_grep.__doc__,
-			"[log <file> | buffer <name>] [-a|--all] [-b|--buffer] [-c|--count] [-m|--matchcase] "
+			"[log <file> | buffer <name> | stop] [-a|--all] [-b|--buffer] [-c|--count] [-m|--matchcase] "
 			"[-H|--hilight] [-e|--exact] [(-h|--head)|(-t|--tail) [-n|--number <n>]] "
 			"[-A|--after-context <n>] [-B|--before-context <n>] [-C|--context <n> ] <expression>",
 			# help
@@ -1211,8 +1219,7 @@ if __name__ == '__main__' and import_ok and \
 			"-B --before-context <n>: Shows <n> lines of leading context before matching lines.\n"
 			"-C --context <n>: Same as using both --after-context and --before-context simultaneously.\n"
 			"   <expression>: Expression to search.\n\n"
-			"If no arguments given and there's a search in progress, egrep will display a short"
-			" stat.\n\n"
+			"If there's a search in progress, grep will display a message about current search.\n\n"
 			"grep buffer:\n"
 			"  Accepts most arguments of /grep command, It'll repeat last search using the new "
 			"arguments.\n"
@@ -1248,6 +1255,7 @@ if __name__ == '__main__' and import_ok and \
 	color_title = weechat.color('yellow')
 	color_summary = weechat.color('lightcyan')
 	
+	# paragraph separator when using context options
 	context_sep = '%s%s\t%s--' %(color_script_nick, script_nick, color_info)
 
 # vim:set shiftwidth=4 tabstop=4 noexpandtab textwidth=100:
