@@ -110,9 +110,11 @@
 ###
 
 import os.path as path
+from os import stat
 import getopt, time
 
 now = time.time
+get_size = lambda x: stat(x).st_size
 
 try:
     import weechat
@@ -204,7 +206,9 @@ settings = {
 		'log_filter'   :'',    # filter for exclude log files
 		'go_to_buffer' :'on',
 		'max_lines'    :'4000',
-		'show_summary' :'on'}  # Show summary line after the search
+		'show_summary' :'on',  # Show summary line after the search
+		'size_limit'   :'1024',
+		}
 
 ### value validation
 boolDict = {'on':True, 'off':False}
@@ -218,15 +222,17 @@ def get_config_boolean(config):
         error("'%s' is invalid, allowed: 'on', 'off'" %value)
         return boolDict[default]
 
-def get_config_int(config):
-    value = weechat.config_get_plugin(config)
-    try:
-        return int(value)
-    except ValueError:
-        default = settings[config]
-        error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
-        error("'%s' is not a number." %value)
-        return int(default)
+def get_config_int(config, allow_empty_string=False):
+	value = weechat.config_get_plugin(config)
+	try:
+		return int(value)
+	except ValueError:
+		if value == '' and allow_empty_string:
+			return value
+		default = settings[config]
+		error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
+		error("'%s' is not a number." %value)
+		return int(default)
 
 def get_config_log_filter():
 	filter = weechat.config_get_plugin('log_filter')
@@ -617,18 +623,39 @@ def show_matching_lines():
 			matched_lines[buffer_name] = grep_buffer(buffer, head, tail, after_context,
 					before_context, regexp, hilight, exact)
 	if search_in_files:
-		# we hook a process so grepping runs in background.
-		global hook_file_grep
-		timeout = 1000*60*10 # 10 min
+		size_limit = get_config_int('size_limit', allow_empty_string=True)
+		background = False
+		if size_limit:
+			size = sum(map(get_size, search_in_files))
+			if size > size_limit * 1024:
+				background = True
+		elif size_limit == 0:
+			background = True
+		elif size_limit == '':
+			background = False
 
-		files_string = search_in_files[:]
-		for id in range(len(search_in_files)):
-			# nicks might have ` characters, must be escaped in the shell cmd
-			if '`' in search_in_files[id]:
-				files_string[id] = search_in_files[id].replace('`', '\`')
-		files_string = ', '.join(map(repr, files_string)).replace('\\\\','\\')
+		if not background:
+			# run grep normally
+			regexp = make_regexp(pattern, matchcase)
+			len_home = len(home_dir)
+			for log in search_in_files:
+				log_name = log[len_home:]
+				matched_lines[log_name] = grep_file(log, head, tail, after_context, before_context, regexp, hilight, exact)
+			buffer_update()
+		else:
+			# we hook a process so grepping runs in background.
+			#debug('on background')
+			global hook_file_grep
+			timeout = 1000*60*10 # 10 min
 
-		cmd = """
+			files_string = search_in_files[:]
+			for id in range(len(search_in_files)):
+				# nicks might have ` characters, must be escaped in the shell cmd
+				if '`' in search_in_files[id]:
+					files_string[id] = search_in_files[id].replace('`', '\`')
+			files_string = ', '.join(map(repr, files_string)).replace('\\\\','\\')
+
+			cmd = """
 python -c \"
 import sys, tempfile, cPickle
 sys.path.append('%(home)s/python') # add WeeChat script dir so we can import grep
@@ -648,13 +675,13 @@ try:
 	fd.close()
 except Exception, e:
 	print >> sys.stderr, e\""""
-		cmd = cmd %dict(logs=files_string, head=head, pattern=pattern, tail=tail, hilight=hilight,
-						after_context=after_context, before_context=before_context, exact=exact,
-						matchcase=matchcase, len_home=len(home_dir),
-						home=weechat.info_get('weechat_dir', ''))
+			cmd = cmd %dict(logs=files_string, head=head, pattern=pattern, tail=tail, hilight=hilight,
+							after_context=after_context, before_context=before_context, exact=exact,
+							matchcase=matchcase, len_home=len(home_dir),
+							home=weechat.info_get('weechat_dir', ''))
 
-		#debug(cmd)
-		hook_file_grep = weechat.hook_process(cmd, timeout, 'grep_file_callback', '')
+			#debug(cmd)
+			hook_file_grep = weechat.hook_process(cmd, timeout, 'grep_file_callback', '')
 	else:
 		buffer_update()
 
@@ -1087,8 +1114,6 @@ def cmd_logs(data, buffer, args):
 	"""List files in Weechat's log dir."""
 	cmd_init()
 	global home_dir
-	from os import stat
-	get_size = lambda x: stat(x).st_size
 	sort_by_size = False
 	filter = []
 
