@@ -475,8 +475,7 @@ def grep_file(file, head, tail, after_context, before_context, *args):
 			append(line)
 			count()
 			if after_context:
-				id = 0
-				offset = 0
+				id, offset = 0, 0
 				while id < after_context + offset:
 					id += 1
 					try:
@@ -546,9 +545,8 @@ def grep_buffer(buffer, head, tail, after_context, before_context, *args):
 	check = check_string
 
 	if before_context:
-		before_context_range = range(before_context)
-	if after_context:
-		after_context_range = range(after_context)
+		before_context_range = range(1, before_context + 1)
+		before_context_range.reverse()
 
 	while infolist_next(infolist):
 		line = get_line(infolist)
@@ -557,19 +555,37 @@ def grep_buffer(buffer, head, tail, after_context, before_context, *args):
 		if line:
 			if before_context:
 				separator()
+				trimmed = False
 				for id in before_context_range:
-					infolist_prev(infolist)
+					if not infolist_prev(infolist):
+						trimmed = True
 				for id in before_context_range:
-					append(get_line(infolist))
+					context_line = get_line(infolist)
+					if check(context_line, *args):
+						if not trimmed:
+							del lines[id - before_context - 1:]
+							trimmed = True
+					else:
+						append(context_line)
 					infolist_next(infolist)
 			append(line)
 			count()
 			if after_context:
-				for id in after_context_range:
-					infolist_next(infolist)
-					append(get_line(infolist))
-				for id in after_context_range:
-					infolist_prev(infolist)
+				id, offset = 0, 0
+				while id < after_context + offset:
+					id += 1
+					if infolist_next(infolist):
+						context_line = get_line(infolist)
+						_context_line = check(context_line, *args)
+						if _context_line:
+							context_line = _context_line
+							offset = id
+							count()
+						append(context_line)
+					else:
+						# in the main loop infolist_next will start again an cause an infinite loop
+						# this will avoid it
+						infolist_next = lambda x: 0
 				separator()
 			if limit and lines.matches_count >= limit:
 				break
