@@ -625,6 +625,7 @@ def show_matching_lines():
 	if search_in_files:
 		size_limit = get_config_int('size_limit', allow_empty_string=True)
 		background = False
+		len_home = len(home_dir)
 		if size_limit:
 			size = sum(map(get_size, search_in_files))
 			if size > size_limit * 1024:
@@ -637,7 +638,6 @@ def show_matching_lines():
 		if not background:
 			# run grep normally
 			regexp = make_regexp(pattern, matchcase)
-			len_home = len(home_dir)
 			for log in search_in_files:
 				log_name = log[len_home:]
 				matched_lines[log_name] = grep_file(log, head, tail, after_context, before_context, regexp, hilight, exact)
@@ -677,7 +677,7 @@ except Exception, e:
 	print >> sys.stderr, e\""""
 			cmd = cmd %dict(logs=files_string, head=head, pattern=pattern, tail=tail, hilight=hilight,
 							after_context=after_context, before_context=before_context, exact=exact,
-							matchcase=matchcase, len_home=len(home_dir),
+							matchcase=matchcase, len_home=len_home,
 							home=weechat.info_get('weechat_dir', ''))
 
 			#debug(cmd)
@@ -715,10 +715,14 @@ def grep_file_callback(data, command, rc, stdout, stderr):
 	return WEECHAT_RC_OK
 
 def get_grep_file_status():
-	global search_in_files, matched_lines, time_start
+	global search_in_files, matched_lines, time_start, home_dir
 	elapsed = now() - time_start
-	return 'There\'s a search in progress (running for %.4f seconds) interrupt it with /grep stop'\
-			%elapsed
+	if len(search_in_files) == 1:
+		log = search_in_files[0][len(home_dir):]
+	else:
+		log = '%s logs' %len(search_in_files)
+	return 'Searching in %s (running for %.4f seconds) interrupt it with /grep stop'\
+			%(log, elapsed)
 
 ### output buffer
 def buffer_update():
