@@ -940,14 +940,14 @@ def cmd_init():
 	home_dir = get_home()
 	cache_dir = {}
 
-def cmd_grep_parsing(args):
+def cmd_grep_parsing(args, buffer=''):
 	global pattern, matchcase, number, count, exact, hilight
 	global tail, head, after_context, before_context
 	global log_name, buffer_name, only_buffers, all
 	opts, args = getopt.gnu_getopt(args.split(), 'cmHeahtin:bA:B:C:', ['count', 'matchcase', 'hilight',
 		'exact', 'all', 'head', 'tail', 'number=', 'buffer', 'after-context=', 'before-context=',
 		'context='])
-	#debug(opts, 'opts: '); debug(args, 'args: ')
+	debug(opts, 'opts: '); debug(args, 'args: ')
 	if len(args) >= 2:
 		if args[0] == 'log':
 			del args[0]
@@ -955,11 +955,20 @@ def cmd_grep_parsing(args):
 		elif args[0] == 'buffer':
 			del args[0]
 			buffer_name = args.pop(0)
-	args = ' '.join(args) # join pattern for keep spaces
-	if args:
-		pattern = args
-	elif not pattern:
-		raise Exception, 'No pattern for grep the logs.'
+	if args and args[0][0] == '%' and args[0][1:] in templates:
+		# is a template
+		tmpl, args = args[0][1:], args[1:]
+		template = templates[tmpl]
+		if callable(template):
+			pattern = template(buffer, *args)
+		else:
+			pattern = template
+	else:
+		args = ' '.join(args) # join pattern for keep spaces
+		if args:
+			pattern = args
+		elif not pattern:
+			raise Exception, 'No pattern for grep the logs.'
 
 	def positive_number(opt, val):
 		try:
@@ -1072,7 +1081,7 @@ def cmd_grep(data, buffer, args):
 
 	# parse
 	try:
-		cmd_grep_parsing(args)
+		cmd_grep_parsing(args, buffer=buffer)
 	except Exception, e:
 		error('Argument error, %s' %e)
 		return WEECHAT_RC_OK
@@ -1192,6 +1201,65 @@ def completion_grep_args(data, completion_item, buffer, completion):
 			'after-context', 'before-context', 'context'):
 		weechat.hook_completion_list_add(completion, '--' + arg, 0, weechat.WEECHAT_LIST_POS_SORT)
 	return WEECHAT_RC_OK
+
+### templates
+def make_host_regexp(buffer, *args):
+	debug('make host: %s' %str(args))
+	if not buffer:
+		return ''
+	regexp = []
+	for nick in args:
+		host = get_host(buffer, nick)
+		if not host:
+			continue
+		host = host[host.find('@')+1:].replace('.', '\\.')
+		regexp.append(host)
+	if regexp:
+		return '|'.join(regexp)
+	return ''
+
+def make_username_regexp(buffer, *args):
+	debug('make username: %s' %str(args))
+	if not buffer:
+		return ''
+	regexp = []
+	for nick in args:
+		host = get_host(buffer, nick)
+		if not host:
+			continue
+		user = host[host.find('=')+1:host.find('@')] # FIXME too freenode specific
+		regexp.append(user)
+	if regexp:
+		return '|'.join(regexp)
+	return ''
+
+def get_host(buffer, nick):
+	channel = weechat.buffer_get_string(buffer, 'localvar_channel')
+	server = weechat.buffer_get_string(buffer, 'localvar_server')
+	nick_infolist = weechat.infolist_get('irc_nick', '', '%s,%s' %(server, channel))
+	if not nick_infolist:
+		return None
+	host = None
+	while weechat.infolist_next(nick_infolist):
+		if nick == weechat.infolist_string(nick_infolist, 'name'):
+			host = weechat.infolist_string(nick_infolist, 'host')
+			break
+	weechat.infolist_free(nick_infolist)
+	return host
+
+# stolen from urlbar
+octet = r'(?:2(?:[0-4]\d|5[0-5])|1\d\d|\d{1,2})'
+ipAddr = r'%s(?:\.%s){3}' % (octet, octet)
+label = r'[0-9a-z][-0-9a-z]*[0-9a-z]?'
+domain = r'%s(?:\.%s)*\.[a-z][-0-9a-z]*[a-z]?' % (label, label)
+url = r'(\w+://(?:%s|%s)(?::\d+)?(?:/[^\])>\s]*)?)' % (domain, ipAddr)
+
+templates = {
+		'ip'   :ipAddr,
+		'url'  :url,
+		'host' :make_host_regexp,
+		'user' :make_username_regexp,
+		}
 
 ### Main
 if __name__ == '__main__' and import_ok and \
