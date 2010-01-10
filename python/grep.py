@@ -1203,6 +1203,13 @@ def completion_grep_args(data, completion_item, buffer, completion):
 	return WEECHAT_RC_OK
 
 ### templates
+def make_url_regexp(buffer, *args):
+	if args:
+		words = r'(?:%s)' %'|'.join(args)
+		return r'(\w+://[^\s]*%s[^\s]*(?:/[^\])>\s]*)?)' %words
+	else:
+		return url
+
 def make_host_regexp(buffer, *args):
 	debug('make host: %s' %str(args))
 	if not buffer:
@@ -1227,7 +1234,7 @@ def make_username_regexp(buffer, *args):
 		host = get_host(buffer, nick)
 		if not host:
 			continue
-		user = host[host.find('=')+1:host.find('@')] # FIXME too freenode specific
+		user = host[host.find('=')+1:host.find('@')] # FIXME this is too freenode specific
 		regexp.append(user)
 	if regexp:
 		return '|'.join(regexp)
@@ -1256,7 +1263,7 @@ url = r'(\w+://(?:%s|%s)(?::\d+)?(?:/[^\])>\s]*)?)' % (domain, ipAddr)
 
 templates = {
 		'ip'   :ipAddr,
-		'url'  :url,
+		'url'  :make_url_regexp,
 		'host' :make_host_regexp,
 		'user' :make_username_regexp,
 		}
