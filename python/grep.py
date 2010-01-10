@@ -61,10 +61,10 @@
 #   History:
 #
 #   2010-
-#   version
+#   version 0.6: implemented grep in background
 #   * improved context lines presentation.
-#   * added /grep stop.
 #   * grepping for big (or many) log files runs in a weechat_process.
+#   * added /grep stop.
 #   * added 'size_limit' option
 #
 #   2010-01-05
@@ -215,7 +215,7 @@ settings = {
 		'go_to_buffer' :'on',
 		'max_lines'    :'4000',
 		'show_summary' :'on',  # Show summary line after the search
-		'size_limit'   :'1024',
+		'size_limit'   :'2048',
 		}
 
 ### value validation
