@@ -175,10 +175,9 @@ class linesList(list):
 	"""Class for list of matches, since sometimes I need to add lines that aren't matches, I need an
 	independent counter."""
 	_sep = '...'
-	def __init__(self, sep=''):
-		if sep:
-			self._sep = sep
+	def __init__(self, *args):
 		self.matches_count = 0
+		list.__init__(self, *args)
 
 	def append_separator(self):
 		"""adds a separator into the list, makes sure it doen't add two together."""
@@ -433,7 +432,7 @@ def check_string(s, regexp, hilight='', exact=False):
 def grep_file(file, head, tail, after_context, before_context, *args):
 	"""Return a list of lines that match 'regexp' in 'file', if no regexp returns all lines."""
 	#debug(' '.join(map(str, (file, head, tail, after_context, before_context))))
-	lines = linesList(context_sep)
+	lines = linesList()
 	file_object = open(file, 'r')
 	file_lines = file_object.readlines()
 	if tail:
@@ -611,18 +610,53 @@ def show_matching_lines():
 	matched_lines = linesDict()
 	#debug('buffers:%s \nlogs:%s' %(search_in_buffers, search_in_files))
 	time_start = now()
-	regexp = make_regexp(pattern, matchcase)
 	if search_in_buffers:
+		regexp = make_regexp(pattern, matchcase)
 		for buffer in search_in_buffers:
 			buffer_name = weechat.buffer_get_string(buffer, 'name')
 			matched_lines[buffer_name] = grep_buffer(buffer, head, tail, after_context,
 					before_context, regexp, hilight, exact)
 	if search_in_files:
-		len_home = len(home_dir)
-		for log in search_in_files:
-			log_name = log[len_home:]
-			matched_lines[log_name] = grep_file(log, head, tail, after_context, before_context, regexp, hilight, exact)
-	buffer_update()
+		# we hook a process so grepping runs in background.
+		global hook_file_grep
+		timeout = 1000*60*10 # 10 min
+
+		files_string = search_in_files[:]
+		for id in range(len(search_in_files)):
+			# nicks might have ` characters, must be escaped in the shell cmd
+			if '`' in search_in_files[id]:
+				files_string[id] = search_in_files[id].replace('`', '\`')
+		files_string = ', '.join(map(repr, files_string)).replace('\\\\','\\')
+
+		cmd = """
+python -c \"
+import sys, tempfile, cPickle
+sys.path.append('%(home)s/python') # add WeeChat script dir so we can import grep
+from grep import make_regexp, grep_file
+logs = (%(logs)s, )
+try:
+	regexp = make_regexp('%(pattern)s', %(matchcase)s)
+	d = {}
+	for log in logs:
+		log_name = log[%(len_home)s:]
+		matched_lines = grep_file(log, %(head)s, %(tail)s, %(after_context)s, %(before_context)s,
+				regexp, '%(hilight)s', %(exact)s)
+		d[log_name] = matched_lines
+	fd = tempfile.NamedTemporaryFile('wb', delete=False)
+	cPickle.dump(d, fd)
+	print fd.name
+	fd.close()
+except Exception, e:
+	print >> sys.stderr, e\""""
+		cmd = cmd %dict(logs=files_string, head=head, pattern=pattern, tail=tail, hilight=hilight,
+						after_context=after_context, before_context=before_context, exact=exact,
+						matchcase=matchcase, len_home=len(home_dir),
+						home=weechat.info_get('weechat_dir', ''))
+
+		#debug(cmd)
+		hook_file_grep = weechat.hook_process(cmd, timeout, 'grep_file_callback', '')
+	else:
+		buffer_update()
 
 grep_stdout = grep_stderr = ''
 def grep_file_callback(data, command, rc, stdout, stderr):
@@ -637,13 +671,18 @@ def grep_file_callback(data, command, rc, stdout, stderr):
 		if grep_stderr:
 			error(grep_stderr)
 		elif grep_stdout:
-			logs = grep_stdout.split('\n\n') # split between log files
-			for log in logs:
-				if not log: continue
-				log = log.splitlines()
-				log_name = log.pop(0)
-				matched_lines[log_name] = log
-			buffer_update()
+			try:
+				file = grep_stdout.strip('\n ')
+				fd = open(file, 'rb')
+				import cPickle, os
+				d = cPickle.load(fd)
+				matched_lines.update(d)
+				fd.close()
+				os.remove(file)
+			except Exception, e:
+				error(e)
+			else:
+				buffer_update()
 		grep_stdout = grep_stderr = ''
 		hook_file_grep = None
 	return WEECHAT_RC_OK
@@ -818,6 +857,10 @@ def buffer_create():
 
 def buffer_input(data, buffer, input_data):
 	"""Repeats last search with 'input_data' as regexp."""
+	try:
+		cmd_grep_stop(buffer, input_data)
+	except:
+		return WEECHAT_RC_OK
 
 	global search_in_buffers, search_in_files
 	global pattern
@@ -972,6 +1015,10 @@ def cmd_grep_stop(buffer, args):
 def cmd_grep(data, buffer, args):
 	"""Search in buffers and logs."""
 	global pattern, matchcase, head, tail, number, count, exact, hilight
+	try:
+		cmd_grep_stop(buffer, args)
+	except:
+		return WEECHAT_RC_OK
 
 	if not args:
 		weechat.command('', '/help %s' %SCRIPT_COMMAND)
@@ -1120,6 +1167,7 @@ if __name__ == '__main__' and import_ok and \
 			# help
 			"     log <file>: Search in one log that matches <file> in the logger path. Use '*' and '?' as jokers.\n"
 			"  buffer <name>: Search in buffer <name>, if there's no buffer with <name> it will try to search for a log file.\n"
+			"           stop: Stops a currently running search.\n"
 			"       -a --all: Search in all open buffers.\n"
 			"                 If used with 'log <file>' search in all logs that matches <file>.\n"
 			"    -b --buffer: Search only in buffers, not in file logs.\n"
@@ -1134,6 +1182,8 @@ if __name__ == '__main__' and import_ok and \
 			"-B --before-context <n>: Shows <n> lines of leading context before matching lines.\n"
 			"-C --context <n>: Same as using both --after-context and --before-context simultaneously.\n"
 			"   <expression>: Expression to search.\n\n"
+			"If no arguments given and there's a search in progress, egrep will display a short"
+			" stat.\n\n"
 			"grep buffer:\n"
 			"  Accepts most arguments of /grep command, It'll repeat last search using the new "
 			"arguments.\n"
@@ -1143,6 +1193,7 @@ if __name__ == '__main__' and import_ok and \
 			# completion template
 			"buffer %(buffers_names) %(grep_arguments)|%*"
 			"||log %(grep_log_files) %(grep_arguments)|%*"
+			"||stop"
 			"||%(grep_arguments)|%*",
 			'cmd_grep' ,'')
 	weechat.hook_command('logs', cmd_logs.__doc__, "[-s|--size] [<filter>]",
