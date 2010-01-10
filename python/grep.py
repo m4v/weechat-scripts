@@ -175,7 +175,9 @@ class linesList(list):
 	"""Class for list of matches, since sometimes I need to add lines that aren't matches, I need an
 	independent counter."""
 	_sep = '...'
-	def __init__(self):
+	def __init__(self, sep=''):
+		if sep:
+			self._sep = sep
 		self.matches_count = 0
 
 	def append_separator(self):
@@ -431,7 +433,7 @@ def check_string(s, regexp, hilight='', exact=False):
 def grep_file(file, head, tail, after_context, before_context, *args):
 	"""Return a list of lines that match 'regexp' in 'file', if no regexp returns all lines."""
 	#debug(' '.join(map(str, (file, head, tail, after_context, before_context))))
-	lines = linesList()
+	lines = linesList(context_sep)
 	file_object = open(file, 'r')
 	file_lines = file_object.readlines()
 	if tail:
@@ -499,7 +501,7 @@ def grep_file(file, head, tail, after_context, before_context, *args):
 
 def grep_buffer(buffer, head, tail, after_context, before_context, *args):
 	"""Return a list of lines that match 'regexp' in 'buffer', if no regexp returns all lines."""
-	lines = linesList()
+	lines = linesList(context_sep)
 	# Using /grep in grep's buffer can lead to some funny effects
 	# We should take measures if that's the case
 	def make_get_line_funcion():
@@ -698,7 +700,7 @@ def buffer_update():
 	def format_line(s):
 		"""Returns the log line 's' ready for printing in buffer."""
 		global weechat_format
-		if s == linesList._sep:
+		if s == context_sep:
 			# ignore lines separator
 			return s
 		if weechat_format and s.count('\t') >= 2:
@@ -1165,5 +1167,7 @@ if __name__ == '__main__' and import_ok and \
 	color_reset = weechat.color('reset')
 	color_title = weechat.color('yellow')
 	color_summary = weechat.color('lightcyan')
+	
+	context_sep = '%s%s\t%s--' %(color_script_nick, script_nick, color_info)
 
 # vim:set shiftwidth=4 tabstop=4 noexpandtab textwidth=100:
