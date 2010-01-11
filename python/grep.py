@@ -405,6 +405,10 @@ def get_all_buffers():
 	while weechat.infolist_next(infolist):
 		buffers.append(weechat.infolist_pointer(infolist, 'pointer'))
 	weechat.infolist_free(infolist)
+	grep_buffer = weechat.buffer_search('python', SCRIPT_NAME)
+	if grep_buffer and grep_buffer in buffers:
+		# remove it from list
+		del buffers[buffers.index(grep_buffer)]
 	return buffers
 
 ### grep
@@ -526,11 +530,11 @@ def grep_buffer(buffer, head, tail, after_context, before_context, *args):
 		get_prefix = lambda infolist : string_remove_color(infolist_string(infolist, 'prefix'), '')
 		get_message = lambda infolist : string_remove_color(infolist_string(infolist, 'message'), '')
 		grep_buffer = weechat.buffer_search('python', SCRIPT_NAME)
-		if buffer == grep_buffer:
+		if grep_buffer and buffer == grep_buffer:
 			def function(infolist):
 				prefix = get_prefix(infolist)
 				message = get_message(infolist)
-				if script_nick == prefix: # ignore our lines
+				if script_nick_nocolor == prefix: # ignore our lines
 					return None
 				return '%s\t%s' %(prefix, message.replace(' ', '\t', 1))
 		else:
@@ -1275,6 +1279,7 @@ if __name__ == '__main__' and import_ok and \
 	# pretty [grep]
 	script_nick = '%s[%s%s%s]%s' %(color_delimiter, color_script_nick, SCRIPT_NAME, color_delimiter,
 			color_reset)
+	script_nick_nocolor = '[%s]' %SCRIPT_NAME
 	# paragraph separator when using context options
 	context_sep = '%s\t%s--' %(script_nick, color_info)
 
