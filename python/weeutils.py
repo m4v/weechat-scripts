@@ -17,9 +17,7 @@
 ###
 
 ###
-#   Python Classes and Functions for WeeChat 0.3
 #
-#   This is only for import some common functions while writting a new script
 #
 ###
 
@@ -34,9 +32,15 @@ except ImportError:
     print "Get WeeChat now at: http://weechat.flashtux.org/"
 
 ### messages
-def debug(s, prefix='', buffer=''):
-    """Debug msg"""
-    weechat.prnt(buffer, 'debug:\t%s %s' %(prefix, s))
+def debug(s, prefix=''):
+    """Debug msg, displays in its own buffer."""
+    buffer = weechat.buffer_search('python', 'script debug')
+    if not buffer:
+        buffer = weechat.buffer_new('script debug', '', '', '', '')
+        weechat.buffer_set(buffer, 'nicklist', '0')
+        weechat.buffer_set(buffer, 'time_for_each_line', '0')
+        weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
+    weechat.prnt(buffer, '%s\t%s' %(prefix, s))
 
 def error(s, prefix='', buffer=''):
     """Error msg"""
@@ -45,20 +49,6 @@ def error(s, prefix='', buffer=''):
 def say(s, prefix='', buffer=''):
     """Normal msg"""
     weechat.prnt(buffer, '%s\t%s' %(prefix, s))
-
-### config
-def get_config_boolean(config):
-    """Gets our config value, returns False if value is wrong."""
-    return boolDict[weechat.config_get_plugin(config)]
-
-def get_config_valid_values(config, values, default=None):
-    s = weechat.config_get_plugin(config)
-    if s in values:
-        return s
-    else:
-        error("'%s' is an invalid option value, allowed: %s. Defaulting to '%s'" \
-                %(s, ', '.join(map(repr, values)), default))
-        return default
 
 
 ### irc utils
@@ -71,36 +61,44 @@ def is_hostmask(s):
     else:
         return False
 
-### class definition
-class ValidValuesDict(dict):
-    """
-    Dict that returns the default value defined by 'defaultKey' key if __getitem__ raises
-    KeyError. 'defaultKey' must be in the supplied dict.
-    """
-    def _error_msg(self, key):
-        error("'%s' is an invalid option value, allowed: %s. Defaulting to '%s'" \
-                %(key, ', '.join(map(repr, self.keys())), self.default))
-
-    def __init__(self, dict, defaultKey):
-        self.update(dict)
-        assert defaultKey in self
-        self.default = defaultKey
-
-    def __getitem__(self, key):
-        try:
-            return dict.__getitem__(self, key)
-        except KeyError:
-            # user set a bad value
-            self._error_msg(key)
-            return dict.__getitem__(self, self.default)
+def is_ip(s):
+    """Returns whether or not a given string is an IPV4 address."""
+    import socket
+    try:
+        return bool(socket.inet_aton(s))
+    except socket.error:
+        return False
 
 
-boolDict = ValidValuesDict({'on':True, 'off':False}, 'off')
+### config fetch
+boolDict = {'on':True, 'off':False}
+def get_config_boolean(config, default=None):
+    value = weechat.config_get_plugin(config)
+    try:
+        return boolDict[value]
+    except KeyError:
+        if not default:
+            raise Exception("Error while fetching config '%s'. '%s' is a invalid value." %(config, value))
+        error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
+        error("'%s' is invalid, allowed: 'on', 'off'" %value)
+        return boolDict[default]
+
+def get_config_int(config, default=None):
+    value = weechat.config_get_plugin(config)
+    try:
+        return int(value)
+    except ValueError:
+        if not default:
+            raise Exception("Error while fetching config '%s'. '%s' is a invalid value." %(config, value))
+        error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
+        error("'%s' is not a number." %value)
+        return int(default)
 
 
+### WeeChat classes
 class Infolist(object):
     """
-    Wrapper class for reading WeeChat's infolists.
+    Class for reading WeeChat's infolists.
 
     I wrote this class because I wanted a more simpler way of dealing with infolists in my scripts,
     it passes the responsibility of freeing the infolist to python, and it allows me to use a more
@@ -114,7 +112,8 @@ class Infolist(object):
     buffer_type = infolist['type']
     buffer_pointer = infolist['pointer']
 
-    get_string, get_integer, get_pointer and get_time methods are still available in the class
+    get_string, get_integer, get_pointer and get_time methods are still available in the class or a
+    fields dict can be passed on initialization for avoid the infolist_fields call if wanted.
 
     - 'for' loops
 
@@ -139,16 +138,20 @@ class Infolist(object):
     __slots__ = ('name', 'args', 'pointer', 'fields', 'cursor')
     typeDict = {'i': 'integer', 's': 'string', 'p': 'pointer', 'b': 'buffer', 't': 'time'}
 
-    def __init__(self, name, pointer='', args=''):
+    def __init__(self, name, pointer='', args='', fields=None):
         """
         Gets the infolist to read, if fails so raises exception.
         Infolist(infolist_name, item_pointer, arguments) -> infolist object
         """
         self.name = name
         self.args = (pointer, args)
-        self.pointer = weechat.infolist_get(name, pointer, args)
-        self.fields = {}
+        if fields is not None:
+            assert isinstance(fields, dict)
+            self.fields = fields
+        else:
+            self.fields = {}
         self.cursor = 0
+        self.pointer = weechat.infolist_get(name, pointer, args)
         if self.pointer == '':
             raise Exception('Infolist initialising failed %s' %self)
 
@@ -178,7 +181,8 @@ class Infolist(object):
     def __iter__(self):
         """Returns iterator object."""
         def generator():
-            while self.next():
+            next = self.next
+            while next():
                 yield self
 
         return generator()
@@ -186,7 +190,8 @@ class Infolist(object):
     def __reversed__(self):
         """Returns iterator object for reversed loops."""
         def generator():
-            while self.prev():
+            prev = self.prev
+            while prev():
                 yield self
 
         return generator()
@@ -215,8 +220,7 @@ class Infolist(object):
         return weechat.infolist_time(self.pointer, name)
 
     def get_buffer(self, name):
-        """Not implemented in script API, declared only for avoid AttributeError exception in
-        __getitem__"""
+        """Not implemented in script API, declared only for avoid AttributeError exception."""
         return ''
 
     def set_fields(self):
@@ -270,58 +274,57 @@ class Infolist(object):
 
 
 class Command(object):
-    """
-    WeeChat command class.
+    """TODO"""
+    help = ("WeeChat command.", "[define usage template]", "detailed help here")
 
-    [define usage template]
-
-    detailed help here
-    """
-    pointer = ''
-    __slots__ = ('command', 'callback', 'completion', 'buffer', 'args')
     def __init__(self, command, callback, completion=''):
-        self.command = command
+        self._command = command
         self.callback = callback
         self.completion = completion
+        self.pointer = ''
         self.hook()
 
     def __call__(self, *args):
-        self._parse(*args)
-        self.cmd(self, *args)
+        """Called by WeeChat when /command is used."""
+        self.parse_args(*args)
+        self.command()
         return WEECHAT_RC_OK
 
-    def __repr__(self):
-        return "<command('/%s', '%s') at %s>" \
-                %(self.command, self.callback,self.pointer)
-
-    __str__ = __repr__
-
-    def __del__(self):
-        self.unhook()
-
-    def _parse(self, data, buffer, args):
+    def parse_args(self, data, buffer, args):
+        """Do argument parsing here."""
         self.buffer = buffer
         self.args = args
 
     def _parse_doc(self):
-        desc, usage, help = self.help()
-        help = help.strip('\n')
-        # strip leading tabs
-        help = '\n'.join(map(lambda s: s.lstrip('\t'), help.splitlines()))
+        """Parsing of the command help strings."""
+        desc, usage, help = self.help
+        # format fix for help
+        help = help.strip('\n').splitlines()
+        if help:
+            n = 0
+            for c in help[0]:
+                if c in ' \t':
+                    n += 1
+                else:
+                    break
+
+            def trim(s):
+                return s[n:]
+
+            help = '\n'.join(map(trim, help))
+        else:
+            help = ''
         return desc, usage, help
 
-    def cmd(self, data, buffer, args):
-        """This method is called when the command is run, override this in your script."""
+    def command(self):
+        """This method is called when the command is run, override this."""
         pass
 
-    def help(self):
-        return "WeeChat command class.", "[define usage template]", "detailed help here"
-
     def hook(self):
-        assert self.command and self.callback
+        assert self._command and self.callback
         assert not self.pointer, "There's already a hook pointer, unhook first"
         desc, usage, help = self._parse_doc()
-        self.pointer = weechat.hook_command(self.command, desc, usage, help, self.completion,
+        self.pointer = weechat.hook_command(self._command, desc, usage, help, self.completion,
                 self.callback, '')
         if self.pointer == '':
             raise Exception, "hook_command failed"
@@ -330,5 +333,6 @@ class Command(object):
         if self.pointer:
             weechat.unhook(self.pointer)
             self.pointer = ''
+
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:

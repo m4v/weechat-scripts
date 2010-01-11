@@ -18,6 +18,10 @@
 # Tetris game for WeeChat.
 #
 # History:
+# 2009-12-17, FlashCode <flashcode@flashtux.org>:
+#     version 0.7: add levels, fix bugs with pause
+# 2009-12-16, drubin <drubin [@] smartcube [dot] co[dot]za>:
+#     version 0.6: add key for pause, basic doc and auto jump to buffer
 # 2009-06-21, FlashCode <flashcode@flashtux.org>:
 #     version 0.5: fix bug with weetris buffer after /upgrade
 # 2009-05-02, FlashCode <flashcode@flashtux.org>:
@@ -33,10 +37,12 @@
 
 use strict;
 
-my $version = "0.5";
+my $version = "0.7";
 
 my $weetris_buffer = "";
 my $timer = "";
+my $level = 1;
+my $max_level = 10;
 
 my ($nbx, $nby) = (10, 20);
 my $start_y = 0;
@@ -74,10 +80,13 @@ my @item_y_inc = (3, 3, 3, 3, 2, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0);
 my @item_rotation = (4096, 256, 16, 1, 8192, 512, 32, 2, 16384, 1024, 64, 4, 32768, 2048, 128, 8); 
 
 my $playing = 0;
+my $paused = 0;
 my $lines = 0;
 my ($item_x, $item_y) = (0, 0);
 my $item_number = 0;
 my $item_form = 0;
+my $title = "WeeTris.pl $version - enjoy!  |  Keys: arrows: move/rotate, alt-N: new game, alt-P: pause";
+
 
 sub buffer_close
 {
@@ -96,21 +105,46 @@ sub display_line
 {
     my $y = $_[0];
     my $str = " │";
-    for (my $x = 0; $x < $nbx; $x++)
+    if ($paused eq 1)
     {
-        my $char = substr($matrix[$y], $x, 1);
-        if ($char eq " ")
+        if ($y == $nby / 2)
         {
-            $str .= weechat::color(",default");
+            my $paused = "  " x $nbx;
+            my $index = (($nbx * 2) - 6) / 2;
+            substr($paused, $index, 6) = "PAUSED";
+            $str .= $paused;
         }
         else
         {
-            $str .= weechat::color(",".$item_color[$char]);
+            $str .= "  " x $nbx;
         }
-        $str .= "  ";
+    }
+    else
+    {
+        for (my $x = 0; $x < $nbx; $x++)
+        {
+            my $char = substr($matrix[$y], $x, 1);
+            if ($char eq " ")
+            {
+                $str .= weechat::color(",default");
+            }
+            else
+            {
+                $str .= weechat::color(",".$item_color[$char]);
+            }
+            $str .= "  ";
+        }
     }
     $str .= weechat::color(",default")."│";
     weechat::print_y($weetris_buffer, $start_y + $y + 1, $str);
+}
+
+sub display_level_lines
+{
+    my $plural = "";
+    $plural = "s" if ($lines > 1);
+    my $str = sprintf(" Level %-3d %6d line%s", $level, $lines, $plural);
+    weechat::print_y($weetris_buffer, $start_y + $nby + 2, $str);
 }
 
 sub apply_item
@@ -153,6 +187,14 @@ sub new_form
     $item_y = 0;
 }
 
+sub init_timer
+{
+    weechat::unhook($timer) if ($timer ne "");
+    my $delay = 700 - (($level - 1) * 60);
+    $delay = 100 if ($delay < 100);
+    $timer = weechat::hook_timer($delay, 0, 0, "weetris_timer", "");
+}
+
 sub new_game
 {
     weechat::print_y($weetris_buffer, $start_y + $nby + 2, "");
@@ -162,7 +204,12 @@ sub new_game
     }
     new_form();
     $playing = 1;
+    $paused = 0;
     $lines = 0;
+    $level = 1;
+    init_timer();
+    display_all();
+    display_level_lines();
 }
 
 sub rotation
@@ -225,10 +272,14 @@ sub remove_completed_lines
     }
     if ($lines_removed)
     {
-        my $plural = "";
-        $plural = "s" if ($lines > 1);
-        my $str = sprintf("%7d line%s", $lines, $plural);
-        weechat::print_y($weetris_buffer, $start_y + $nby + 2, $str);
+        my $new_level = int(($lines / 10) + 1);
+        $new_level = $max_level if ($new_level > $max_level);
+        if ($new_level != $level)
+        {
+            $level = $new_level;
+            init_timer();
+        }
+        display_level_lines();
     }
 }
 
@@ -244,7 +295,8 @@ sub end_of_item
     {
         $item_form = 0;
         $playing = 0;
-        weechat::print_y($weetris_buffer, $start_y + $nby + 2, ">> End of game, score: $lines lines (alt-N to restart) <<");
+        $paused = 0;
+        weechat::print_y($weetris_buffer, $start_y + $nby + 2, ">> End of game, score: $lines lines, level $level (alt-N to restart) <<");
     }
 }
 
@@ -258,19 +310,14 @@ sub weetris_init
     if ($weetris_buffer ne "")
     {
         weechat::buffer_set($weetris_buffer, "type", "free");
-        weechat::buffer_set($weetris_buffer, "title", "WeeTris.pl script - enjoy!");
+        weechat::buffer_set($weetris_buffer, "title", $title);
         weechat::buffer_set($weetris_buffer, "key_bind_meta2-A", "/weetris up");
         weechat::buffer_set($weetris_buffer, "key_bind_meta2-B", "/weetris down");
         weechat::buffer_set($weetris_buffer, "key_bind_meta2-D", "/weetris left");
         weechat::buffer_set($weetris_buffer, "key_bind_meta2-C", "/weetris right");
         weechat::buffer_set($weetris_buffer, "key_bind_meta-n", "/weetris new_game");
-        if ($timer eq "")
-        {
-            $timer = weechat::hook_timer(700, 0, 0, "weetris_timer", "");
-        }
+        weechat::buffer_set($weetris_buffer, "key_bind_meta-p", "/weetris pause");
         new_game();
-        apply_item(1);
-        display_all();
         weechat::buffer_set($weetris_buffer, "display", "1");
     }
 }
@@ -278,7 +325,10 @@ sub weetris_init
 sub weetris
 {
     my ($data, $buffer, $args) = ($_[0], $_[1], $_[2]);
-    
+    if ($weetris_buffer ne "")
+    {
+        weechat::buffer_set($weetris_buffer, "display", "1");
+    }
     if ($weetris_buffer eq "")
     {
         weetris_init();
@@ -287,10 +337,18 @@ sub weetris
     if ($args eq "new_game")
     {
         new_game();
-        display_all();
     }
     
-    if ($playing eq 1)
+    if ($args eq "pause")
+    {
+        if ($playing eq 1)
+        {
+            $paused ^= 1;
+            display_all();
+        }
+    }
+    
+    if (($playing eq 1) && ($paused eq 0))
     {
         if ($args eq "up")
         {
@@ -336,7 +394,7 @@ sub weetris
 
 sub weetris_timer
 {
-    if (($weetris_buffer ne "") && ($playing eq 1))
+    if (($weetris_buffer ne "") && ($playing eq 1) && ($paused eq 0))
     {
         if (is_possible($item_x, $item_y + 1, $item_form))
         {
@@ -350,10 +408,16 @@ sub weetris_timer
     }
     return weechat::WEECHAT_RC_OK;
 }
-
 weechat::register("weetris", "FlashCode <flashcode\@flashtux.org>",
                   $version, "GPL3", "Tetris game for WeeChat, yeah!", "", "");
-weechat::hook_command("weetris", "Run WeeTris", "", "", "", "weetris", "");
+weechat::hook_command("weetris", "Run WeeTris", "", 
+                      "Keys:\n".
+                      "   arrow up: rotate current item\n".
+                      " arrow left: move item to the left\n".
+                      "arrow right: move item to the right\n".
+                      "      alt+n: restart the game\n".
+                      "      alt+p: pause current game", 
+                      "", "weetris", "");
 $weetris_buffer = weechat::buffer_search("perl", "weetris");
 if ($weetris_buffer ne "")
 {
