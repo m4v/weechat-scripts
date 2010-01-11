@@ -67,6 +67,8 @@
 #   * added /grep stop.
 #   * added 'size_limit' option
 #   * fixed a infolist leak
+#   * added 'default_tail_head' option
+#   * results preview is sort by line count
 #
 #   2010-01-05
 #   version 0.5.5: rename script to 'grep.py' (FlashCode <flashcode@flashtux.org>).
