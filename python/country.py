@@ -258,7 +258,9 @@ def is_host(host):
 	"""A valid host must have at least one dot an no slashes."""
 	# This is a very poor check
 	# I will fix it when it fails
-	if '/' in host:
+	assert host
+	if '/' in host \
+			or not host[0].isalnum() or not host[-1].isalnum():
 		return False
 	elif '.' in host:
 		return True
