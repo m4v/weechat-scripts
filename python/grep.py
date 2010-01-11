@@ -733,11 +733,13 @@ def get_grep_file_status():
 	global search_in_files, matched_lines, time_start, home_dir
 	elapsed = now() - time_start
 	if len(search_in_files) == 1:
-		log = search_in_files[0][len(home_dir):]
+		log = '%s (%s)' %(search_in_files[0][len(home_dir):],
+				human_readable_size(get_size(search_in_files[0])))
 	else:
-		log = '%s logs' %len(search_in_files)
-	return 'Searching in %s (running for %.4f seconds) interrupt it with /grep stop'\
-			%(log, elapsed)
+		size = sum(map(get_size, search_in_files))
+		log = '%s log files (%s)' %(len(search_in_files), human_readable_size(size))
+	return 'Searching in %s, running for %.4f seconds. Interrupt it with "/grep stop" or "stop"' \
+		' in grep buffer.' %(log, elapsed)
 
 ### output buffer
 def buffer_update():
@@ -1061,7 +1063,7 @@ def cmd_grep_stop(buffer, args):
 				weechat.buffer_set(buffer, 'title', s)
 			say('Search for \'%s\' stopped.' %pattern, buffer=buffer)
 		else:
-			error(get_grep_file_status(), buffer=buffer)
+			say(get_grep_file_status(), buffer=buffer)
 		raise Exception
 
 def cmd_grep(data, buffer, args):
