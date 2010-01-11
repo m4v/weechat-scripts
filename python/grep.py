@@ -693,6 +693,9 @@ except Exception, e:
 
 			#debug(cmd)
 			hook_file_grep = weechat.hook_process(cmd, timeout, 'grep_file_callback', '')
+			if hook_file_grep:
+				buffer_create("Searching for '%s' in %s worth of data..." %(pattern,
+					human_readable_size(size)))
 	else:
 		buffer_update()
 
@@ -710,7 +713,8 @@ def grep_file_callback(data, command, rc, stdout, stderr):
 			error(grep_stderr)
 		elif grep_stdout:
 			try:
-				file = grep_stdout.strip('\n ')
+				grep_stdout = grep_stdout.strip('\n')
+				file = grep_stdout.split('\n')[-1]
 				fd = open(file, 'rb')
 				import cPickle, os
 				d = cPickle.load(fd)
@@ -742,6 +746,8 @@ def buffer_update():
 	time_grep = now()
 
 	buffer = buffer_create()
+	if get_config_boolean('clear_buffer'):
+		weechat.buffer_clear(buffer)
 	matched_lines.strip_separator() # remove first and last separators of each list
 	len_total_lines = len(matched_lines)
 	len_matched_lines = matched_lines.get_matches_count()
@@ -883,18 +889,17 @@ def print_info(s, buffer=None, display=False):
 	if display and get_config_boolean('go_to_buffer'):
 		weechat.buffer_set(buffer, 'display', '1')
 
-def buffer_create():
+def buffer_create(title=None):
 	"""Returns our buffer pointer, creates and cleans the buffer if needed."""
 	buffer = weechat.buffer_search('python', SCRIPT_NAME)
 	if not buffer:
 		buffer = weechat.buffer_new(SCRIPT_NAME, 'buffer_input', '', 'buffer_close', '')
 		weechat.buffer_set(buffer, 'time_for_each_line', '0')
 		weechat.buffer_set(buffer, 'nicklist', '0')
-		weechat.buffer_set(buffer, 'title', 'grep output buffer')
+		weechat.buffer_set(buffer, 'title', title or 'grep output buffer')
 		weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
-	else:
-		if get_config_boolean('clear_buffer'):
-			weechat.buffer_clear(buffer)
+	elif title:
+		weechat.buffer_set(buffer, 'title', title)
 	return buffer
 
 def buffer_input(data, buffer, input_data):
@@ -1050,6 +1055,10 @@ def cmd_grep_stop(buffer, args):
 		if args == 'stop':
 			weechat.unhook(hook_file_grep)
 			hook_file_grep = None
+			s = 'Search for \'%s\' stopped.' %pattern
+			grep_buffer = weechat.buffer_search('python', SCRIPT_NAME)
+			if grep_buffer:
+				weechat.buffer_set(buffer, 'title', s)
 			say('Search for \'%s\' stopped.' %pattern, buffer=buffer)
 		else:
 			error(get_grep_file_status(), buffer=buffer)
@@ -1126,6 +1135,14 @@ def cmd_grep(data, buffer, args):
 		error(e)
 	return WEECHAT_RC_OK
 
+sizeDict = {0:'b', 1:'KiB', 2:'MiB', 3:'GiB', 4:'TiB'}
+def human_readable_size(size):
+	power = 0
+	while size > 1024:
+		power += 1
+		size /= 1024.0
+	return '%.2f%s' %(size, sizeDict.get(power, ''))
+
 def cmd_logs(data, buffer, args):
 	"""List files in Weechat's log dir."""
 	cmd_init()
@@ -1153,14 +1170,6 @@ def cmd_logs(data, buffer, args):
 	else:
 		file_list.sort()
 
-	sizeDict = {0:'b', 1:'KiB', 2:'MiB', 3:'GiB', 4:'TiB'}
-	def human_readable_size(size):
-		power = 0
-		while size > 1024:
-			power += 1
-			size /= 1024.0
-		return '%.2f%s' %(size, sizeDict.get(power, ''))
-
 	file_sizes = map(lambda x: human_readable_size(get_size(x)), file_list)
 	if weechat.config_string(weechat.config_get('weechat.look.prefix_align')) == 'none' \
 			and file_list:
@@ -1172,6 +1181,8 @@ def cmd_logs(data, buffer, args):
 	else:
 		column_len = ''
 	buffer = buffer_create()
+	if get_config_boolean('clear_buffer'):
+		weechat.buffer_clear(buffer)
 	file_list = zip(file_list, file_sizes)
 	msg = 'Found %s logs.' %len(file_list)
 	print_info(msg, buffer, display=True)
