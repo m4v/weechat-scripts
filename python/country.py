@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 ###
-# Copyright (c) 2009 by Elián Hanisch <lambdae2@gmail.com>
+# Copyright (c) 2009-2010 by Elián Hanisch <lambdae2@gmail.com>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -45,7 +45,7 @@
 #
 #   2010-01-11
 #   version 0.3.1: bug fix
-#   * irc_nick infolist wasn't freed in get_hosts()
+#   * irc_nick infolist wasn't freed in get_host_by_nick()
 #
 #   2009-12-12
 #   version 0.3: update WeeChat site.
@@ -271,19 +271,21 @@ def is_host(host):
 		return True
 	return False
 
-def get_host_by_nick(nick, buffer):
-	"""Gets host from a given nick, for code simplicity we only search in current buffer."""
+def get_host_by_nick(buffer, nick):
+	"""Return host of a given nick in buffer."""
 	channel = weechat.buffer_get_string(buffer, 'localvar_channel')
 	server = weechat.buffer_get_string(buffer, 'localvar_server')
 	if channel and server:
 		infolist = weechat.infolist_get('irc_nick', '', '%s,%s' %(server, channel))
 		if infolist:
-			while weechat.infolist_next(infolist):
-				name = weechat.infolist_string(infolist, 'name')
-				if nick == name:
-					host = weechat.infolist_string(infolist, 'host')
-					return host[host.find('@')+1:] # strip everything in front of '@'
-			weechat.infolist_free(infolist)
+			try:
+				while weechat.infolist_next(infolist):
+					name = weechat.infolist_string(infolist, 'name')
+					if nick == name:
+						host = weechat.infolist_string(infolist, 'host')
+						return host[host.find('@')+1:] # strip everything in front of '@'
+			finally:
+				weechat.infolist_free(infolist)
 	return ''
 
 def sum_ip(ip):
@@ -385,7 +387,7 @@ def cmd_country(data, buffer, args):
 					"using this script.", buffer=buffer)
 			return WEECHAT_RC_OK
 		#check if is a nick
-		host = get_host_by_nick(args, buffer)
+		host = get_host_by_nick(buffer, args)
 		if not host:
 			host = args
 		print_country(host, buffer)
