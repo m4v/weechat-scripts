@@ -124,9 +124,6 @@ from os import path
 from os import stat
 import getopt, time
 
-now = time.time
-get_size = lambda x: stat(x).st_size
-
 try:
     import weechat
     WEECHAT_RC_OK = weechat.WEECHAT_RC_OK
@@ -141,7 +138,7 @@ SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Search in buffers and logs"
 SCRIPT_COMMAND = "grep"
 
-### class definitions
+### Class definitions ###
 class linesDict(dict):
 	"""
 	Class for handling matched lines in more than one buffer.
@@ -234,7 +231,20 @@ class linesList(list):
 				del self[-1]
 
 
-### config
+### Misc functions ###
+now = time.time
+get_size = lambda x: stat(x).st_size
+
+sizeDict = {0:'b', 1:'KiB', 2:'MiB', 3:'GiB', 4:'TiB'}
+def human_readable_size(size):
+	power = 0
+	while size > 1024:
+		power += 1
+		size /= 1024.0
+	return '%.2f%s' %(size, sizeDict.get(power, ''))
+
+
+### Config ###
 settings = {
 		'clear_buffer' :'off', # Should clear the buffer before every search
 		'log_filter'   :'',    # filter for exclude log files
@@ -280,7 +290,8 @@ def get_home():
 	home = weechat.config_string(weechat.config_get('logger.file.path'))
 	return home.replace('%h', weechat.info_get('weechat_dir', ''))
 
-### messages
+
+### Messages ###
 def debug(s, prefix='debug'):
 	"""Debug msg"""
 	weechat.prnt('', '%s: %s'  %(prefix,s))
@@ -295,7 +306,8 @@ def say(s, prefix=None, buffer=''):
 	prefix = prefix or script_nick
 	weechat.prnt(buffer, '%s\t%s' %(prefix, s))
 
-### log files and buffers
+
+### Log files and buffers ###
 cache_dir = {} # for avoid walking the dir tree more than once per command
 def dir_list(dir, filter_list=(), filter_excludes=True):
 	"""Returns a list of files in 'dir' and its subdirs."""
@@ -439,7 +451,8 @@ def get_all_buffers():
 		del buffers[buffers.index(grep_buffer)]
 	return buffers
 
-### grep
+
+### Grep ###
 def make_regexp(pattern, matchcase=False):
 	"""Returns a compiled regexp."""
 	if pattern in ('.', '.*', '.?', '.+'):
@@ -772,7 +785,8 @@ def get_grep_file_status():
 	return 'Searching in %s, running for %.4f seconds. Interrupt it with "/grep stop" or "stop"' \
 		' in grep buffer.' %(log, elapsed)
 
-### output buffer
+
+### Grep buffer ###
 def buffer_update():
 	"""Updates our buffer with new lines."""
 	global matched_lines, pattern, count, hilight
@@ -959,7 +973,8 @@ def buffer_input(data, buffer, input_data):
 def buffer_close(*args):
 	return WEECHAT_RC_OK
 
-### commands
+
+### Commands ###
 def cmd_init():
 	global home_dir, cache_dir
 	global pattern, matchcase, number, count, exact, hilight
@@ -1051,6 +1066,9 @@ def cmd_grep_parsing(args):
 			after_context = False
 		if before_context:
 			before_context = False
+		if head or tail:
+			# will break match counting
+			head = tail = False
 	elif exact:
 		# pointless
 		if after_context:
@@ -1160,14 +1178,6 @@ def cmd_grep(data, buffer, args):
 		error(e)
 	return WEECHAT_RC_OK
 
-sizeDict = {0:'b', 1:'KiB', 2:'MiB', 3:'GiB', 4:'TiB'}
-def human_readable_size(size):
-	power = 0
-	while size > 1024:
-		power += 1
-		size /= 1024.0
-	return '%.2f%s' %(size, sizeDict.get(power, ''))
-
 def cmd_logs(data, buffer, args):
 	"""List files in Weechat's log dir."""
 	cmd_init()
@@ -1218,7 +1228,8 @@ def cmd_logs(data, buffer, args):
 		print_info(msg, buffer)
 	return WEECHAT_RC_OK
 
-### completion
+
+### Completion ###
 def completion_log_files(data, completion_item, buffer, completion):
 	global home_dir
 	for log in dir_list(home_dir):
@@ -1231,7 +1242,8 @@ def completion_grep_args(data, completion_item, buffer, completion):
 		weechat.hook_completion_list_add(completion, '--' + arg, 0, weechat.WEECHAT_LIST_POS_SORT)
 	return WEECHAT_RC_OK
 
-### Main
+
+### Main ###
 if __name__ == '__main__' and import_ok and \
 		weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
 		SCRIPT_DESC, '', ''):
@@ -1242,30 +1254,31 @@ if __name__ == '__main__' and import_ok and \
 			"[-H|--hilight] [-e|--exact] [(-h|--head)|(-t|--tail) [-n|--number <n>]] "
 			"[-A|--after-context <n>] [-B|--before-context <n>] [-C|--context <n> ] <expression>",
 			# help
-			"     log <file>: Search in one log that matches <file> in the logger path. Use '*' and '?' as jokers.\n"
-			"  buffer <name>: Search in buffer <name>, if there's no buffer with <name> it will try to search for a log file.\n"
-			"           stop: Stops a currently running search.\n"
-			"       -a --all: Search in all open buffers.\n"
-			"                 If used with 'log <file>' search in all logs that matches <file>.\n"
-			"    -b --buffer: Search only in buffers, not in file logs.\n"
-			"     -c --count: Just count the number of matched lines instead of showing them.\n"
-			" -m --matchcase: Don't do case insensible search.\n"
-			"   -H --hilight: Colour exact matches in output buffer.\n"
-			"     -e --exact: Print exact matches only.\n"
-			"      -t --tail: Print the last 10 matching lines.\n"
-			"      -h --head: Print the first 10 matching lines.\n"
+			"    log <file>: Search in one log that matches <file> in the logger path.\n"
+			"                 Use '*' and '?' as wildcards.\n"
+			" buffer <name>: Search in buffer <name>, if there's no buffer with <name> it will\n"
+			"                try to search for a log file.\n"
+			"          stop: Stops a currently running search.\n"
+			"      -a --all: Search in all open buffers.\n"
+			"                If used with 'log <file>' search in all logs that matches <file>.\n"
+			"   -b --buffer: Search only in buffers, not in file logs.\n"
+			"    -c --count: Just count the number of matched lines instead of showing them.\n"
+			"-m --matchcase: Don't do case insensible search.\n"
+			"  -H --hilight: Colour exact matches in output buffer.\n"
+			"    -e --exact: Print exact matches only.\n"
+			"     -t --tail: Print the last 10 matching lines.\n"
+			"     -h --head: Print the first 10 matching lines.\n"
 			"-n --number <n>: Overrides default number of lines for --tail or --head.\n"
 			"-A --after-context <n>: Shows <n> lines of trailing context after matching lines.\n"
 			"-B --before-context <n>: Shows <n> lines of leading context before matching lines.\n"
 			"-C --context <n>: Same as using both --after-context and --before-context simultaneously.\n"
-			"   <expression>: Expression to search.\n\n"
-			"If there's a search in progress, grep will display a message about current search.\n\n"
-			"grep buffer:\n"
-			"  Accepts most arguments of /grep command, It'll repeat last search using the new "
-			"arguments.\n"
-			"  --all, --count, --tail, --head, --hilight, --matchcase and --exact switches are "
-			"toggleable\n\n"
-			"see http://docs.python.org/lib/re-syntax.html for documentation about python regular expressions.\n",
+			"  <expression>: Expression to search.\n\n"
+			"Grep buffer:\n"
+			"  Input line accepts most arguemnts of /grep, it'll repeat last search using the new \n"
+			"  arguments provided. You can't search in different logs from the buffer's input.\n"
+			"  Boolean arguments like --count, --tail, --head, --hilight, ... are toggleable\n\n"
+			"Python regular expression syntax:\n"
+			"See http://docs.python.org/lib/re-syntax.html\n",
 			# completion template
 			"buffer %(buffers_names) %(grep_arguments)|%*"
 			"||log %(grep_log_files) %(grep_arguments)|%*"
@@ -1273,8 +1286,8 @@ if __name__ == '__main__' and import_ok and \
 			"||%(grep_arguments)|%*",
 			'cmd_grep' ,'')
 	weechat.hook_command('logs', cmd_logs.__doc__, "[-s|--size] [<filter>]",
-			"-s|--size: Sort logs by size.\n"
-			" <filter>: Only show logs that match <filter>. Use '*' and '?' as jokers.", '--size', 'cmd_logs', '')
+			"-s --size: Sort logs by size.\n"
+			" <filter>: Only show logs that match <filter>. Use '*' and '?' as wildcards.", '--size', 'cmd_logs', '')
 
 	weechat.hook_completion('grep_log_files', "list of log files",
 			'completion_log_files', '')
