@@ -45,13 +45,17 @@
 #     Shows summary for each log. Valid values: on, off
 #
 #   * plugins.var.python.grep.max_lines:
-#     grep will only print the last matched lines that don't surpass the value defined here.
+#     Grep will only print the last matched lines that don't surpass the value defined here.
 #
 #   * plugins.var.python.grep.size_limit:
-#     size limit in KiB, is used for decide whenever grepping should run in background or not. If
+#     Size limit in KiB, is used for decide whenever grepping should run in background or not. If
 #     the logs to grep have a total size bigger than this value then grep run as a new process.
 #     It can be used for force or disable background process, using '0' forces to always grep in
 #     background, while using '' (empty string) will disable it.
+#
+#   * plugins.var.python.grep.default_tail_head:
+#     Config option for define default number of lines returned when using --head or --tail options.
+#     Can be overriden in the command with --number option.
 #
 #
 #   TODO:
