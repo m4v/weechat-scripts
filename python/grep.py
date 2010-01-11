@@ -240,6 +240,7 @@ settings = {
 		'max_lines'    :'4000',
 		'show_summary' :'on',  # Show summary line after the search
 		'size_limit'   :'2048',
+		'default_tail_head':'10',
 		}
 
 ### value validation
@@ -1065,10 +1066,11 @@ def cmd_grep_parsing(args):
 		elif tail:
 			tail = number
 	else:
+		n = get_config_int('default_tail_head')
 		if head:
-			head = 10
+			head = n
 		elif tail:
-			tail = 10
+			tail = n
 
 def cmd_grep_stop(buffer, args):
 	global hook_file_grep, pattern
