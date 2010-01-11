@@ -118,7 +118,7 @@
 #
 ###
 
-import os.path as path
+from os import path
 from os import stat
 import getopt, time
 
@@ -176,17 +176,42 @@ class linesDict(dict):
 		else:
 			return ''
 
+	def items(self):
+		"""Returns a list of items sorted by line count."""
+		items = dict.items(self)
+		items.sort(key=lambda i: len(i[1]))
+		return items
+
 	def strip_separator(self):
 		for L in self.itervalues():
 			L.strip_separator()
+
+	def get_last_lines(self, n):
+		total_lines = len(self)
+		#debug('total: %s n: %s' %(total_lines, n))
+		if n >= total_lines:
+			# nothing to do
+			return
+		for k, v in reversed(self.items()):
+			l = len(v)
+			if n > 0:
+				if l > n:
+					del v[:l-n]
+					v.stripped_lines = l-n
+				n -= l
+			else:
+				del v[:]
+				v.stripped_lines = l
+
 
 class linesList(list):
 	"""Class for list of matches, since sometimes I need to add lines that aren't matches, I need an
 	independent counter."""
 	_sep = '...'
 	def __init__(self, *args):
-		self.matches_count = 0
 		list.__init__(self, *args)
+		self.matches_count = 0
+		self.stripped_lines = 0
 
 	def append_separator(self):
 		"""adds a separator into the list, makes sure it doen't add two together."""
@@ -683,7 +708,7 @@ try:
 				regexp, '%(hilight)s', %(exact)s)
 		d[log_name] = matched_lines
 	fd = tempfile.NamedTemporaryFile('wb', delete=False)
-	cPickle.dump(d, fd)
+	cPickle.dump(d, fd, -1)
 	print fd.name
 	fd.close()
 except Exception, e:
@@ -717,6 +742,7 @@ def grep_file_callback(data, command, rc, stdout, stderr):
 			try:
 				grep_stdout = grep_stdout.strip('\n')
 				file = grep_stdout.split('\n')[-1]
+				#debug(file)
 				fd = open(file, 'rb')
 				import cPickle, os
 				d = cPickle.load(fd)
@@ -771,15 +797,17 @@ def buffer_update():
 	def make_title(name, number):
 		note = ''
 		if len_total_lines > max_lines and not count:
-			note = ' (last %s lines shown)' %max_lines
+			note = ' (last %s lines shown)' %len(matched_lines)
 		return "Search in %s%s%s | %s matches%s | pattern \"%s%s%s\" | %.4f seconds (%.2f%%)" \
 				%(c_title, name, c_reset, number, note, c_title, pattern, c_reset, time_total, time_grep_pct)
 
-	def make_summary(name, lines, printed=0):
+	def make_summary(name, lines):
 		note = ''
-		if printed != len(lines):
-			if printed:
-				note = ' (last %s lines shown)' %printed
+		if count:
+			note = ' (not shown)'
+		elif lines.stripped_lines:
+			if lines:
+				note = ' (last %s lines shown)' %len(lines)
 			else:
 				note = ' (not shown)'
 		return "%s matches \"%s%s%s\" in %s%s%s%s" \
@@ -840,34 +868,24 @@ def buffer_update():
 	prnt(buffer, '\n')
 	print_info('Search for "%s" in %s.' %(pattern, matched_lines), buffer)
 	# print last <max_lines> lines
-	print_count = max_lines
 	if matched_lines:
-		print_lines = []
-		for log, lines in matched_lines.iteritems():
-			if lines:
+		matched_lines.get_last_lines(max_lines)
+		for log, lines in matched_lines.items():
+			if lines.matches_count:
 				# matched lines
 				if not count:
-					len_lines = len(lines)
-					if len_lines < print_count:
-						print_lines = lines
-						print_count -= len_lines
-					elif print_count:
-						print_lines = lines[-print_count:] # grab the last <print_count> lines
-						print_count = 0
-					else:
-						print_lines = []
 					# print lines
-					for line in print_lines:
+					for line in lines:
 						prnt(buffer, format_line(line))
 
 				# summary
 				if count or get_config_boolean('show_summary'):
-					summary = make_summary(log, lines, len(print_lines))
+					summary = make_summary(log, lines)
 					print_info(summary, buffer)
 
-				# separator
-				if print_lines:
-					prnt(buffer, '\n')
+			# separator
+			if not count and lines:
+				prnt(buffer, '\n')
 	else:
 		print_info('No matches found.', buffer)
 
