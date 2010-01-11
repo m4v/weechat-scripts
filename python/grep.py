@@ -908,10 +908,12 @@ def buffer_input(data, buffer, input_data):
 	try:
 		if pattern and (search_in_files or search_in_buffers):
 			for pointer in search_in_buffers:
-				if not weechat.infolist_get('buffer', pointer, ''):
+				infolist = weechat.infolist_get('buffer', pointer, '')
+				if not infolist:
 					# I don't want any crashes
 					del search_in_buffers[search_in_buffers.index(pointer)]
 					error("Got invalid buffer pointer, did you close a buffer? Removing it.")
+				weechat.infolist_free(infolist)
 			try:
 				cmd_grep_parsing(input_data)
 			except Exception, e:
