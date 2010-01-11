@@ -139,8 +139,6 @@ SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Search in buffers and logs"
 SCRIPT_COMMAND = "grep"
 
-script_nick    = '***'
-
 ### class definitions
 class linesDict(dict):
 	"""
@@ -259,13 +257,15 @@ def debug(s, prefix='debug'):
 	"""Debug msg"""
 	weechat.prnt('', '%s: %s'  %(prefix,s))
 
-def error(s, prefix=SCRIPT_NAME, buffer=''):
+def error(s, prefix=None, buffer=''):
 	"""Error msg"""
-	weechat.prnt(buffer, '%s%s: %s' %(weechat.prefix('error'), prefix, s))
+	prefix = prefix or script_nick
+	weechat.prnt(buffer, '%s%s %s' %(weechat.prefix('error'), prefix, s))
 
-def say(s, prefix=SCRIPT_NAME, buffer=''):
+def say(s, prefix=None, buffer=''):
 	"""normal msg"""
-	weechat.prnt(buffer, '%s: %s' %(prefix, s))
+	prefix = prefix or script_nick
+	weechat.prnt(buffer, '%s\t%s' %(prefix, s))
 
 ### log files and buffers
 cache_dir = {} # for avoid walking the dir tree more than once per command
@@ -886,8 +886,7 @@ def print_info(s, buffer=None, display=False):
 	"""Prints 's' in script's buffer as 'script_nick'. For displaying search summaries."""
 	if buffer is None:
 		buffer = buffer_create()
-	weechat.prnt(buffer, '%s%s\t%s%s' \
-			%(color_script_nick, script_nick, color_info, s))
+	say('%s%s' %(color_info, s), buffer=buffer)
 	if display and get_config_boolean('go_to_buffer'):
 		weechat.buffer_set(buffer, 'display', '1')
 
@@ -1265,14 +1264,18 @@ if __name__ == '__main__' and import_ok and \
 
 	# colors
 	color_date = weechat.color('brown')
-	color_script_nick = weechat.color('lightgreen')
+	color_delimiter = weechat.color('green')
 	color_info = weechat.color('cyan')
+	color_script_nick = weechat.color('lightcyan')
 	color_hilight = weechat.color('lightred')
 	color_reset = weechat.color('reset')
 	color_title = weechat.color('yellow')
 	color_summary = weechat.color('lightcyan')
 	
+	# pretty [grep]
+	script_nick = '%s[%s%s%s]%s' %(color_delimiter, color_script_nick, SCRIPT_NAME, color_delimiter,
+			color_reset)
 	# paragraph separator when using context options
-	context_sep = '%s%s\t%s--' %(color_script_nick, script_nick, color_info)
+	context_sep = '%s\t%s--' %(script_nick, color_info)
 
 # vim:set shiftwidth=4 tabstop=4 noexpandtab textwidth=100:
