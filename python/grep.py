@@ -639,12 +639,10 @@ def show_matching_lines():
 		size_limit = get_config_int('size_limit', allow_empty_string=True)
 		background = False
 		len_home = len(home_dir)
-		if size_limit:
+		if size_limit or size_limit == 0:
 			size = sum(map(get_size, search_in_files))
 			if size > size_limit * 1024:
 				background = True
-		elif size_limit == 0:
-			background = True
 		elif size_limit == '':
 			background = False
 
