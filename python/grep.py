@@ -514,7 +514,7 @@ def grep_file(file, head, tail, after_context, before_context, *args):
 
 def grep_buffer(buffer, head, tail, after_context, before_context, *args):
 	"""Return a list of lines that match 'regexp' in 'buffer', if no regexp returns all lines."""
-	lines = linesList(context_sep)
+	lines = linesList()
 	# Using /grep in grep's buffer can lead to some funny effects
 	# We should take measures if that's the case
 	def make_get_line_funcion():
