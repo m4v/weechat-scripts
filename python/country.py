@@ -42,6 +42,11 @@
 #     Valid values: on, off
 #
 #   History:
+#
+#   2010-01-11
+#   version 0.3.1: bug fix
+#   * irc_nick infolist wasn't freed in get_hosts()
+#
 #   2009-12-12
 #   version 0.3: update WeeChat site.
 #
@@ -58,7 +63,7 @@
 
 SCRIPT_NAME    = "country"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.3"
+SCRIPT_VERSION = "0.3.1"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Prints user's country and local time in whois replies"
 SCRIPT_COMMAND = "country"
@@ -358,7 +363,7 @@ def print_country(host, buffer, quiet=False, broken=False, nick=''):
 		get_ip_process(host)
 		return
 	else:
-		# probably a cloak
+		# probably a cloak or ipv6
 		code, country = '--', 'cloaked'
 	reply_country(code, country)
 
