@@ -18,6 +18,12 @@
 
 ###
 #
+#   Settings:
+#   * plugins.var.python.automode.auto_op/auto_voice:
+#     comma separated list of patterns. When a user joins and if its hostmask matches any pattern in
+#     these options the user is auto-op'd/voiced.
+#   hostmaks format is like <nick>!<user>@<host>
+#
 ###
 
 SCRIPT_NAME    = "automode"
