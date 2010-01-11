@@ -60,12 +60,13 @@
 #
 #   History:
 #
-#   2010-
+#   2010-01-11
 #   version 0.6: implemented grep in background
 #   * improved context lines presentation.
 #   * grepping for big (or many) log files runs in a weechat_process.
 #   * added /grep stop.
 #   * added 'size_limit' option
+#   * fixed a infolist leak
 #
 #   2010-01-05
 #   version 0.5.5: rename script to 'grep.py' (FlashCode <flashcode@flashtux.org>).
@@ -133,7 +134,7 @@ except ImportError:
 
 SCRIPT_NAME    = "grep"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.5.5-dev"
+SCRIPT_VERSION = "0.6"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Search in buffers and logs"
 SCRIPT_COMMAND = "grep"
@@ -907,12 +908,11 @@ def buffer_input(data, buffer, input_data):
 	global pattern
 	try:
 		if pattern and (search_in_files or search_in_buffers):
+			# check if the buffer pointers are still valid
 			for pointer in search_in_buffers:
 				infolist = weechat.infolist_get('buffer', pointer, '')
 				if not infolist:
-					# I don't want any crashes
 					del search_in_buffers[search_in_buffers.index(pointer)]
-					error("Got invalid buffer pointer, did you close a buffer? Removing it.")
 				weechat.infolist_free(infolist)
 			try:
 				cmd_grep_parsing(input_data)
