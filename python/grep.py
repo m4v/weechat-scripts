@@ -511,12 +511,15 @@ def check_string(s, regexp, hilight='', exact=False):
     elif regexp.search(s):
         return s
 
-def grep_file(file, head, tail, after_context, before_context, count, *args):
+def grep_file(file, head, tail, after_context, before_context, count, regexp, hilight, exact):
     """Return a list of lines that match 'regexp' in 'file', if no regexp returns all lines."""
     #debug(' '.join(map(str, (file, head, tail, after_context, before_context))))
     lines = linesList()
     if count:
-        tail = head = after_context = before_context = False
+        tail = head = after_context = before_context = exact = False
+        hilight = ''
+    elif exact:
+        before_context = after_context = False
 
     file_object = open(file, 'r')
     file_lines = file_object.readlines()
@@ -531,7 +534,7 @@ def grep_file(file, head, tail, after_context, before_context, count, *args):
     append = lines.append
     count_match = lines.count_match
     separator = lines.append_separator
-    check = check_string
+    check = lambda s: check_string(s, regexp, hilight, exact)
     
     if before_context:
         before_context_range = range(1, before_context + 1)
@@ -540,7 +543,7 @@ def grep_file(file, head, tail, after_context, before_context, count, *args):
     line_idx = 0
     while line_idx < len(file_lines):
         line = file_lines[line_idx]
-        line = check(line, *args)
+        line = check(line)
         if line:
             if before_context:
                 separator()
@@ -548,7 +551,7 @@ def grep_file(file, head, tail, after_context, before_context, count, *args):
                 for id in before_context_range:
                     try:
                         context_line = file_lines[line_idx - id]
-                        if check(context_line, *args):
+                        if check(context_line):
                             # match in before context, that means we appended these same lines in a
                             # previous match, so we delete them merging both paragraphs
                             if not trimmed:
@@ -566,7 +569,7 @@ def grep_file(file, head, tail, after_context, before_context, count, *args):
                     id += 1
                     try:
                         context_line = file_lines[line_idx + id]
-                        _context_line = check(context_line, *args)
+                        _context_line = check(context_line)
                         if _context_line:
                             offset = id
                             context_line = _context_line # so match is hilighted with --hilight
@@ -584,11 +587,14 @@ def grep_file(file, head, tail, after_context, before_context, count, *args):
         lines.reverse()
     return lines
 
-def grep_buffer(buffer, head, tail, after_context, before_context, count, *args):
+def grep_buffer(buffer, head, tail, after_context, before_context, count, regexp, hilight, exact):
     """Return a list of lines that match 'regexp' in 'buffer', if no regexp returns all lines."""
     lines = linesList()
     if count:
-        tail = head = after_context = before_context = False
+        tail = head = after_context = before_context = exact = False
+        hilight = ''
+    elif exact:
+        before_context = after_context = False
 
     # Using /grep in grep's buffer can lead to some funny effects
     # We should take measures if that's the case
@@ -632,7 +638,7 @@ def grep_buffer(buffer, head, tail, after_context, before_context, count, *args)
     append = lines.append
     count_match = lines.count_match
     separator = lines.append_separator
-    check = check_string
+    check = lambda s: check_string(s, regexp, hilight, exact)
 
     if before_context:
         before_context_range = range(1, before_context + 1)
@@ -641,7 +647,7 @@ def grep_buffer(buffer, head, tail, after_context, before_context, count, *args)
     while infolist_next(infolist):
         line = get_line(infolist)
         if line is None: continue
-        line = check(line, *args)
+        line = check(line)
         if line:
             if before_context:
                 separator()
@@ -651,7 +657,7 @@ def grep_buffer(buffer, head, tail, after_context, before_context, count, *args)
                         trimmed = True
                 for id in before_context_range:
                     context_line = get_line(infolist)
-                    if check(context_line, *args):
+                    if check(context_line):
                         if not trimmed:
                             del lines[id - before_context - 1:]
                             trimmed = True
@@ -666,7 +672,7 @@ def grep_buffer(buffer, head, tail, after_context, before_context, count, *args)
                     id += 1
                     if infolist_next(infolist):
                         context_line = get_line(infolist)
-                        _context_line = check(context_line, *args)
+                        _context_line = check(context_line)
                         if _context_line:
                             context_line = _context_line
                             offset = id
@@ -757,7 +763,7 @@ def show_matching_lines():
 # defined here for commodity
 grep_proccess_cmd = """python -c "
 import sys, tempfile, cPickle
-sys.path.append('%(home)s/python') # add WeeChat script dir so we can import grep
+sys.path.append('%(home)s/python/dev') # add WeeChat script dir so we can import grep
 from grep import make_regexp, grep_file, strip_home, SCRIPT_VERSION
 logs = (%(logs)s, )
 try:
@@ -1093,24 +1099,11 @@ def cmd_grep_parsing(args):
         elif opt in ('B', 'before-context'):
             before_context = positive_number(opt, val)
     # more checks
-    if count:
-        if hilight:
-            hilight = '' # why hilight if we're just going to count?
-        if exact:
-            exact = False # see hilight
-    elif exact:
-        # pointless
-        if after_context:
-            after_context = False
-        if before_context:
-            before_context = False
-    if head and tail: # it won't work
-        raise Exception, "can't use --tail and --head simultaneously."
     if number is not None:
         if number == 0:
-            # waste of cpu cycles
-            raise Exception, "this humble script refuses to search and return zero lines."
-        if head:
+            head = tail = False
+            number = None
+        elif head:
             head = number
         elif tail:
             tail = number
