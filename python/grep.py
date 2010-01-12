@@ -685,7 +685,7 @@ def show_matching_lines():
             buffer_name = weechat.buffer_get_string(buffer, 'name')
             matched_lines[buffer_name] = grep_buffer(buffer, head, tail, after_context,
                     before_context, regexp, hilight, exact)
-    
+
     # logs
     if search_in_files:
         size_limit = get_config_int('size_limit', allow_empty_string=True)
@@ -711,15 +711,29 @@ def show_matching_lines():
             global hook_file_grep
             timeout = 1000*60*10 # 10 min
 
-            files_string = search_in_files[:]
-            for id in range(len(search_in_files)):
-                # nicks might have ` characters, must be escaped in the shell cmd
-                if '`' in search_in_files[id]:
-                    files_string[id] = search_in_files[id].replace('`', '\`')
-            files_string = ', '.join(map(repr, files_string)).replace('\\\\','\\')
+            def shell_escapes(s):
+                # nicks might have ` characters, must be escaped
+                if '`' in s:
+                    s = s.replace('`', '\`')
+                return "'%s'" %s
 
-            cmd = """
-python -c "
+            files_string = ', '.join(map(shell_escapes, search_in_files))
+
+            cmd = grep_proccess_cmd %dict(logs=files_string, head=head, pattern=pattern, tail=tail,
+                    hilight=hilight, after_context=after_context, before_context=before_context,
+                    exact=exact, matchcase=matchcase, len_home=len_home, version=SCRIPT_VERSION,
+                    home=weechat.info_get('weechat_dir', ''))
+
+            #debug(cmd)
+            hook_file_grep = weechat.hook_process(cmd, timeout, 'grep_file_callback', '')
+            if hook_file_grep:
+                buffer_create("Searching for '%s' in %s worth of data..." %(pattern,
+                    human_readable_size(size)))
+    else:
+        buffer_update()
+
+# defined here for commodity
+grep_proccess_cmd = """python -c "
 import sys, tempfile, cPickle
 sys.path.append('%(home)s/python') # add WeeChat script dir so we can import grep
 from grep import make_regexp, grep_file, SCRIPT_VERSION
@@ -739,19 +753,8 @@ try:
     print fd.name
     fd.close()
 except Exception, e:
-    print >> sys.stderr, e\""""
-            cmd = cmd %dict(logs=files_string, head=head, pattern=pattern, tail=tail, hilight=hilight,
-                            after_context=after_context, before_context=before_context, exact=exact,
-                            matchcase=matchcase, len_home=len_home, version=SCRIPT_VERSION,
-                            home=weechat.info_get('weechat_dir', ''))
-
-            #debug(cmd)
-            hook_file_grep = weechat.hook_process(cmd, timeout, 'grep_file_callback', '')
-            if hook_file_grep:
-                buffer_create("Searching for '%s' in %s worth of data..." %(pattern,
-                    human_readable_size(size)))
-    else:
-        buffer_update()
+    print >> sys.stderr, e"
+"""
 
 grep_stdout = grep_stderr = ''
 def grep_file_callback(data, command, rc, stdout, stderr):
@@ -1110,10 +1113,10 @@ def cmd_grep_stop(buffer, args):
             weechat.unhook(hook_file_grep)
             hook_file_grep = None
             s = 'Search for \'%s\' stopped.' %pattern
+            say(s, buffer=buffer)
             grep_buffer = weechat.buffer_search('python', SCRIPT_NAME)
             if grep_buffer:
                 weechat.buffer_set(buffer, 'title', s)
-            say('Search for \'%s\' stopped.' %pattern, buffer=buffer)
         else:
             say(get_grep_file_status(), buffer=buffer)
         raise Exception
