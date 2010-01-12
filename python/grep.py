@@ -885,7 +885,10 @@ def buffer_update():
         else:
             # looks like log isn't in weechat's format
             weechat_format = False # incoming lines won't be formatted if they have 2 tabs
-            date, nick, msg = '', '', s.replace('\t', ' ')
+            date, nick, msg = '', '', s
+        # remove tabs
+        if '\t' in msg:
+            msg = msg.replace('\t', '    ')
         # we don't want colors if there's match highlighting
         if hilight:
             # fix color reset when there's highlighting from date to prefix
