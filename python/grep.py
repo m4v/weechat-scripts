@@ -359,12 +359,19 @@ def dir_list(dir, filter_list=(), filter_excludes=True):
 def get_file_by_pattern(pattern, all=False):
     """Returns the first log whose path matches 'pattern',
     if all is True returns all logs that matches."""
-    global home_dir
     if not pattern: return []
     #debug('get_file_by_filename: searching for %s.' %pattern)
+    # do envvar expandsion and check file
+    file = path.expanduser(pattern)
+    file = path.expandvars(file)
+    if path.isfile(file):
+        return [file]
+    # lets see if there's a matching log
+    global home_dir
     file = path.join(home_dir, pattern)
-    if not path.isfile(file):
-        # lets see if there's a log matching pattern
+    if path.isfile(file):
+        return [file]
+    else:
         import fnmatch
         file = []
         file_list = dir_list(home_dir)
@@ -374,10 +381,8 @@ def get_file_by_pattern(pattern, all=False):
             if fnmatch.fnmatch(basename, pattern):
                 file.append(log)
                 if not all: break
-    else:
-        file = [file]
-    #debug('get_file_by_filename: got %s.' %file)
-    return file
+        #debug('get_file_by_filename: got %s.' %file)
+        return file
 
 def get_file_by_buffer(buffer):
     """Given buffer pointer, finds log's path or returns None."""
