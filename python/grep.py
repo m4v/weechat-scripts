@@ -862,7 +862,7 @@ def buffer_update():
     def make_title(name, number):
         note = ''
         if len_total_lines > max_lines and not count:
-            note = ' (last %s lines shown)' %len(matched_lines)
+            note = ' (last %s lines shown)' %max_lines
         return "Search in %s%s%s | %s matches%s | pattern \"%s%s%s\" | %.4f seconds (%.2f%%)" \
                 %(c_title, name, c_reset, number, note, c_title, pattern, c_reset, time_total, time_grep_pct)
 
@@ -974,6 +974,9 @@ def buffer_update():
 
     if get_config_boolean('go_to_buffer'):
         weechat.buffer_set(buffer, 'display', '1')
+
+    # free matched_lines so it can be removed from memory
+    matched_lines = None
 
 def print_info(s, buffer=None, display=False):
     """Prints 's' in script's buffer as 'script_nick'. For displaying search summaries."""
@@ -1129,7 +1132,7 @@ def cmd_grep_parsing(args):
             tail = n
 
 def cmd_grep_stop(buffer, args):
-    global hook_file_grep, pattern
+    global hook_file_grep, pattern, matched_lines
     if hook_file_grep:
         if args == 'stop':
             weechat.unhook(hook_file_grep)
@@ -1139,6 +1142,7 @@ def cmd_grep_stop(buffer, args):
             grep_buffer = weechat.buffer_search('python', SCRIPT_NAME)
             if grep_buffer:
                 weechat.buffer_set(buffer, 'title', s)
+            matched_lines = None
         else:
             say(get_grep_file_status(), buffer=buffer)
         raise Exception
