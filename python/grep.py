@@ -877,7 +877,7 @@ def buffer_update():
             # fix color reset when there's highlighting from date to prefix
             if c_hilight in date and not c_reset in date:
                 nick = c_hilight + nick
-            return '%s\t%s %s' %(date, nick, msg)
+            return '%s %s %s' %(date, nick, msg)
         else:
             if nick in nick_dict:
                 nick = nick_dict[nick]
@@ -886,7 +886,7 @@ def buffer_update():
                 s = color_nick(nick)
                 nick_dict[nick] = s
                 nick = s
-            return '%s%s\t%s%s %s' %(c_date, date, nick, c_reset, msg)
+            return '%s%s %s%s %s' %(c_date, date, nick, c_reset, msg)
 
     def color_nick(nick):
         """Returns coloured nick, with coloured mode if any."""
