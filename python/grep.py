@@ -140,7 +140,7 @@ except ImportError:
 
 SCRIPT_NAME    = "grep"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.6"
+SCRIPT_VERSION = "0.6-dev"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Search in buffers and logs"
 SCRIPT_COMMAND = "grep"
@@ -511,10 +511,13 @@ def check_string(s, regexp, hilight='', exact=False):
     elif regexp.search(s):
         return s
 
-def grep_file(file, head, tail, after_context, before_context, *args):
+def grep_file(file, head, tail, after_context, before_context, count, *args):
     """Return a list of lines that match 'regexp' in 'file', if no regexp returns all lines."""
     #debug(' '.join(map(str, (file, head, tail, after_context, before_context))))
     lines = linesList()
+    if count:
+        tail = head = after_context = before_context = False
+
     file_object = open(file, 'r')
     file_lines = file_object.readlines()
     if tail:
@@ -526,7 +529,7 @@ def grep_file(file, head, tail, after_context, before_context, *args):
 
     # define these locally as it makes the loop run slightly faster
     append = lines.append
-    count = lines.count_match
+    count_match = lines.count_match
     separator = lines.append_separator
     check = check_string
     
@@ -555,8 +558,8 @@ def grep_file(file, head, tail, after_context, before_context, *args):
                             append(context_line)
                     except IndexError:
                         pass
-            append(line)
-            count()
+            count or append(line)
+            count_match()
             if after_context:
                 id, offset = 0, 0
                 while id < after_context + offset:
@@ -567,22 +570,26 @@ def grep_file(file, head, tail, after_context, before_context, *args):
                         if _context_line:
                             offset = id
                             context_line = _context_line # so match is hilighted with --hilight
-                            count()
+                            count_match()
                         append(context_line)
                     except IndexError:
                         pass
                 separator()
                 line_idx += id
-            if limit and lines.matches_count >= limit: break
+            if limit and lines.matches_count >= limit:
+                break
         line_idx += 1
 
     if tail:
         lines.reverse()
     return lines
 
-def grep_buffer(buffer, head, tail, after_context, before_context, *args):
+def grep_buffer(buffer, head, tail, after_context, before_context, count, *args):
     """Return a list of lines that match 'regexp' in 'buffer', if no regexp returns all lines."""
     lines = linesList()
+    if count:
+        tail = head = after_context = before_context = False
+
     # Using /grep in grep's buffer can lead to some funny effects
     # We should take measures if that's the case
     def make_get_line_funcion():
@@ -623,7 +630,7 @@ def grep_buffer(buffer, head, tail, after_context, before_context, *args):
 
     # define these locally as it makes the loop run slightly faster
     append = lines.append
-    count = lines.count_match
+    count_match = lines.count_match
     separator = lines.append_separator
     check = check_string
 
@@ -651,8 +658,8 @@ def grep_buffer(buffer, head, tail, after_context, before_context, *args):
                     else:
                         append(context_line)
                     infolist_next(infolist)
-            append(line)
-            count()
+            count or append(line)
+            count_match()
             if after_context:
                 id, offset = 0, 0
                 while id < after_context + offset:
@@ -663,7 +670,7 @@ def grep_buffer(buffer, head, tail, after_context, before_context, *args):
                         if _context_line:
                             context_line = _context_line
                             offset = id
-                            count()
+                            count_match()
                         append(context_line)
                     else:
                         # in the main loop infolist_next will start again an cause an infinite loop
@@ -699,7 +706,7 @@ def show_matching_lines():
         for buffer in search_in_buffers:
             buffer_name = weechat.buffer_get_string(buffer, 'name')
             matched_lines[buffer_name] = grep_buffer(buffer, head, tail, after_context,
-                    before_context, regexp, hilight, exact)
+                    before_context, count, regexp, hilight, exact)
 
     # logs
     if search_in_files:
@@ -717,7 +724,8 @@ def show_matching_lines():
             regexp = make_regexp(pattern, matchcase)
             for log in search_in_files:
                 log_name = strip_home(log)
-                matched_lines[log_name] = grep_file(log, head, tail, after_context, before_context, regexp, hilight, exact)
+                matched_lines[log_name] = grep_file(log, head, tail, after_context, before_context,
+                        count, regexp, hilight, exact)
             buffer_update()
         else:
             # we hook a process so grepping runs in background.
@@ -736,7 +744,7 @@ def show_matching_lines():
             cmd = grep_proccess_cmd %dict(logs=files_string, head=head, pattern=pattern, tail=tail,
                     hilight=hilight, after_context=after_context, before_context=before_context,
                     exact=exact, matchcase=matchcase, home_dir=home_dir, version=SCRIPT_VERSION,
-                    home=weechat.info_get('weechat_dir', ''))
+                    home=weechat.info_get('weechat_dir', ''), count=count)
 
             #debug(cmd)
             hook_file_grep = weechat.hook_process(cmd, timeout, 'grep_file_callback', '')
@@ -760,7 +768,7 @@ try:
     for log in logs:
         log_name = strip_home(log, '%(home_dir)s')
         matched_lines = grep_file(log, %(head)s, %(tail)s, %(after_context)s, %(before_context)s,
-                regexp, '%(hilight)s', %(exact)s)
+        %(count)s, regexp, '%(hilight)s', %(exact)s)
         d[log_name] = matched_lines
     fd = tempfile.NamedTemporaryFile('wb', delete=False)
     cPickle.dump(d, fd, -1)
@@ -912,7 +920,7 @@ def buffer_update():
     prnt(buffer, '\n')
     print_info('Search for "%s" in %s.' %(pattern, matched_lines), buffer)
     # print last <max_lines> lines
-    if matched_lines:
+    if matched_lines or count:
         matched_lines.get_last_lines(max_lines)
         for log, lines in matched_lines.items():
             if lines.matches_count:
@@ -1090,13 +1098,6 @@ def cmd_grep_parsing(args):
             hilight = '' # why hilight if we're just going to count?
         if exact:
             exact = False # see hilight
-        if after_context:
-            after_context = False
-        if before_context:
-            before_context = False
-        if head or tail:
-            # will break match counting
-            head = tail = False
     elif exact:
         # pointless
         if after_context:
