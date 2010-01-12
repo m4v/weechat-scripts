@@ -188,6 +188,12 @@ class linesDict(dict):
         items.sort(key=lambda i: len(i[1]))
         return items
 
+    def items_count(self):
+        """Returns a list of items sorted by match count."""
+        items = dict.items(self)
+        items.sort(key=lambda i: i[1].matches_count)
+        return items
+
     def strip_separator(self):
         for L in self.itervalues():
             L.strip_separator()
@@ -931,7 +937,12 @@ def buffer_update():
     # print last <max_lines> lines
     if matched_lines or count:
         matched_lines.get_last_lines(max_lines)
-        for log, lines in matched_lines.items():
+        if count:
+            # with count we sort by matches lines instead of just lines.
+            matched_lines_items = matched_lines.items_count()
+        else:
+            matched_lines_items = matched_lines.items()
+        for log, lines in matched_lines_items:
             if lines.matches_count:
                 # matched lines
                 if not count:
