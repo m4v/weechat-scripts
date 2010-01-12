@@ -297,6 +297,16 @@ def get_home():
     home = weechat.config_string(weechat.config_get('logger.file.path'))
     return home.replace('%h', weechat.info_get('weechat_dir', ''))
 
+def strip_home(s, dir=''):
+    """Strips home dir from the begging of the log path, this makes them sorter."""
+    if not dir:
+        global home_dir
+        dir = home_dir
+    l = len(dir)
+    if s[:l] == dir:
+        return s[l:]
+    return s
+
 
 ### Messages ###
 def debug(s, prefix='debug'):
@@ -690,7 +700,6 @@ def show_matching_lines():
     if search_in_files:
         size_limit = get_config_int('size_limit', allow_empty_string=True)
         background = False
-        len_home = len(home_dir)
         if size_limit or size_limit == 0:
             size = sum(map(get_size, search_in_files))
             if size > size_limit * 1024:
@@ -702,7 +711,7 @@ def show_matching_lines():
             # run grep normally
             regexp = make_regexp(pattern, matchcase)
             for log in search_in_files:
-                log_name = log[len_home:]
+                log_name = strip_home(log)
                 matched_lines[log_name] = grep_file(log, head, tail, after_context, before_context, regexp, hilight, exact)
             buffer_update()
         else:
@@ -721,7 +730,7 @@ def show_matching_lines():
 
             cmd = grep_proccess_cmd %dict(logs=files_string, head=head, pattern=pattern, tail=tail,
                     hilight=hilight, after_context=after_context, before_context=before_context,
-                    exact=exact, matchcase=matchcase, len_home=len_home, version=SCRIPT_VERSION,
+                    exact=exact, matchcase=matchcase, home_dir=home_dir, version=SCRIPT_VERSION,
                     home=weechat.info_get('weechat_dir', ''))
 
             #debug(cmd)
@@ -736,7 +745,7 @@ def show_matching_lines():
 grep_proccess_cmd = """python -c "
 import sys, tempfile, cPickle
 sys.path.append('%(home)s/python') # add WeeChat script dir so we can import grep
-from grep import make_regexp, grep_file, SCRIPT_VERSION
+from grep import make_regexp, grep_file, strip_home, SCRIPT_VERSION
 logs = (%(logs)s, )
 try:
     if '%(version)s' != SCRIPT_VERSION:
@@ -744,7 +753,7 @@ try:
     regexp = make_regexp('%(pattern)s', %(matchcase)s)
     d = {}
     for log in logs:
-        log_name = log[%(len_home)s:]
+        log_name = strip_home(log, '%(home_dir)s')
         matched_lines = grep_file(log, %(head)s, %(tail)s, %(after_context)s, %(before_context)s,
                 regexp, '%(hilight)s', %(exact)s)
         d[log_name] = matched_lines
@@ -788,10 +797,10 @@ def grep_file_callback(data, command, rc, stdout, stderr):
     return WEECHAT_RC_OK
 
 def get_grep_file_status():
-    global search_in_files, matched_lines, time_start, home_dir
+    global search_in_files, matched_lines, time_start
     elapsed = now() - time_start
     if len(search_in_files) == 1:
-        log = '%s (%s)' %(search_in_files[0][len(home_dir):],
+        log = '%s (%s)' %(strip_home(search_in_files[0]),
                 human_readable_size(get_size(search_in_files[0])))
     else:
         size = sum(map(get_size, search_in_files))
@@ -845,7 +854,6 @@ def buffer_update():
                 %(lines.matches_count, c_summary, pattern, c_info, c_summary, name, c_reset, note)
 
     global weechat_format
-    weechat_format = True
     nick_dict = {} # nick caching
     def format_line(s):
         """Returns the log line 's' ready for printing in buffer."""
@@ -906,6 +914,7 @@ def buffer_update():
                 # matched lines
                 if not count:
                     # print lines
+                    weechat_format = True
                     for line in lines:
                         prnt(buffer, format_line(line))
 
@@ -1213,7 +1222,6 @@ def cmd_logs(data, buffer, args):
 
     # is there's a filter, filter_excludes should be False
     file_list = dir_list(home_dir, filter, filter_excludes=not filter)
-    home_dir_len = len(home_dir)
     if sort_by_size:
         file_list.sort(key=get_size)
     else:
@@ -1237,7 +1245,7 @@ def cmd_logs(data, buffer, args):
     print_info(msg, buffer, display=True)
     for file, size in file_list:
         separator = column_len and ' '*(column_len - len(size))
-        weechat.prnt(buffer, '%s%s\t%s' %(separator, size, file[home_dir_len:]))
+        weechat.prnt(buffer, '%s%s\t%s' %(separator, size, strip_home(file)))
     if file_list:
         print_info(msg, buffer)
     return WEECHAT_RC_OK
@@ -1247,7 +1255,7 @@ def cmd_logs(data, buffer, args):
 def completion_log_files(data, completion_item, buffer, completion):
     global home_dir
     for log in dir_list(home_dir):
-        weechat.hook_completion_list_add(completion, log[len(home_dir):], 0, weechat.WEECHAT_LIST_POS_SORT)
+        weechat.hook_completion_list_add(completion, strip_home(log), 0, weechat.WEECHAT_LIST_POS_SORT)
     return WEECHAT_RC_OK
 
 def completion_grep_args(data, completion_item, buffer, completion):
