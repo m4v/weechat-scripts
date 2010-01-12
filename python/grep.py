@@ -71,7 +71,7 @@
 #   * grepping for big (or many) log files runs in a weechat_process.
 #   * added /grep stop.
 #   * added 'size_limit' option
-#   * fixed a infolist leak
+#   * fixed a infolist leak when grepping buffers
 #   * added 'default_tail_head' option
 #   * results are sort by line count
 #   * removed all tabs, because I learned how to configure Vim so that spaces aren't annoying
@@ -409,23 +409,23 @@ def get_file_by_name(buffer_name):
     # get common mask options
     masks = [weechat.config_string(weechat.config_get('logger.mask.irc'))]
     masks.append(weechat.config_string(weechat.config_get('logger.file.mask')))
-    # I can't see how to replace all the local vars in mask nicely, so I just replace $channel,
-    # $server and other local vars, replace the unreplaced vars left with '*', and use it as
-    # a mask for get the path with get_file_by_pattern
+    # since there's no buffer pointer, we try to replace some local vars in mask, like $channel and
+    # $server, then replace the local vars left with '*', and use it as a mask for get the path with
+    # get_file_by_pattern
     for mask in masks:
         #debug('get_file_by_name: mask: %s' %mask)
         if '$name' in mask:
             mask = mask.replace('$name', buffer_name)
-        elif '$channel' in mask or '$server' in mask or '$short_name' in mask:
+        elif '$channel' in mask or '$server' in mask:
             if '.' in buffer_name and \
                     '#' not in buffer_name[:buffer_name.find('.')]: # the dot isn't part of the channel name
                 #    ^ I'm asuming channel starts with #, i'm lazy.
                 server, channel = buffer_name.split('.', 1)
             else:
-                server, channel = '', buffer_name
-            mask = mask.replace('$short_name', channel)
-            mask = mask.replace('$channel', channel)
-            if server:
+                server, channel = '*', buffer_name
+            if '$channel' in mask:
+                mask = mask.replace('$channel', channel)
+            if '$server' in mask:
                 mask = mask.replace('$server', server)
         # change the unreplaced vars by '*'
         if '$' in mask:
@@ -1258,6 +1258,7 @@ def cmd_logs(data, buffer, args):
 
 ### Completion ###
 def completion_log_files(data, completion_item, buffer, completion):
+    #debug('completion: %s' %', '.join((data, completion_item, buffer, completion)))
     global home_dir
     for log in dir_list(home_dir):
         weechat.hook_completion_list_add(completion, strip_home(log), 0, weechat.WEECHAT_LIST_POS_SORT)
@@ -1308,7 +1309,7 @@ if __name__ == '__main__' and import_ok and \
             "See http://docs.python.org/lib/re-syntax.html\n",
             # completion template
             "buffer %(buffers_names) %(grep_arguments)|%*"
-            "||log %(grep_log_files) %(grep_arguments)|%*"
+            "||log %(grep_log_files)|%(filename) %(grep_arguments)|%*"
             "||stop"
             "||%(grep_arguments)|%*",
             'cmd_grep' ,'')
@@ -1342,5 +1343,6 @@ if __name__ == '__main__' and import_ok and \
     script_nick_nocolor = '[%s]' %SCRIPT_NAME
     # paragraph separator when using context options
     context_sep = '%s\t%s--' %(script_nick, color_info)
+
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
