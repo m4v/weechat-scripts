@@ -779,12 +779,12 @@ try:
     d = {}
     for log in logs:
         log_name = strip_home(log, '%(home_dir)s')
-        matched_lines = grep_file(log, %(head)s, %(tail)s, %(after_context)s, %(before_context)s,
+        lines = grep_file(log, %(head)s, %(tail)s, %(after_context)s, %(before_context)s,
         %(count)s, regexp, '%(hilight)s', %(exact)s)
-        d[log_name] = matched_lines
+        d[log_name] = lines
     fd = tempfile.NamedTemporaryFile('wb', delete=False)
-    cPickle.dump(d, fd, -1)
     print fd.name
+    cPickle.dump(d, fd, -1)
     fd.close()
 except Exception, e:
     print >> sys.stderr, e"
@@ -802,21 +802,25 @@ def grep_file_callback(data, command, rc, stdout, stderr):
     if int(rc) >= 0:
         if grep_stderr:
             error(grep_stderr)
-        elif grep_stdout:
+        file = None
+        if grep_stdout:
+            grep_stdout = grep_stdout.strip('\n')
+            file = grep_stdout.split('\n')[-1]
+        if file:
+            import cPickle, os
             try:
-                grep_stdout = grep_stdout.strip('\n')
-                file = grep_stdout.split('\n')[-1]
                 #debug(file)
                 fd = open(file, 'rb')
-                import cPickle, os
+                # the cPickle module seems to leak in WeeChat? use pickle instead
                 d = cPickle.load(fd)
                 matched_lines.update(d)
                 fd.close()
-                os.remove(file)
             except Exception, e:
                 error(e)
             else:
                 buffer_update()
+            finally:
+                os.remove(file)
         grep_stdout = grep_stderr = ''
         hook_file_grep = None
     return WEECHAT_RC_OK
@@ -845,7 +849,6 @@ def buffer_update():
         weechat.buffer_clear(buffer)
     matched_lines.strip_separator() # remove first and last separators of each list
     len_total_lines = len(matched_lines)
-    len_matched_lines = matched_lines.get_matches_count()
     max_lines = get_config_int('max_lines')
     if not count and len_total_lines > max_lines:
         weechat.buffer_clear(buffer)
@@ -859,12 +862,13 @@ def buffer_update():
     c_hilight = color_hilight
 
     # formatting functions declared locally.
-    def make_title(name, number):
+    def make_title(matched_lines, time_total, time_pct):
         note = ''
-        if len_total_lines > max_lines and not count:
-            note = ' (last %s lines shown)' %max_lines
+        if not count and len_total_lines > max_lines:
+            note = ' (last %s lines shown)' %len(matched_lines)
         return "Search in %s%s%s | %s matches%s | pattern \"%s%s%s\" | %.4f seconds (%.2f%%)" \
-                %(c_title, name, c_reset, number, note, c_title, pattern, c_reset, time_total, time_grep_pct)
+                %(c_title, matched_lines, c_reset, matched_lines.get_matches_count(), note, c_title,
+                  pattern, c_reset, time_total, time_pct)
 
     def make_summary(name, lines):
         note = ''
@@ -933,7 +937,7 @@ def buffer_update():
 
     prnt = weechat.prnt
     prnt(buffer, '\n')
-    print_info('Search for "%s" in %s.' %(pattern, matched_lines), buffer)
+    print_info('Search for "%s" in %s%s%s.' %(pattern, c_summary, matched_lines, c_reset), buffer)
     # print last <max_lines> lines
     if matched_lines or count:
         matched_lines.get_last_lines(max_lines)
@@ -969,7 +973,7 @@ def buffer_update():
     time_total = time_end - time_start
     # percent of the total time used for grepping
     time_grep_pct = (time_grep - time_start)/time_total*100
-    title = make_title(matched_lines, len_matched_lines)
+    title = make_title(matched_lines, time_total, time_grep_pct)
     weechat.buffer_set(buffer, 'title', title)
 
     if get_config_boolean('go_to_buffer'):
@@ -1142,7 +1146,7 @@ def cmd_grep_stop(buffer, args):
             grep_buffer = weechat.buffer_search('python', SCRIPT_NAME)
             if grep_buffer:
                 weechat.buffer_set(buffer, 'title', s)
-            matched_lines = None
+            del matched_lines
         else:
             say(get_grep_file_status(), buffer=buffer)
         raise Exception
