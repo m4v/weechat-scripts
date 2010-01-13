@@ -1161,16 +1161,20 @@ def cmd_grep_parsing(args):
                 hilight = '%s,%s' %(color_hilight, color_reset)
             # we pass the colors in the variable itself because check_string() must not use
             # weechat's module when applying the colors (this is for grep in a hooked process)
+            count = False
         elif opt in ('e', 'exact'):
             exact = not exact
+            count = False
         elif opt in ('a', 'all'):
             all = not all
         elif opt in ('h', 'head'):
             head = not head
             tail = False
+            count = False
         elif opt in ('t', 'tail'):
             tail = not tail
             head = False
+            count = False
         elif opt in ('b', 'buffer'):
             only_buffers = True
         elif opt in ('n', 'number'):
@@ -1179,11 +1183,14 @@ def cmd_grep_parsing(args):
             n = positive_number(opt, val)
             after_context = n
             before_context = n
+            count = False
         elif opt in ('A', 'after-context'):
             after_context = positive_number(opt, val)
+            count = False
         elif opt in ('B', 'before-context'):
             before_context = positive_number(opt, val)
-    # more checks
+            count = False
+    # number check
     if number is not None:
         if number == 0:
             head = tail = False
