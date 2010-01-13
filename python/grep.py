@@ -262,23 +262,35 @@ def human_readable_size(size):
 
 def color_nick(nick):
     """Returns coloured nick, with coloured mode if any."""
-    # XXX should check if nick has a prefix and subfix string?
-    modes = '@!+%' # nick modes
     if not nick: return ''
+    wcolor = weechat.color
+    config_string = lambda s : weechat.config_string(weechat.config_get(s))
+    config_int = lambda s : weechat.config_integer(weechat.config_get(s))
+    # prefix and suffix
+    prefix = config_string('irc.look.nick_prefix')
+    suffix = config_string('irc.look.nick_suffix')
+    prefix_c = suffix_c = wcolor(config_string('weechat.color.chat_delimiters'))
+    if nick[0] == prefix:
+        nick = nick[1:]
+    else:
+        prefix = prefix_c = ''
+    if nick[-1] == suffix:
+        nick = nick[:-1]
+        suffix = wcolor(color_delimiter) + suffix
+    else:
+        suffix = suffix_c = ''
     # nick mode
+    modes = '@!+%'
     if nick[0] in modes:
         mode, nick = nick[0], nick[1:]
-        mode_color = weechat.config_string(weechat.config_get('weechat.color.nicklist_prefix%d' \
+        mode_color = wcolor(config_string('weechat.color.nicklist_prefix%d' \
             %(modes.find(mode) + 1)))
-        mode_color = weechat.color(mode_color)
     else:
-        mode = ''
-        mode_color = ''
-    color_nicks_number = weechat.config_integer(weechat.config_get('weechat.look.color_nicks_number'))
+        mode = mode_color = ''
+    color_nicks_number = config_int('weechat.look.color_nicks_number')
     idx = (sum(map(ord, nick))%color_nicks_number) + 1
-    color = weechat.config_string(weechat.config_get('weechat.color.chat_nick_color%02d' %idx))
-    nick_color = weechat.color(color)
-    return '%s%s%s%s' %(mode_color, mode, nick_color, nick)
+    nick_color = wcolor(config_string('weechat.color.chat_nick_color%02d' %idx))
+    return ''.join((prefix_c, prefix, mode_color, mode, nick_color, nick, suffix_c, suffix))
 
 
 ### Config ###
