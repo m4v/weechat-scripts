@@ -446,13 +446,13 @@ def get_file_by_name(buffer_name):
     """Given a buffer name, returns its log path or None. buffer_name should be in 'server.#channel'
     or '#channel' format."""
     #debug('get_file_by_name: searching for %s' %buffer_name)
-    # get common mask options
-    masks = [weechat.config_string(weechat.config_get('logger.mask.irc'))]
-    masks.append(weechat.config_string(weechat.config_get('logger.file.mask')))
+    # common mask options
+    config_masks = ('logger.mask.irc', 'logger.file.mask')
     # since there's no buffer pointer, we try to replace some local vars in mask, like $channel and
     # $server, then replace the local vars left with '*', and use it as a mask for get the path with
     # get_file_by_pattern
-    for mask in masks:
+    for config in config_masks:
+        mask = weechat.config_string(weechat.config_get(config))
         #debug('get_file_by_name: mask: %s' %mask)
         if '$name' in mask:
             mask = mask.replace('$name', buffer_name)
@@ -487,18 +487,19 @@ def get_buffer_by_name(buffer_name):
     #debug('get_buffer_by_name: searching for %s' %buffer_name)
     pointer = weechat.buffer_search('', buffer_name)
     if not pointer:
-        infolist = weechat.infolist_get('buffer', '', '')
-        while weechat.infolist_next(infolist) and not pointer:
-            short_name = weechat.infolist_string(infolist, 'short_name')
-            name = weechat.infolist_string(infolist, 'name')
-            if buffer_name in (short_name, name):
-                #debug('get_buffer_by_name: found %s' %name)
-                pointer = weechat.buffer_search('', name)
-        weechat.infolist_free(infolist)
+        try:
+            infolist = weechat.infolist_get('buffer', '', '')
+            while weechat.infolist_next(infolist):
+                short_name = weechat.infolist_string(infolist, 'short_name')
+                name = weechat.infolist_string(infolist, 'name')
+                if buffer_name in (short_name, name):
+                    #debug('get_buffer_by_name: found %s' %name)
+                    pointer = weechat.buffer_search('', name)
+                    return pointer
+        finally:
+            weechat.infolist_free(infolist)
     #debug('get_buffer_by_name: got %s' %pointer)
-    if pointer:
-        return pointer
-    return None
+    return pointer
 
 def get_all_buffers():
     """Returns list with pointers of all open buffers."""
@@ -1055,7 +1056,7 @@ def buffer_create(title=None):
     """Returns our buffer pointer, creates and cleans the buffer if needed."""
     buffer = weechat.buffer_search('python', SCRIPT_NAME)
     if not buffer:
-        buffer = weechat.buffer_new(SCRIPT_NAME, 'buffer_input', '', 'buffer_close', '')
+        buffer = weechat.buffer_new(SCRIPT_NAME, 'buffer_input', '', '', '')
         weechat.buffer_set(buffer, 'time_for_each_line', '0')
         weechat.buffer_set(buffer, 'nicklist', '0')
         weechat.buffer_set(buffer, 'title', title or 'grep output buffer')
@@ -1092,9 +1093,6 @@ def buffer_input(data, buffer, input_data):
                 error(e)
     except NameError:
         error("There isn't any previous search to repeat.", buffer=buffer)
-    return WEECHAT_RC_OK
-
-def buffer_close(*args):
     return WEECHAT_RC_OK
 
 
@@ -1257,7 +1255,7 @@ def cmd_grep(data, buffer, args):
         search_buffer = get_all_buffers()
     elif buffer_name:
         search_buffer = get_buffer_by_name(buffer_name)
-        if search_buffer is None:
+        if not search_buffer:
             # there's no buffer, try in the logs
             log_file = get_file_by_name(buffer_name)
             if not log_file:
