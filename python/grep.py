@@ -74,6 +74,7 @@
 #   * fixed a infolist leak when grepping buffers
 #   * added 'default_tail_head' option
 #   * results are sort by line count
+#   * don't die if log is corrupted (has NULL chars in it)
 #   * removed all tabs, because I learned how to configure Vim so that spaces aren't annoying
 #   anymore. This was the script's original policy.
 #
@@ -339,13 +340,15 @@ def debug(s, prefix='debug'):
     """Debug msg"""
     weechat.prnt('', '%s: %s'  %(prefix,s))
 
-def error(s, prefix=None, buffer=''):
+def error(s, prefix=None, buffer='', trace=''):
     """Error msg"""
     prefix = prefix or script_nick
     weechat.prnt(buffer, '%s%s %s' %(weechat.prefix('error'), prefix, s))
     if weechat.config_get_plugin('debug'):
-        import traceback
-        weechat.prnt('', traceback.format_exc())
+        if not trace:
+            import traceback
+            trace = traceback.format_exc()
+        weechat.prnt('', trace)
 
 def say(s, prefix=None, buffer=''):
     """normal msg"""
@@ -969,10 +972,16 @@ def buffer_update():
                     # print lines
                     weechat_format = True
                     for line in lines:
+                        #debug(repr(line))
                         if line == linesList._sep:
                             # separator
                             prnt(buffer, context_sep)
                         else:
+                            if '\x00' in line:
+                                # log was corrupted
+                                error("Found garbage in log '%s', maybe it's corrupted" %log,
+                                        trace=repr(line))
+                                line = line.replace('\x00', '')
                             prnt(buffer, format_line(line))
 
                 # summary
