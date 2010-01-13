@@ -59,6 +59,8 @@
 #
 #
 #   TODO:
+#   * try to figure out why hook_process chokes in long outputs (using a tempfile as a
+#   workaround now)
 #   * predefined regexp templates for common searches, like urls
 #   * possibly add option for defining time intervals
 #
@@ -75,6 +77,7 @@
 #   * added 'default_tail_head' option
 #   * results are sort by line count
 #   * don't die if log is corrupted (has NULL chars in it)
+#   * changed presentation of /logs
 #   * removed all tabs, because I learned how to configure Vim so that spaces aren't annoying
 #   anymore. This was the script's original policy.
 #
@@ -1048,7 +1051,7 @@ def split_line(s):
         date, nick, msg = s.split('\t', 2) # date, nick, message
     else:
         # looks like log isn't in weechat's format
-        weechat_format = False # incoming lines won't be formatted if they have 2 tabs
+        weechat_format = False # incoming lines won't be formatted
         date, nick, msg = '', '', s
     # remove tabs
     if '\t' in msg:
@@ -1116,7 +1119,7 @@ def cmd_init():
     hilight = ''
     head = tail = after_context = before_context = False
     matchcase = count = exact = False
-    number = None
+    pattern = number = None
     home_dir = get_home()
     cache_dir = {} # for avoid walking the dir tree more than once per command
     nick_dict = {} # nick cache for don't calculate nick color every time
