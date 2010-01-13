@@ -541,78 +541,110 @@ def check_string(s, regexp, hilight='', exact=False):
 
 def grep_file(file, head, tail, after_context, before_context, count, regexp, hilight, exact):
     """Return a list of lines that match 'regexp' in 'file', if no regexp returns all lines."""
-    #debug(' '.join(map(str, (file, head, tail, after_context, before_context))))
-    lines = linesList()
     if count:
         tail = head = after_context = before_context = exact = False
         hilight = ''
     elif exact:
         before_context = after_context = False
+    #debug(' '.join(map(str, (file, head, tail, after_context, before_context))))
 
-    file_object = open(file, 'r')
-    file_lines = file_object.readlines()
-    if tail:
-        # instead of searching in the whole file and later pick the last few lines, we
-        # reverse the log, search until count reached and reverse it again, that way is a lot
-        # faster
-        file_lines.reverse()
-    limit = head or tail
-
+    lines = linesList()
     # define these locally as it makes the loop run slightly faster
     append = lines.append
     count_match = lines.count_match
     separator = lines.append_separator
     check = lambda s: check_string(s, regexp, hilight, exact)
     
-    if before_context:
-        before_context_range = range(1, before_context + 1)
-        before_context_range.reverse()
+    file_object = open(file, 'r')
+    if tail or before_context:
+        # for these options, I need to seek in the file, but is slower and uses a good deal of
+        # memory if the log is too big, so we do this *only* for these options.
+        file_lines = file_object.readlines()
 
-    line_idx = 0
-    while line_idx < len(file_lines):
-        line = file_lines[line_idx]
-        line = check(line)
-        if line:
-            if before_context:
-                separator()
-                trimmed = False
-                for id in before_context_range:
-                    try:
-                        context_line = file_lines[line_idx - id]
-                        if check(context_line):
-                            # match in before context, that means we appended these same lines in a
-                            # previous match, so we delete them merging both paragraphs
-                            if not trimmed:
-                                del lines[id - before_context - 1:]
-                                trimmed = True
-                        else:
+        if before_context:
+            before_context_range = range(1, before_context + 1)
+            before_context_range.reverse()
+
+        if tail:
+            # instead of searching in the whole file and later pick the last few lines, we
+            # reverse the log, search until count reached and reverse it again, that way is a lot
+            # faster
+            file_lines.reverse()
+        limit = tail or head
+
+        line_idx = 0
+        while line_idx < len(file_lines):
+            line = file_lines[line_idx]
+            line = check(line)
+            if line:
+                if before_context:
+                    separator()
+                    trimmed = False
+                    for id in before_context_range:
+                        try:
+                            context_line = file_lines[line_idx - id]
+                            if check(context_line):
+                                # match in before context, that means we appended these same lines in a
+                                # previous match, so we delete them merging both paragraphs
+                                if not trimmed:
+                                    del lines[id - before_context - 1:]
+                                    trimmed = True
+                            else:
+                                append(context_line)
+                        except IndexError:
+                            pass
+                append(line)
+                count_match()
+                if after_context:
+                    id, offset = 0, 0
+                    while id < after_context + offset:
+                        id += 1
+                        try:
+                            context_line = file_lines[line_idx + id]
+                            _context_line = check(context_line)
+                            if _context_line:
+                                offset = id
+                                context_line = _context_line # so match is hilighted with --hilight
+                                count_match()
                             append(context_line)
-                    except IndexError:
-                        pass
-            count or append(line)
-            count_match()
-            if after_context:
-                id, offset = 0, 0
-                while id < after_context + offset:
-                    id += 1
-                    try:
-                        context_line = file_lines[line_idx + id]
-                        _context_line = check(context_line)
-                        if _context_line:
-                            offset = id
-                            context_line = _context_line # so match is hilighted with --hilight
-                            count_match()
-                        append(context_line)
-                    except IndexError:
-                        pass
-                separator()
-                line_idx += id
-            if limit and lines.matches_count >= limit:
-                break
-        line_idx += 1
+                        except IndexError:
+                            pass
+                    separator()
+                    line_idx += id
+                if limit and lines.matches_count >= limit:
+                    break
+            line_idx += 1
 
-    if tail:
-        lines.reverse()
+        if tail:
+            lines.reverse()
+    else:
+        # do a normal grep
+        limit = head
+
+        for line in file_object:
+            line = check(line)
+            if line:
+                count or append(line)
+                count_match()
+                if after_context:
+                    id, offset = 0, 0
+                    while id < after_context + offset:
+                        id += 1
+                        try:
+                            context_line = file_object.next()
+                            _context_line = check(context_line)
+                            if _context_line:
+                                offset = id
+                                context_line = _context_line
+                                count_match()
+                            count or append(context_line)
+                        except StopIteration:
+                            pass
+                    separator()
+                if limit and lines.matches_count >= limit:
+                    break
+
+    file_object.close()
     return lines
 
 def grep_buffer(buffer, head, tail, after_context, before_context, count, regexp, hilight, exact):
@@ -623,6 +655,7 @@ def grep_buffer(buffer, head, tail, after_context, before_context, count, regexp
         hilight = ''
     elif exact:
         before_context = after_context = False
+    #debug(' '.join(map(str, (tail, head, after_context, before_context, count, exact, hilight))))
 
     # Using /grep in grep's buffer can lead to some funny effects
     # We should take measures if that's the case
@@ -826,24 +859,26 @@ def grep_file_callback(data, command, rc, stdout, stderr):
             error(grep_stderr)
         file = None
         if grep_stdout:
+            debug(grep_stdout)
             grep_stdout = grep_stdout.strip('\n')
             file = grep_stdout.split('\n')[-1]
-        if file:
-            import cPickle, os
-            try:
-                #debug(file)
-                fd = open(file, 'rb')
-                d = cPickle.load(fd)
-                matched_lines.update(d)
-                fd.close()
-            except Exception, e:
-                error(e)
-            else:
-                buffer_update()
-            finally:
-                os.remove(file)
-        grep_stdout = grep_stderr = ''
-        hook_file_grep = None
+        try:
+            if file:
+                try:
+                    import cPickle, os
+                    debug(file)
+                    fd = open(file, 'rb')
+                    d = cPickle.load(fd)
+                    matched_lines.update(d)
+                    fd.close()
+                except Exception, e:
+                    error(e)
+                else:
+                    os.remove(file)
+                    buffer_update()
+        finally:
+            grep_stdout = grep_stderr = ''
+            hook_file_grep = None
     return WEECHAT_RC_OK
 
 def get_grep_file_status():
