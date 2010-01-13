@@ -338,7 +338,15 @@ def strip_home(s, dir=''):
 ### Messages ###
 def debug(s, prefix='debug'):
     """Debug msg"""
-    weechat.prnt('', '%s: %s'  %(prefix,s))
+    if not weechat.config_get_plugin('debug'): return
+    buffer_name = 'DEBUG_' + SCRIPT_NAME
+    buffer = weechat.buffer_search('python', buffer_name)
+    if not buffer:
+        buffer = weechat.buffer_new(buffer_name, '', '', '', '')
+        weechat.buffer_set(buffer, 'nicklist', '0')
+        weechat.buffer_set(buffer, 'time_for_each_line', '0')
+        weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
+    weechat.prnt(buffer, '%s\t%s' %(prefix, s))
 
 def error(s, prefix=None, buffer='', trace=''):
     """Error msg"""
@@ -347,8 +355,9 @@ def error(s, prefix=None, buffer='', trace=''):
     if weechat.config_get_plugin('debug'):
         if not trace:
             import traceback
-            trace = traceback.format_exc()
-        weechat.prnt('', trace)
+            if traceback.sys.exc_type:
+                trace = traceback.format_exc()
+        not trace or weechat.prnt('', trace)
 
 def say(s, prefix=None, buffer=''):
     """normal msg"""
@@ -852,33 +861,40 @@ grep_stdout = grep_stderr = ''
 def grep_file_callback(data, command, rc, stdout, stderr):
     global hook_file_grep, grep_stderr,  grep_stdout
     global matched_lines
-    #debug("%s @ stderr: '%s', stdout: '%s'" %(rc, stderr.strip('\n'), stdout.strip('\n')))
+    #debug("rc: %s\nstderr: %s\nstdout: %s" %(rc, repr(stderr), repr(stdout)))
     if stdout:
         grep_stdout += stdout
     if stderr:
         grep_stderr += stderr
     if int(rc) >= 0:
-        if grep_stderr:
-            error(grep_stderr)
-        file = None
-        if grep_stdout:
-            debug(grep_stdout)
-            grep_stdout = grep_stdout.strip('\n')
-            file = grep_stdout.split('\n')[-1]
+  
+        def set_buffer_error():
+            grep_buffer = buffer_create()
+            title = weechat.buffer_get_string(grep_buffer, 'title')
+            title = title + ' %serror' %color_title
+            weechat.buffer_set(grep_buffer, 'title', title)
+
         try:
-            if file:
-                try:
-                    import cPickle, os
-                    debug(file)
-                    fd = open(file, 'rb')
-                    d = cPickle.load(fd)
-                    matched_lines.update(d)
-                    fd.close()
-                except Exception, e:
-                    error(e)
-                else:
-                    os.remove(file)
-                    buffer_update()
+            if grep_stderr:
+                error(grep_stderr)
+                set_buffer_error()
+            elif grep_stdout:
+                #debug(grep_stdout)
+                file = grep_stdout.strip('\n ')
+                if file:
+                    try:
+                        import cPickle, os
+                        #debug(file)
+                        fd = open(file, 'rb')
+                        d = cPickle.load(fd)
+                        matched_lines.update(d)
+                        fd.close()
+                    except Exception, e:
+                        error(e)
+                        set_buffer_error()
+                    else:
+                        os.remove(file)
+                        buffer_update()
         finally:
             grep_stdout = grep_stderr = ''
             hook_file_grep = None
@@ -1002,6 +1018,7 @@ def buffer_update():
     time_total = time_end - time_start
     # percent of the total time used for grepping
     time_grep_pct = (time_grep - time_start)/time_total*100
+    debug('time: %.4f seconds (%.2f%%)' %(time_total, time_grep_pct))
     if not count and len_total_lines > max_lines:
         note = ' (last %s lines shown)' %len(matched_lines)
     else:
