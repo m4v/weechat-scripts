@@ -255,7 +255,7 @@ def human_readable_size(size):
     while size > 1024:
         power += 1
         size /= 1024.0
-    return '%.2f%s' %(size, sizeDict.get(power, ''))
+    return '%.2f %s' %(size, sizeDict.get(power, ''))
 
 def color_nick(nick):
     """Returns coloured nick, with coloured mode if any."""
@@ -1329,24 +1329,25 @@ def cmd_logs(data, buffer, args):
         file_list.sort()
 
     file_sizes = map(lambda x: human_readable_size(get_size(x)), file_list)
-    if weechat.config_string(weechat.config_get('weechat.look.prefix_align')) == 'none' \
-            and file_list:
-        # lets do alignment for the file list
-        L = file_sizes[:]
+    # calculate column lenght
+    if file_list:
+        L = file_list[:]
         L.sort(key=len)
         bigest = L[-1]
-        column_len = len(bigest)
+        column_len = len(bigest) + 3
     else:
         column_len = ''
+
     buffer = buffer_create()
     if get_config_boolean('clear_buffer'):
         weechat.buffer_clear(buffer)
     file_list = zip(file_list, file_sizes)
     msg = 'Found %s logs.' %len(file_list)
+
     print_line(msg, buffer, display=True)
     for file, size in file_list:
-        separator = column_len and ' '*(column_len - len(size))
-        weechat.prnt(buffer, '%s%s\t%s' %(separator, size, strip_home(file)))
+        separator = column_len and '.'*(column_len - len(file))
+        weechat.prnt(buffer, '%s %s %s' %(strip_home(file), separator, size))
     if file_list:
         print_line(msg, buffer)
     return WEECHAT_RC_OK
