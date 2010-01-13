@@ -370,7 +370,8 @@ cache_dir = {} # note: don't remove, needed for completion if the script was loa
 def dir_list(dir, filter_list=(), filter_excludes=True, include_dir=False):
     """Returns a list of files in 'dir' and its subdirs."""
     global cache_dir
-    import fnmatch
+    from os import walk
+    from fnmatch import fnmatch
     #debug('dir_list: listing in %s' %dir)
     key = (dir, include_dir)
     try:
@@ -378,24 +379,29 @@ def dir_list(dir, filter_list=(), filter_excludes=True, include_dir=False):
     except KeyError:
         pass
     
-    def append_files(arg, dir, fnames):
-        arg.extend(map(lambda s:path.join(dir, s), fnames))
-
-    def filter(file):
-        if not include_dir and path.isdir(file):
-            return True
-        elif filter_list:
-            file = file[len(dir):] # pattern shouldn't match home dir
+    filter_list = filter_list or get_config_log_filter()
+    dir_len = len(dir)
+    if filter_list:
+        def filter(file):
+            file = file[dir_len:] # pattern shouldn't match home dir
             for pattern in filter_list:
-                if fnmatch.fnmatch(file, pattern):
+                if fnmatch(file, pattern):
                     return filter_excludes
-        return not filter_excludes
+            return not filter_excludes
+    else:
+        filter = lambda f : not filter_excludes
 
     file_list = []
-    filter_list = filter_list or get_config_log_filter()
-    #debug('filter: %s' %filter_list)
-    path.walk(dir, append_files, file_list) # get a list of log files, including in subdirs
-    file_list = [ file for file in file_list if not filter(file) ]
+    extend = file_list.extend
+    join = path.join
+    def walk_path():
+        for basedir, subdirs, files in walk(dir):
+            if include_dir: files.extend(subdirs)
+            files_path = map(lambda f : join(basedir, f), files)
+            files_path = [ file for file in files_path if not filter(file) ]
+            extend(files_path)
+
+    walk_path()
     cache_dir[key] = file_list
     #debug('dir_list: got %s' %str(file_list))
     return file_list
