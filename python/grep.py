@@ -366,20 +366,23 @@ def say(s, prefix=None, buffer=''):
 
 
 ### Log files and buffers ###
-def dir_list(dir, filter_list=(), filter_excludes=True):
+cache_dir = {} # note: don't remove, needed for completion if the script was loaded recently
+def dir_list(dir, filter_list=(), filter_excludes=True, include_dir=False):
     """Returns a list of files in 'dir' and its subdirs."""
     global cache_dir
     import fnmatch
     #debug('dir_list: listing in %s' %dir)
-    if dir in cache_dir:
-        #debug('dir_list: using dir cache.')
-        return cache_dir[dir]
-
+    key = (dir, include_dir)
+    try:
+        return cache_dir[key]
+    except KeyError:
+        pass
+    
     def append_files(arg, dir, fnames):
         arg.extend(map(lambda s:path.join(dir, s), fnames))
 
     def filter(file):
-        if path.isdir(file):
+        if not include_dir and path.isdir(file):
             return True
         elif filter_list:
             file = file[len(dir):] # pattern shouldn't match home dir
@@ -393,7 +396,8 @@ def dir_list(dir, filter_list=(), filter_excludes=True):
     #debug('filter: %s' %filter_list)
     path.walk(dir, append_files, file_list) # get a list of log files, including in subdirs
     file_list = [ file for file in file_list if not filter(file) ]
-    cache_dir[dir] = file_list
+    cache_dir[key] = file_list
+    #debug('dir_list: got %s' %str(file_list))
     return file_list
 
 def get_file_by_pattern(pattern, all=False):
@@ -438,7 +442,7 @@ def get_file_by_buffer(buffer):
                     #debug('get_file_by_buffer: got %s' %file)
                     return file
                 #else:
-                    #debug('get_file_by_buffer: got %s but log not enabled' %file)
+                #    debug('get_file_by_buffer: got %s but log not enabled' %file)
     finally:
         #debug('infolist gets freed')
         weechat.infolist_free(infolist)
@@ -1346,7 +1350,7 @@ def cmd_logs(data, buffer, args):
 def completion_log_files(data, completion_item, buffer, completion):
     #debug('completion: %s' %', '.join((data, completion_item, buffer, completion)))
     global home_dir
-    for log in dir_list(home_dir):
+    for log in dir_list(home_dir, include_dir=True):
         weechat.hook_completion_list_add(completion, strip_home(log), 0, weechat.WEECHAT_LIST_POS_SORT)
     return WEECHAT_RC_OK
 
