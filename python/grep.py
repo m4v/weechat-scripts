@@ -66,7 +66,6 @@
 #
 #
 #   History:
-#
 #   2010-01-11
 #   version 0.5.6: implemented grep in background
 #   * improved context lines presentation.
@@ -1210,9 +1209,11 @@ def cmd_grep_parsing(args):
             count = False
         elif opt in ('A', 'after-context'):
             after_context = positive_number(opt, val)
+            before_context = False
             count = False
         elif opt in ('B', 'before-context'):
             before_context = positive_number(opt, val)
+            after_context = False
             count = False
     # number check
     if number is not None:
