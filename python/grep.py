@@ -844,6 +844,13 @@ try:
     cPickle.dump(d, s_out, 0)
     s_out.flush()
     print s_out.getvalue()
+#debug
+    import tempfile
+    fd = tempfile.NamedTemporaryFile(delete=False)
+    print >> sys.stderr, fd.name
+    s_out.flush()
+    fd.write(s_out.getvalue())
+    fd.close()
 except Exception, e:
     print >> sys.stderr, e"
 """
@@ -859,15 +866,18 @@ def grep_file_callback(data, command, rc, stdout, stderr):
         grep_stderr += stderr
     if int(rc) >= 0:
         try:
-            if grep_stderr:
-               error(grep_stderr)
-            elif grep_stdout:
+            if grep_stderr and not grep_stdout:
+                error(grep_stderr)
+            if grep_stdout:
                 #debug(repr(grep_stdout))
                 try:
                     import cPickle, cStringIO
                     s_in = cStringIO.StringIO(grep_stdout)
                     d = cPickle.load(s_in)
                     matched_lines.update(d)
+                except ValueError, e:
+                    error(e, trace=repr(s_in.getvalue()[-300:]))
+                    error(grep_stderr)
                 except Exception, e:
                     error(e)
                 else:
