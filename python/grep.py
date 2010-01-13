@@ -949,12 +949,7 @@ def buffer_update():
     global weechat_format
     if hilight:
         # we don't want colors if there's match highlighting
-        def format_line(s):
-            date, nick, msg = split_line(s)
-            # fix color reset when there's highlighting from date to prefix
-            if color_hilight in date and not color_reset in date:
-                nick = color_hilight + nick
-            return '%s %s %s' %(date, nick, msg)
+        format_line = lambda s : '%s %s %s' %split_line(s)
     else:
         def format_line(s):
             global nick_dict
