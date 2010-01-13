@@ -427,20 +427,21 @@ def get_file_by_pattern(pattern, all=False):
 def get_file_by_buffer(buffer):
     """Given buffer pointer, finds log's path or returns None."""
     #debug('get_file_by_buffer: searching for %s' %buffer)
-    file = None
-    log_enabled = False
     infolist = weechat.infolist_get('logger_buffer', '', '')
-    while weechat.infolist_next(infolist):
-        pointer = weechat.infolist_pointer(infolist, 'buffer')
-        if pointer == buffer:
-            file = weechat.infolist_string(infolist, 'log_filename')
-            log_enabled = weechat.infolist_integer(infolist, 'log_enabled')
-            break
-    weechat.infolist_free(infolist)
-    #debug('get_file_by_buffer: log_enabled: %s got: %s' %(log_enabled, file))
-    if not log_enabled:
-        return None
-    return file
+    if not infolist: return
+    try:
+        while weechat.infolist_next(infolist):
+            pointer = weechat.infolist_pointer(infolist, 'buffer')
+            if pointer == buffer:
+                file = weechat.infolist_string(infolist, 'log_filename')
+                if weechat.infolist_integer(infolist, 'log_enabled'):
+                    #debug('get_file_by_buffer: got %s' %file)
+                    return file
+                #else:
+                    #debug('get_file_by_buffer: got %s but log not enabled' %file)
+    finally:
+        #debug('infolist gets freed')
+        weechat.infolist_free(infolist)
 
 def get_file_by_name(buffer_name):
     """Given a buffer name, returns its log path or None. buffer_name should be in 'server.#channel'
