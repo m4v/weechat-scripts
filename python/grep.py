@@ -954,18 +954,18 @@ def buffer_update():
         def format_line(s):
             global nick_dict
             date, nick, msg = split_line(s)
-            if nick in nick_dict:
+            try:
                 nick = nick_dict[nick]
-            else:
+            except KeyError:
                 # cache nick
-                s = color_nick(nick)
-                nick_dict[nick] = s
-                nick = s
+                nick_c = color_nick(nick)
+                nick_dict[nick] = nick_c
+                nick = nick_c
             return '%s%s %s%s %s' %(color_date, date, nick, color_reset, msg)
 
     prnt = weechat.prnt
     prnt(buffer, '\n')
-    print_info('Search for "%s" in %s%s%s.' %(pattern, color_summary, matched_lines, color_reset),
+    print_line('Search for "%s" in %s%s%s.' %(pattern, color_summary, matched_lines, color_reset),
             buffer)
     # print last <max_lines> lines
     if matched_lines.get_matches_count():
@@ -998,13 +998,13 @@ def buffer_update():
                 # summary
                 if count or get_config_boolean('show_summary'):
                     summary = make_summary(log, lines)
-                    print_info(summary, buffer)
+                    print_line(summary, buffer)
 
             # separator
             if not count and lines:
                 prnt(buffer, '\n')
     else:
-        print_info('No matches found.', buffer)
+        print_line('No matches found.', buffer)
 
     # set title
     global time_start
@@ -1043,7 +1043,7 @@ def split_line(s):
         msg = msg.replace('\t', '    ')
     return date, nick, msg
 
-def print_info(s, buffer=None, display=False):
+def print_line(s, buffer=None, display=False):
     """Prints 's' in script's buffer as 'script_nick'. For displaying search summaries."""
     if buffer is None:
         buffer = buffer_create()
@@ -1100,6 +1100,7 @@ def buffer_close(*args):
 
 ### Commands ###
 def cmd_init():
+    """Resets global vars."""
     global home_dir, cache_dir, nick_dict
     global pattern, matchcase, number, count, exact, hilight
     global tail, head, after_context, before_context
@@ -1112,6 +1113,7 @@ def cmd_init():
     nick_dict = {} # nick cache for don't calculate nick color every time
 
 def cmd_grep_parsing(args):
+    """Parses args for /grep and grep input buffer."""
     global pattern, matchcase, number, count, exact, hilight
     global tail, head, after_context, before_context
     global log_name, buffer_name, only_buffers, all
@@ -1325,12 +1327,12 @@ def cmd_logs(data, buffer, args):
         weechat.buffer_clear(buffer)
     file_list = zip(file_list, file_sizes)
     msg = 'Found %s logs.' %len(file_list)
-    print_info(msg, buffer, display=True)
+    print_line(msg, buffer, display=True)
     for file, size in file_list:
         separator = column_len and ' '*(column_len - len(size))
         weechat.prnt(buffer, '%s%s\t%s' %(separator, size, strip_home(file)))
     if file_list:
-        print_info(msg, buffer)
+        print_line(msg, buffer)
     return WEECHAT_RC_OK
 
 
