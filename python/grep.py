@@ -826,7 +826,7 @@ def show_matching_lines():
 
 # defined here for commodity
 grep_proccess_cmd = """python -c "
-import sys, tempfile, cPickle
+import sys, cPickle, cStringIO
 sys.path.append('%(home)s/python/dev') # add WeeChat script dir so we can import grep
 from grep import make_regexp, grep_file, strip_home, SCRIPT_VERSION
 logs = (%(logs)s, )
@@ -840,10 +840,10 @@ try:
         lines = grep_file(log, %(head)s, %(tail)s, %(after_context)s, %(before_context)s,
         %(count)s, regexp, '%(hilight)s', %(exact)s)
         d[log_name] = lines
-    fd = tempfile.NamedTemporaryFile('wb', delete=False)
-    print fd.name
-    cPickle.dump(d, fd, -1)
-    fd.close()
+    s_out = cStringIO.StringIO()
+    cPickle.dump(d, s_out, 0)
+    s_out.flush()
+    print s_out.getvalue()
 except Exception, e:
     print >> sys.stderr, e"
 """
@@ -852,32 +852,25 @@ grep_stdout = grep_stderr = ''
 def grep_file_callback(data, command, rc, stdout, stderr):
     global hook_file_grep, grep_stderr,  grep_stdout
     global matched_lines
-    #debug("%s @ stderr: '%s', stdout: '%s'" %(rc, stderr.strip('\n'), stdout.strip('\n')))
+    #debug("%s\nstderr: %s\nstdout: %s" %(rc, repr(stderr), repr(stdout)))
     if stdout:
         grep_stdout += stdout
     if stderr:
         grep_stderr += stderr
     if int(rc) >= 0:
-        if grep_stderr:
-            error(grep_stderr)
-        file = None
-        if grep_stdout:
-            debug(grep_stdout)
-            grep_stdout = grep_stdout.strip('\n')
-            file = grep_stdout.split('\n')[-1]
         try:
-            if file:
+            if grep_stderr:
+               error(grep_stderr)
+            elif grep_stdout:
+                #debug(repr(grep_stdout))
                 try:
-                    import cPickle, os
-                    debug(file)
-                    fd = open(file, 'rb')
-                    d = cPickle.load(fd)
+                    import cPickle, cStringIO
+                    s_in = cStringIO.StringIO(grep_stdout)
+                    d = cPickle.load(s_in)
                     matched_lines.update(d)
-                    fd.close()
                 except Exception, e:
                     error(e)
                 else:
-                    os.remove(file)
                     buffer_update()
         finally:
             grep_stdout = grep_stderr = ''
