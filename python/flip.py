@@ -45,9 +45,6 @@ SCRIPT_COMMAND = "flip"
 
 script_nick    = "[%s]" %SCRIPT_NAME
 
-### Config ###
-settings = {}
-
 fliptable = {
 # Upper case
 u'A' : u'\N{FOR ALL}',
@@ -134,89 +131,21 @@ class TwoWayDict(dict):
 fliptable = TwoWayDict(fliptable)
 
 
-### Messages ###
-def debug(s, prefix='debug'):
-    """Debug msg"""
-    if not weechat.config_get_plugin('debug'): return
-    buffer_name = 'DEBUG_' + SCRIPT_NAME
-    buffer = weechat.buffer_search('python', buffer_name)
-    if not buffer:
-        buffer = weechat.buffer_new(buffer_name, '', '', '', '')
-        weechat.buffer_set(buffer, 'nicklist', '0')
-        weechat.buffer_set(buffer, 'time_for_each_line', '0')
-        weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
-    weechat.prnt(buffer, '%s\t%s' %(prefix, s))
-
-def error(s, prefix=None, buffer='', trace=''):
-    """Error msg"""
-    prefix = prefix or script_nick
-    weechat.prnt(buffer, '%s%s %s' %(weechat.prefix('error'), prefix, s))
-    if weechat.config_get_plugin('debug'):
-        if not trace:
-            import traceback
-            if traceback.sys.exc_type:
-                trace = traceback.format_exc()
-        not trace or weechat.prnt('', trace)
-
-def say(s, prefix=None, buffer=''):
-    """normal msg"""
-    prefix = prefix or script_nick
-    weechat.prnt(buffer, '%s\t%s' %(prefix, s))
-
-def say_unicode(s, prefix=None, buffer=''):
-    """normal msg for unicode strings"""
-    prefix = prefix or script_nick
-    u = u'%s\t%s' %(prefix, s)
-    weechat.prnt(buffer, u.encode('utf-8'))
-
-
-### Config functions and value validation ###
-boolDict = {'on':True, 'off':False}
-def get_config_boolean(config):
-    value = weechat.config_get_plugin(config)
-    try:
-        return boolDict[value]
-    except KeyError:
-        default = settings[config]
-        error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
-        error("'%s' is invalid, allowed: 'on', 'off'" %value)
-        return boolDict[default]
-
-def get_config_int(config, allow_empty_string=False):
-    value = weechat.config_get_plugin(config)
-    try:
-        return int(value)
-    except ValueError:
-        if value == '' and allow_empty_string:
-            return value
-        default = settings[config]
-        error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
-        error("'%s' is not a number." %value)
-        return int(default)
-
-valid_methods = set(())
-def get_config_valid_string(config, valid_strings=valid_methods):
-    value = weechat.config_get_plugin(config)
-    if value not in valid_strings:
-        default = settings[config]
-        error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
-        error("'%s' is an invalid value, allowed: %s." %(value, ', '.join(valid_strings)))
-        return default
-    return value
-
-
 ### Commands
 def cmd_flip(data, buffer, args):
     """ """
     if not args:
         return WEECHAT_RC_OK
 
-    L = [ fliptable[c] for c in args ]
+    unicode_args = args.decode('utf-8')
+    L = [ fliptable[c] for c in unicode_args ]
     L.reverse()
     u = u''.join(L)
     s = u.encode('utf-8')
-    weechat.prnt(buffer, s)
-    
+
+    #weechat.prnt(buffer, s)
+    weechat.command(buffer, s)
+
     return WEECHAT_RC_OK
 
 
@@ -225,13 +154,16 @@ if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
         SCRIPT_DESC, '', ''):
 
-    # settings
-    for opt, val in settings.iteritems():
-        if not weechat.config_is_set_plugin(opt):
-            weechat.config_set_plugin(opt, val)
-    
     weechat.hook_command(SCRIPT_COMMAND, cmd_flip.__doc__, "",
             "", '', 'cmd_flip', '')
+
+    #test all chars
+    L = []
+    for k, v in fliptable.iteritems():
+        L.append(u'%s %s' %(k, v))
+    u = u' '.join(L)
+    s = u.encode('utf-8')
+    weechat.prnt('', s)
 
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
