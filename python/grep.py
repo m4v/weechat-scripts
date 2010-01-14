@@ -919,8 +919,8 @@ def grep_file_callback(data, command, rc, stdout, stderr):
                     d = cPickle.load(s_in)
                     matched_lines.update(d)
                 except ValueError, e:
-                    error(e, trace=repr(s_in.getvalue()[-300:]))
                     error(grep_stderr)
+                    error(e, trace=repr(s_in.getvalue()[-300:]))
                     set_buffer_error()
                 except Exception, e:
                     error(e)
