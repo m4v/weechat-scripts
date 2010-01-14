@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 ###
-# Copyright (c) 2009-2010 by Elián Hanisch <lambdae2@gmail.com>
+# Copyright (c) 2010 by Elián Hanisch <lambdae2@gmail.com>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -19,13 +19,9 @@
 ###
 #
 #
-#   Commands:
-#
-#   Settings:
-#
 #   History:
-#   <date>
-#   version 0.1-dev: new script!
+#   2010-01-14
+#   version 0.1: new script!
 #
 ###
 
@@ -38,9 +34,9 @@ except ImportError:
 
 SCRIPT_NAME    = "flip"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.1-dev"
+SCRIPT_VERSION = "0.1"
 SCRIPT_LICENSE = "GPL3"
-SCRIPT_DESC    = "I'm a script!"
+SCRIPT_DESC    = "Flips text upside down."
 SCRIPT_COMMAND = "flip"
 
 fliptable = {
@@ -130,7 +126,7 @@ class TwoWayDict(dict):
 
 ### Commands
 def cmd_flip(data, buffer, args):
-    """ """
+    """Flips text."""
     if not args:
         return WEECHAT_RC_OK
 
@@ -150,9 +146,9 @@ if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
         SCRIPT_DESC, '', ''):
 
-    weechat.hook_command(SCRIPT_COMMAND, cmd_flip.__doc__, "", "", '', 'cmd_flip', '')
+    weechat.hook_command(SCRIPT_COMMAND, cmd_flip.__doc__, "text", "", '', 'cmd_flip', '')
 
-    #test all chars
+    #for test all chars, change False to True
     if False:
         L = []
         for k, v in fliptable.iteritems():
