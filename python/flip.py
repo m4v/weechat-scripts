@@ -215,7 +215,7 @@ def cmd_flip(data, buffer, args):
     L.reverse()
     u = u''.join(L)
     s = u.encode('utf-8')
-    weechat.prnt('', s)
+    weechat.prnt(buffer, s)
     
     return WEECHAT_RC_OK
 
