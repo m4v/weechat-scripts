@@ -66,8 +66,8 @@
 #
 #
 #   History:
-#   2010-01-11
-#   version 0.5.6: implemented grep in background
+#   2010-01-14
+#   version 0.6.0: implemented grep in background
 #   * improved context lines presentation.
 #   * grepping for big (or many) log files runs in a weechat_process.
 #   * added /grep stop.
@@ -144,10 +144,21 @@ except ImportError:
 
 SCRIPT_NAME    = "grep"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.5.6-dev"
+SCRIPT_VERSION = "0.6.0"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Search in buffers and logs"
 SCRIPT_COMMAND = "grep"
+
+### Default Settings ###
+settings = {
+'clear_buffer'      : 'off',
+'log_filter'        : '',
+'go_to_buffer'      : 'on',
+'max_lines'         : '4000',
+'show_summary'      : 'on',
+'size_limit'        : '2048',
+'default_tail_head' : '10',
+}
 
 ### Class definitions ###
 class linesDict(dict):
@@ -219,7 +230,6 @@ class linesDict(dict):
                 del v[:]
                 v.stripped_lines = l
 
-
 class linesList(list):
     """Class for list of matches, since sometimes I need to add lines that aren't matches, I need an
     independent counter."""
@@ -246,7 +256,6 @@ class linesList(list):
                 del self[0]
             if self[-1] == s:
                 del self[-1]
-
 
 ### Misc functions ###
 now = time.time
@@ -292,19 +301,7 @@ def color_nick(nick):
     nick_color = wcolor(config_string('weechat.color.chat_nick_color%02d' %idx))
     return ''.join((prefix_c, prefix, mode_color, mode, nick_color, nick, suffix_c, suffix))
 
-
-### Config ###
-settings = {
-        'clear_buffer' :'off', # Should clear the buffer before every search
-        'log_filter'   :'',    # filter for exclude log files
-        'go_to_buffer' :'on',
-        'max_lines'    :'4000',
-        'show_summary' :'on',  # Show summary line after the search
-        'size_limit'   :'2048',
-        'default_tail_head':'10',
-        }
-
-### value validation
+### Config and value validation ###
 boolDict = {'on':True, 'off':False}
 def get_config_boolean(config):
     value = weechat.config_get_plugin(config)
@@ -349,7 +346,6 @@ def strip_home(s, dir=''):
         return s[l:]
     return s
 
-
 ### Messages ###
 def debug(s, prefix='debug'):
     """Debug msg"""
@@ -378,7 +374,6 @@ def say(s, prefix=None, buffer=''):
     """normal msg"""
     prefix = prefix or script_nick
     weechat.prnt(buffer, '%s\t%s' %(prefix, s))
-
 
 ### Log files and buffers ###
 cache_dir = {} # note: don't remove, needed for completion if the script was loaded recently
@@ -541,7 +536,6 @@ def get_all_buffers():
         # remove it from list
         del buffers[buffers.index(grep_buffer)]
     return buffers
-
 
 ### Grep ###
 def make_regexp(pattern, matchcase=False):
@@ -909,7 +903,7 @@ def grep_file_callback(data, command, rc, stdout, stderr):
                 set_buffer_error()
             elif grep_stdout:
                 #debug(grep_stdout)
-                file = grep_stdout.strip('\n ')
+                file = grep_stdout.strip()
                 if file:
                     try:
                         import cPickle, os
@@ -940,7 +934,6 @@ def get_grep_file_status():
         log = '%s log files (%s)' %(len(search_in_files), human_readable_size(size))
     return 'Searching in %s, running for %.4f seconds. Interrupt it with "/grep stop" or "stop"' \
         ' in grep buffer.' %(log, elapsed)
-
 
 ### Grep buffer ###
 def buffer_update():
@@ -1042,7 +1035,7 @@ def buffer_update():
     time_total = time_end - time_start
     # percent of the total time used for grepping
     time_grep_pct = (time_grep - time_start)/time_total*100
-    debug('time: %.4f seconds (%.2f%%)' %(time_total, time_grep_pct))
+    #debug('time: %.4f seconds (%.2f%%)' %(time_total, time_grep_pct))
     if not count and len_total_lines > max_lines:
         note = ' (last %s lines shown)' %len(matched_lines)
     else:
@@ -1122,7 +1115,6 @@ def buffer_input(data, buffer, input_data):
     except NameError:
         error("There isn't any previous search to repeat.", buffer=buffer)
     return WEECHAT_RC_OK
-
 
 ### Commands ###
 def cmd_init():
@@ -1371,7 +1363,6 @@ def cmd_logs(data, buffer, args):
         print_line(msg, buffer)
     return WEECHAT_RC_OK
 
-
 ### Completion ###
 def completion_log_files(data, completion_item, buffer, completion):
     #debug('completion: %s' %', '.join((data, completion_item, buffer, completion)))
@@ -1385,7 +1376,6 @@ def completion_grep_args(data, completion_item, buffer, completion):
             'after-context', 'before-context', 'context'):
         weechat.hook_completion_list_add(completion, '--' + arg, 0, weechat.WEECHAT_LIST_POS_SORT)
     return WEECHAT_RC_OK
-
 
 ### Main ###
 if __name__ == '__main__' and import_ok and \
@@ -1459,6 +1449,5 @@ if __name__ == '__main__' and import_ok and \
     script_nick_nocolor = '[%s]' %SCRIPT_NAME
     # paragraph separator when using context options
     context_sep = '%s\t%s--' %(script_nick, color_info)
-
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
