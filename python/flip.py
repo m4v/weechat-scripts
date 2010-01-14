@@ -43,8 +43,6 @@ SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "I'm a script!"
 SCRIPT_COMMAND = "flip"
 
-script_nick    = "[%s]" %SCRIPT_NAME
-
 fliptable = {
 # Upper case
 u'A' : u'\N{FOR ALL}',
@@ -59,7 +57,8 @@ u'K' : u'\N{RIGHT NORMAL FACTOR SEMIDIRECT PRODUCT}',
 u'L' : u'\N{LATIN CAPITAL LETTER TURNED L}',
 u'M' : u'W',
 u'N' : u'\N{LATIN LETTER SMALL CAPITAL REVERSED N}',
-u'P' : u'\N{CYRILLIC CAPITAL LETTER KOMI DE}',
+#u'P' : u'\N{CYRILLIC CAPITAL LETTER KOMI DE}',
+u'P' : u'd',
 u'Q' : u'\N{GREEK CAPITAL LETTER OMICRON WITH TONOS}',
 u'R' : u'\N{LATIN LETTER SMALL CAPITAL TURNED R}',
 u'T' : u'\N{UP TACK}',
@@ -128,8 +127,6 @@ class TwoWayDict(dict):
         except KeyError:
             return key
 
-fliptable = TwoWayDict(fliptable)
-
 
 ### Commands
 def cmd_flip(data, buffer, args):
@@ -143,8 +140,7 @@ def cmd_flip(data, buffer, args):
     u = u''.join(L)
     s = u.encode('utf-8')
 
-    #weechat.prnt(buffer, s)
-    weechat.command(buffer, s)
+    weechat.buffer_set(buffer, 'input', s)
 
     return WEECHAT_RC_OK
 
@@ -154,16 +150,18 @@ if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
         SCRIPT_DESC, '', ''):
 
-    weechat.hook_command(SCRIPT_COMMAND, cmd_flip.__doc__, "",
-            "", '', 'cmd_flip', '')
+    weechat.hook_command(SCRIPT_COMMAND, cmd_flip.__doc__, "", "", '', 'cmd_flip', '')
 
     #test all chars
-    L = []
-    for k, v in fliptable.iteritems():
-        L.append(u'%s %s' %(k, v))
-    u = u' '.join(L)
-    s = u.encode('utf-8')
-    weechat.prnt('', s)
+    if False:
+        L = []
+        for k, v in fliptable.iteritems():
+            L.append(u'%s %s' %(k, v))
+        u = u' '.join(L)
+        s = u.encode('utf-8')
+        weechat.prnt('', s)
+
+    fliptable = TwoWayDict(fliptable)
 
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
