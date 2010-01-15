@@ -49,6 +49,16 @@ SCRIPT_COMMAND = "inotify"
 
 DAEMON_URL = 'http://github.com/m4v/weechat-scripts/blob/m4v/python/inotify-daemon'
 
+### Default Settings ###
+settings = {
+'server_uri'     : 'http://localhost:7766',
+'server_method'  : 'any',
+'color_nick'     : 'on',
+'ignore_channel' : '',
+'ignore_nick'    : '',
+#'ignore_text'   : '',
+}
+
 try:
     import weechat
     WEECHAT_RC_OK = weechat.WEECHAT_RC_OK
@@ -64,11 +74,11 @@ from fnmatch import fnmatch
 # remote daemon timeout
 socket.setdefaulttimeout(3)
 
-### messages
+### Messages ###
 def debug(s, prefix=''):
     """Debug msg"""
     if not weechat.config_get_plugin('debug'): return
-    buffer_name = 'DEBUG:' + SCRIPT_NAME
+    buffer_name = 'DEBUG_' + SCRIPT_NAME
     buffer = weechat.buffer_search('python', buffer_name)
     if not buffer:
         buffer = weechat.buffer_new(buffer_name, '', '', '', '')
@@ -77,15 +87,23 @@ def debug(s, prefix=''):
         weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
     weechat.prnt(buffer, '%s\t%s' %(prefix, s))
 
-def error(s, prefix=SCRIPT_NAME, buffer=''):
+def error(s, prefix='', buffer='', trace=''):
     """Error msg"""
-    weechat.prnt(buffer, '%s%s: %s' %(weechat.prefix('error'), prefix, s))
+    prefix = prefix or script_nick
+    weechat.prnt(buffer, '%s%s %s' %(weechat.prefix('error'), prefix, s))
+    if weechat.config_get_plugin('debug'):
+        if not trace:
+            import traceback
+            if traceback.sys.exc_type:
+                trace = traceback.format_exc()
+        not trace or weechat.prnt('', trace)
 
 def say(s, prefix='', buffer=''):
-    """Normal msg"""
+    """normal msg"""
+    prefix = prefix or script_nick
     weechat.prnt(buffer, '%s\t%s' %(prefix, s))
 
-### config and value validation
+### Config and value validation ###
 boolDict = {'on':True, 'off':False}
 def get_config_boolean(config):
     value = weechat.config_get_plugin(config)
@@ -97,11 +115,13 @@ def get_config_boolean(config):
         error("'%s' is invalid, allowed: 'on', 'off'" %value)
         return boolDict[default]
 
-def get_config_int(config):
+def get_config_int(config, allow_empty_string=False):
     value = weechat.config_get_plugin(config)
     try:
         return int(value)
     except ValueError:
+        if value == '' and allow_empty_string:
+            return value
         default = settings[config]
         error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
         error("'%s' is not a number." %value)
@@ -117,28 +137,8 @@ def get_config_valid_string(config, valid_strings=valid_methods):
         return default
     return value
 
-
-settings = {
-         'server_uri': 'http://localhost:7766',
-      'server_method': 'any',
-     'ignore_channel': '',
-        'ignore_nick': '',
-#        'ignore_text': '',
-         'color_nick': 'on',
-        }
-
-color_table = (
-        'teal',
-        'darkmagenta',
-        'darkgreen',
-        'brown',
-        'blue',
-        'darkblue',
-        'darkcyan',
-        'magenta',
-        'green',
-        'grey',
-        )
+# FIXME use something more integrated with weechat
+color_table = ('teal', 'darkmagenta', 'darkgreen', 'brown', 'blue', 'darkblue', 'darkcyan', 'magenta', 'green', 'grey')
 
 class Ignores(object):
     def __init__(self, ignore_type):
@@ -255,14 +255,14 @@ class Server(object):
 
     def _send_rpc_process(self, *args):
         cmd = """
-python -c \"
+python -c "
 import xmlrpclib
-
 try:
     server = xmlrpclib.Server('%(server_uri)s')
     print getattr(server, '%(method)s')(%(args)s)
 except:
-    print 'error'\""""
+    print 'error'"
+"""
         
         def quotes(s):
             if "'" in s:
@@ -290,7 +290,7 @@ def msg_flush(*args):
     return WEECHAT_RC_OK
 
 def rpc_process(data, command, rc, stdout, stderr):
-    debug("%s @ stderr: '%s', stdout: '%s'" %(rc, stderr.strip('\n'), stdout.strip('\n')))
+    debug("%s\nstderr: %s\nstdout: %s" %(rc, repr(stderr), repr(stdout)))
     if stdout:
         if stdout == 'OK\n':
             pass
@@ -338,9 +338,7 @@ def send_notify(s, channel='', nick=''):
 class Infolist(object):
     """Class for reading WeeChat's infolists."""
 
-    fields = {
-            'buffer':'pointer',
-            }
+    fields = {'buffer':'pointer'}
 
     def __init__(self, name, args=''):
         self.cursor = 0
@@ -393,7 +391,6 @@ def inactive():
 def notify_msg(data, buffer, time, tags, display, hilight, prefix, msg):
     if data and 'notify_message' not in tags:
         # weechat 0.3.0 bug
-        #debug('Got bad tags, wanted "notify_message" got "%s"' %tags)
         return WEECHAT_RC_OK
     #debug('  '.join((data, buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
     #        prefix='MESSAGE')
@@ -412,7 +409,6 @@ def notify_msg(data, buffer, time, tags, display, hilight, prefix, msg):
 def notify_priv(data, buffer, time, tags, display, hilight, prefix, msg):
     if data and 'notify_private' not in tags:
         # weechat 0.3.0 bug
-        #debug('Got bad tags, wanted "notify_private" got "%s"' %tags)
         return WEECHAT_RC_OK
     #debug('  '.join((data, buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
     #        prefix='PRIVATE')
@@ -458,6 +454,12 @@ if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, SCRIPT_DESC,
         '', ''):
 
+    # pretty nick
+    color_delimiter = weechat.color('chat_delimiters')
+    color_nick = weechat.color('chat_nick')
+    color_reset = weechat.color('reset')
+    script_nick = '%s[%s%s%s]%s' %(color_delimiter, color_nick, SCRIPT_NAME, color_delimiter, color_reset)
+
     # check if we need to workaround a bug in 0.3.0
     workaround = ''
     version = weechat.info_get('version', '')
@@ -476,22 +478,27 @@ if __name__ == '__main__' and import_ok and \
     server = Server()
 
     weechat.hook_command(SCRIPT_COMMAND, SCRIPT_DESC, '[test [text] | quit ]', 
-            "test: sends a test notification, with 'text' if provided.\n"
-            "quit: forces remote daemon to shutdown, after this notifications won't be available"
-            " and the daemon should be started again manually.\n\n"
-            "Setting notification ignores:\n"
-            "  It's possible to filter notification by channel or by nick, with the config options\n"
-            "   'ignore_channel' and 'ignore_nick' in plugins.var.python.%s\n"
-            "  Each config option accepts a comma separated list of patterns that should be\n"
-            "   ignored. Wildcards '*', '?' and char groups [..] can be used.\n"
-            "  An ignore exception can be added by prefixing '!' in the pattern.\n\n"
-            "Examples:\n"
-            "  Setting 'ignore_nick' to 'troll,b[0o]t':\n"
-            "   will ignore notifications from troll, bot and b0t.\n"
-            "  Setting 'ignore_channel' to '*ubuntu*,!#ubuntu-es':\n"
-            "   will ignore notifications from any channel with the word 'ubuntu' except from\n"
-            "   #ubuntu-es.\n" %SCRIPT_NAME
-            ,'test|restart|quit', 'cmd_notify', '')
+"""
+test: sends a test notification, with 'text' if provided.
+quit: forces remote daemon to shutdown, after this notifications won't be available and the daemon
+should be started again manually.
+
+Setting notification ignores:
+  It's possible to filter notification by channel or by nick, with the config options
+   'ignore_channel' and 'ignore_nick' in plugins.var.python.%s
+  Each config option accepts a comma separated list of patterns that should be
+   ignored. Wildcards '*', '?' and char groups [..] can be used.
+  An ignore exception can be added by prefixing '!' in the pattern.
+
+Examples:
+  Setting 'ignore_nick' to 'troll,b[0o]t':
+   will ignore notifications from troll, bot and b0t.
+  Setting 'ignore_channel' to '*ubuntu*,!#ubuntu-es':
+   will ignore notifications from any channel with the word 'ubuntu' except from
+   #ubuntu-es.
+""" %SCRIPT_NAME
+            ,'test|notify|restart|quit', 'cmd_notify', '')
+
     weechat.hook_config('plugins.var.python.%s.ignore_*' %SCRIPT_NAME, 'ignore_update', '')
     weechat.hook_config('plugins.var.python.%s.server_*' %SCRIPT_NAME, 'server_update', '')
 
