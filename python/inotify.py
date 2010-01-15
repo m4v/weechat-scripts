@@ -254,29 +254,17 @@ class Server(object):
             self._error_connect()
 
     def _send_rpc_process(self, *args):
-        cmd = """
-python -c "
-import xmlrpclib
-try:
-    server = xmlrpclib.Server('%(server_uri)s')
-    print getattr(server, '%(method)s')(%(args)s)
-except:
-    print 'error'"
-"""
-        
-        def quotes(s):
-            if "'" in s:
-                s = s.replace("'", r"\'")
-            if '"' in s:
-                s = s.replace('"', r'\"')
-            if '\n' in s:
-                s = s.replace('\n', r'\n')
-            return  "'%s'" %s
+        def quoted(s):
+            if s[0] == "'":
+                s = r'\\' + s
+            if s[-1] == "'":
+                s = s[:-1] + r'\''
+            return  "'''%s'''" %s
 
-        args = ', '.join(map(quotes, args))
-        cmd = cmd %{'server_uri':self.address, 'method':self.method, 'args':args}
+        args = ', '.join(map(quoted, args))
+        cmd = rpc_process_cmd %{'server_uri':self.address, 'method':self.method, 'args':args}
         debug(cmd)
-        weechat.hook_process(cmd, 30000, 'rpc_process', '')
+        weechat.hook_process(cmd, 30000, 'rpc_process_cb', '')
 
     def quit(self):
         self.server.quit()
@@ -289,7 +277,17 @@ def msg_flush(*args):
     server.flush()
     return WEECHAT_RC_OK
 
-def rpc_process(data, command, rc, stdout, stderr):
+rpc_process_cmd = """
+python -c "
+import xmlrpclib
+try:
+    server = xmlrpclib.Server('%(server_uri)s')
+    print getattr(server, '%(method)s')(%(args)s)
+except:
+    print 'error'"
+"""
+
+def rpc_process_cb(data, command, rc, stdout, stderr):
     debug("%s\nstderr: %s\nstdout: %s" %(rc, repr(stderr), repr(stdout)))
     if stdout:
         if stdout == 'OK\n':
