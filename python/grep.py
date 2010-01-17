@@ -59,14 +59,18 @@
 #
 #
 #   TODO:
+#   * try to figure out why hook_process chokes in long outputs (using a tempfile as a
+#   workaround now)
 #   * predefined regexp templates for common searches, like urls
 #   * possibly add option for defining time intervals
 #
 #
 #   History:
+#   2010-01-17
+#   version 0.6.1: fixed bug when grepping in grep's buffer
 #
-#   2010-01-11
-#   version 0.5.6: implemented grep in background
+#   2010-01-14
+#   version 0.6.0: implemented grep in background
 #   * improved context lines presentation.
 #   * grepping for big (or many) log files runs in a weechat_process.
 #   * added /grep stop.
@@ -75,6 +79,8 @@
 #   * added 'default_tail_head' option
 #   * results are sort by line count
 #   * don't die if log is corrupted (has NULL chars in it)
+#   * changed presentation of /logs
+#   * log path completion doesn't suck anymore
 #   * removed all tabs, because I learned how to configure Vim so that spaces aren't annoying
 #   anymore. This was the script's original policy.
 #
@@ -141,10 +147,21 @@ except ImportError:
 
 SCRIPT_NAME    = "grep"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.5.6-dev"
+SCRIPT_VERSION = "0.6.1"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Search in buffers and logs"
 SCRIPT_COMMAND = "grep"
+
+### Default Settings ###
+settings = {
+'clear_buffer'      : 'off',
+'log_filter'        : '',
+'go_to_buffer'      : 'on',
+'max_lines'         : '4000',
+'show_summary'      : 'on',
+'size_limit'        : '2048',
+'default_tail_head' : '10',
+}
 
 ### Class definitions ###
 class linesDict(dict):
@@ -216,7 +233,6 @@ class linesDict(dict):
                 del v[:]
                 v.stripped_lines = l
 
-
 class linesList(list):
     """Class for list of matches, since sometimes I need to add lines that aren't matches, I need an
     independent counter."""
@@ -244,7 +260,6 @@ class linesList(list):
             if self[-1] == s:
                 del self[-1]
 
-
 ### Misc functions ###
 now = time.time
 get_size = lambda x: stat(x).st_size
@@ -255,41 +270,41 @@ def human_readable_size(size):
     while size > 1024:
         power += 1
         size /= 1024.0
-    return '%.2f%s' %(size, sizeDict.get(power, ''))
+    return '%.2f %s' %(size, sizeDict.get(power, ''))
 
 def color_nick(nick):
     """Returns coloured nick, with coloured mode if any."""
-    # XXX should check if nick has a prefix and subfix string?
-    modes = '@!+%' # nick modes
     if not nick: return ''
+    wcolor = weechat.color
+    config_string = lambda s : weechat.config_string(weechat.config_get(s))
+    config_int = lambda s : weechat.config_integer(weechat.config_get(s))
+    # prefix and suffix
+    prefix = config_string('irc.look.nick_prefix')
+    suffix = config_string('irc.look.nick_suffix')
+    prefix_c = suffix_c = wcolor(config_string('weechat.color.chat_delimiters'))
+    if nick[0] == prefix:
+        nick = nick[1:]
+    else:
+        prefix = prefix_c = ''
+    if nick[-1] == suffix:
+        nick = nick[:-1]
+        suffix = wcolor(color_delimiter) + suffix
+    else:
+        suffix = suffix_c = ''
     # nick mode
+    modes = '@!+%'
     if nick[0] in modes:
         mode, nick = nick[0], nick[1:]
-        mode_color = weechat.config_string(weechat.config_get('weechat.color.nicklist_prefix%d' \
+        mode_color = wcolor(config_string('weechat.color.nicklist_prefix%d' \
             %(modes.find(mode) + 1)))
-        mode_color = weechat.color(mode_color)
     else:
-        mode = ''
-        mode_color = ''
-    color_nicks_number = weechat.config_integer(weechat.config_get('weechat.look.color_nicks_number'))
+        mode = mode_color = ''
+    color_nicks_number = config_int('weechat.look.color_nicks_number')
     idx = (sum(map(ord, nick))%color_nicks_number) + 1
-    color = weechat.config_string(weechat.config_get('weechat.color.chat_nick_color%02d' %idx))
-    nick_color = weechat.color(color)
-    return '%s%s%s%s' %(mode_color, mode, nick_color, nick)
+    nick_color = wcolor(config_string('weechat.color.chat_nick_color%02d' %idx))
+    return ''.join((prefix_c, prefix, mode_color, mode, nick_color, nick, suffix_c, suffix))
 
-
-### Config ###
-settings = {
-        'clear_buffer' :'off', # Should clear the buffer before every search
-        'log_filter'   :'',    # filter for exclude log files
-        'go_to_buffer' :'on',
-        'max_lines'    :'4000',
-        'show_summary' :'on',  # Show summary line after the search
-        'size_limit'   :'2048',
-        'default_tail_head':'10',
-        }
-
-### value validation
+### Config and value validation ###
 boolDict = {'on':True, 'off':False}
 def get_config_boolean(config):
     value = weechat.config_get_plugin(config)
@@ -334,11 +349,18 @@ def strip_home(s, dir=''):
         return s[l:]
     return s
 
-
 ### Messages ###
 def debug(s, prefix='debug'):
     """Debug msg"""
-    weechat.prnt('', '%s: %s'  %(prefix,s))
+    if not weechat.config_get_plugin('debug'): return
+    buffer_name = 'DEBUG_' + SCRIPT_NAME
+    buffer = weechat.buffer_search('python', buffer_name)
+    if not buffer:
+        buffer = weechat.buffer_new(buffer_name, '', '', '', '')
+        weechat.buffer_set(buffer, 'nicklist', '0')
+        weechat.buffer_set(buffer, 'time_for_each_line', '0')
+        weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
+    weechat.prnt(buffer, '%s\t%s' %(prefix, s))
 
 def error(s, prefix=None, buffer='', trace=''):
     """Error msg"""
@@ -347,44 +369,56 @@ def error(s, prefix=None, buffer='', trace=''):
     if weechat.config_get_plugin('debug'):
         if not trace:
             import traceback
-            trace = traceback.format_exc()
-        weechat.prnt('', trace)
+            if traceback.sys.exc_type:
+                trace = traceback.format_exc()
+        not trace or weechat.prnt('', trace)
 
 def say(s, prefix=None, buffer=''):
     """normal msg"""
     prefix = prefix or script_nick
     weechat.prnt(buffer, '%s\t%s' %(prefix, s))
 
-
 ### Log files and buffers ###
-def dir_list(dir, filter_list=(), filter_excludes=True):
+cache_dir = {} # note: don't remove, needed for completion if the script was loaded recently
+def dir_list(dir, filter_list=(), filter_excludes=True, include_dir=False):
     """Returns a list of files in 'dir' and its subdirs."""
     global cache_dir
-    import fnmatch
+    from os import walk
+    from fnmatch import fnmatch
     #debug('dir_list: listing in %s' %dir)
-    if dir in cache_dir:
-        #debug('dir_list: using dir cache.')
-        return cache_dir[dir]
-
-    def append_files(arg, dir, fnames):
-        arg.extend(map(lambda s:path.join(dir, s), fnames))
-
-    def filter(file):
-        if path.isdir(file):
-            return True
-        elif filter_list:
-            file = file[len(dir):] # pattern shouldn't match home dir
+    key = (dir, include_dir)
+    try:
+        return cache_dir[key]
+    except KeyError:
+        pass
+    
+    filter_list = filter_list or get_config_log_filter()
+    dir_len = len(dir)
+    if filter_list:
+        def filter(file):
+            file = file[dir_len:] # pattern shouldn't match home dir
             for pattern in filter_list:
-                if fnmatch.fnmatch(file, pattern):
+                if fnmatch(file, pattern):
                     return filter_excludes
-        return not filter_excludes
+            return not filter_excludes
+    else:
+        filter = lambda f : not filter_excludes
 
     file_list = []
-    filter_list = filter_list or get_config_log_filter()
-    #debug('filter: %s' %filter_list)
-    path.walk(dir, append_files, file_list) # get a list of log files, including in subdirs
-    file_list = [ file for file in file_list if not filter(file) ]
-    cache_dir[dir] = file_list
+    extend = file_list.extend
+    join = path.join
+    def walk_path():
+        for basedir, subdirs, files in walk(dir):
+            if include_dir: 
+                subdirs = map(lambda s : join(s, ''), subdirs)
+                files.extend(subdirs)
+            files_path = map(lambda f : join(basedir, f), files)
+            files_path = [ file for file in files_path if not filter(file) ]
+            extend(files_path)
+
+    walk_path()
+    cache_dir[key] = file_list
+    #debug('dir_list: got %s' %str(file_list))
     return file_list
 
 def get_file_by_pattern(pattern, all=False):
@@ -418,32 +452,33 @@ def get_file_by_pattern(pattern, all=False):
 def get_file_by_buffer(buffer):
     """Given buffer pointer, finds log's path or returns None."""
     #debug('get_file_by_buffer: searching for %s' %buffer)
-    file = None
-    log_enabled = False
     infolist = weechat.infolist_get('logger_buffer', '', '')
-    while weechat.infolist_next(infolist):
-        pointer = weechat.infolist_pointer(infolist, 'buffer')
-        if pointer == buffer:
-            file = weechat.infolist_string(infolist, 'log_filename')
-            log_enabled = weechat.infolist_integer(infolist, 'log_enabled')
-            break
-    weechat.infolist_free(infolist)
-    #debug('get_file_by_buffer: log_enabled: %s got: %s' %(log_enabled, file))
-    if not log_enabled:
-        return None
-    return file
+    if not infolist: return
+    try:
+        while weechat.infolist_next(infolist):
+            pointer = weechat.infolist_pointer(infolist, 'buffer')
+            if pointer == buffer:
+                file = weechat.infolist_string(infolist, 'log_filename')
+                if weechat.infolist_integer(infolist, 'log_enabled'):
+                    #debug('get_file_by_buffer: got %s' %file)
+                    return file
+                #else:
+                #    debug('get_file_by_buffer: got %s but log not enabled' %file)
+    finally:
+        #debug('infolist gets freed')
+        weechat.infolist_free(infolist)
 
 def get_file_by_name(buffer_name):
     """Given a buffer name, returns its log path or None. buffer_name should be in 'server.#channel'
     or '#channel' format."""
     #debug('get_file_by_name: searching for %s' %buffer_name)
-    # get common mask options
-    masks = [weechat.config_string(weechat.config_get('logger.mask.irc'))]
-    masks.append(weechat.config_string(weechat.config_get('logger.file.mask')))
+    # common mask options
+    config_masks = ('logger.mask.irc', 'logger.file.mask')
     # since there's no buffer pointer, we try to replace some local vars in mask, like $channel and
     # $server, then replace the local vars left with '*', and use it as a mask for get the path with
     # get_file_by_pattern
-    for mask in masks:
+    for config in config_masks:
+        mask = weechat.config_string(weechat.config_get(config))
         #debug('get_file_by_name: mask: %s' %mask)
         if '$name' in mask:
             mask = mask.replace('$name', buffer_name)
@@ -478,18 +513,19 @@ def get_buffer_by_name(buffer_name):
     #debug('get_buffer_by_name: searching for %s' %buffer_name)
     pointer = weechat.buffer_search('', buffer_name)
     if not pointer:
-        infolist = weechat.infolist_get('buffer', '', '')
-        while weechat.infolist_next(infolist) and not pointer:
-            short_name = weechat.infolist_string(infolist, 'short_name')
-            name = weechat.infolist_string(infolist, 'name')
-            if buffer_name in (short_name, name):
-                #debug('get_buffer_by_name: found %s' %name)
-                pointer = weechat.buffer_search('', name)
-        weechat.infolist_free(infolist)
+        try:
+            infolist = weechat.infolist_get('buffer', '', '')
+            while weechat.infolist_next(infolist):
+                short_name = weechat.infolist_string(infolist, 'short_name')
+                name = weechat.infolist_string(infolist, 'name')
+                if buffer_name in (short_name, name):
+                    #debug('get_buffer_by_name: found %s' %name)
+                    pointer = weechat.buffer_search('', name)
+                    return pointer
+        finally:
+            weechat.infolist_free(infolist)
     #debug('get_buffer_by_name: got %s' %pointer)
-    if pointer:
-        return pointer
-    return None
+    return pointer
 
 def get_all_buffers():
     """Returns list with pointers of all open buffers."""
@@ -503,7 +539,6 @@ def get_all_buffers():
         # remove it from list
         del buffers[buffers.index(grep_buffer)]
     return buffers
-
 
 ### Grep ###
 def make_regexp(pattern, matchcase=False):
@@ -667,21 +702,19 @@ def grep_buffer(buffer, head, tail, after_context, before_context, count, regexp
         not."""
         string_remove_color = weechat.string_remove_color
         infolist_string = weechat.infolist_string
-        get_prefix = lambda infolist : string_remove_color(infolist_string(infolist, 'prefix'), '')
-        get_message = lambda infolist : string_remove_color(infolist_string(infolist, 'message'), '')
         grep_buffer = weechat.buffer_search('python', SCRIPT_NAME)
         if grep_buffer and buffer == grep_buffer:
             def function(infolist):
-                prefix = get_prefix(infolist)
-                message = get_message(infolist)
-                if script_nick_nocolor == prefix: # ignore our lines
+                prefix = infolist_string(infolist, 'prefix')
+                message = infolist_string(infolist, 'message')
+                if prefix: # only our messages have prefix, ignore it
                     return None
-                return '%s\t%s' %(prefix, message.replace(' ', '\t', 1))
+                return message
         else:
             infolist_time = weechat.infolist_time
             def function(infolist):
-                prefix = get_prefix(infolist)
-                message = get_message(infolist)
+                prefix = string_remove_color(infolist_string(infolist, 'prefix'), '')
+                message = string_remove_color(infolist_string(infolist, 'message'), '')
                 date = infolist_time(infolist, 'date')
                 return '%s\t%s\t%s' %(date, prefix, message)
         return function
@@ -852,33 +885,40 @@ grep_stdout = grep_stderr = ''
 def grep_file_callback(data, command, rc, stdout, stderr):
     global hook_file_grep, grep_stderr,  grep_stdout
     global matched_lines
-    #debug("%s @ stderr: '%s', stdout: '%s'" %(rc, stderr.strip('\n'), stdout.strip('\n')))
+    #debug("rc: %s\nstderr: %s\nstdout: %s" %(rc, repr(stderr), repr(stdout)))
     if stdout:
         grep_stdout += stdout
     if stderr:
         grep_stderr += stderr
     if int(rc) >= 0:
-        if grep_stderr:
-            error(grep_stderr)
-        file = None
-        if grep_stdout:
-            debug(grep_stdout)
-            grep_stdout = grep_stdout.strip('\n')
-            file = grep_stdout.split('\n')[-1]
+  
+        def set_buffer_error():
+            grep_buffer = buffer_create()
+            title = weechat.buffer_get_string(grep_buffer, 'title')
+            title = title + ' %serror' %color_title
+            weechat.buffer_set(grep_buffer, 'title', title)
+
         try:
-            if file:
-                try:
-                    import cPickle, os
-                    debug(file)
-                    fd = open(file, 'rb')
-                    d = cPickle.load(fd)
-                    matched_lines.update(d)
-                    fd.close()
-                except Exception, e:
-                    error(e)
-                else:
-                    os.remove(file)
-                    buffer_update()
+            if grep_stderr:
+                error(grep_stderr)
+                set_buffer_error()
+            elif grep_stdout:
+                #debug(grep_stdout)
+                file = grep_stdout.strip()
+                if file:
+                    try:
+                        import cPickle, os
+                        #debug(file)
+                        fd = open(file, 'rb')
+                        d = cPickle.load(fd)
+                        matched_lines.update(d)
+                        fd.close()
+                    except Exception, e:
+                        error(e)
+                        set_buffer_error()
+                    else:
+                        os.remove(file)
+                        buffer_update()
         finally:
             grep_stdout = grep_stderr = ''
             hook_file_grep = None
@@ -895,7 +935,6 @@ def get_grep_file_status():
         log = '%s log files (%s)' %(len(search_in_files), human_readable_size(size))
     return 'Searching in %s, running for %.4f seconds. Interrupt it with "/grep stop" or "stop"' \
         ' in grep buffer.' %(log, elapsed)
-
 
 ### Grep buffer ###
 def buffer_update():
@@ -933,28 +972,27 @@ def buffer_update():
     global weechat_format
     if hilight:
         # we don't want colors if there's match highlighting
-        def format_line(s):
-            date, nick, msg = split_line(s)
-            # fix color reset when there's highlighting from date to prefix
-            if color_hilight in date and not color_reset in date:
-                nick = color_hilight + nick
-            return '%s %s %s' %(date, nick, msg)
+        format_line = lambda s : '%s %s %s' %split_line(s)
     else:
         def format_line(s):
-            global nick_dict
+            global nick_dict, weechat_format
             date, nick, msg = split_line(s)
-            if nick in nick_dict:
-                nick = nick_dict[nick]
+            if weechat_format:
+                try:
+                    nick = nick_dict[nick]
+                except KeyError:
+                    # cache nick
+                    nick_c = color_nick(nick)
+                    nick_dict[nick] = nick_c
+                    nick = nick_c
+                return '%s%s %s%s %s' %(color_date, date, nick, color_reset, msg)
             else:
-                # cache nick
-                s = color_nick(nick)
-                nick_dict[nick] = s
-                nick = s
-            return '%s%s %s%s %s' %(color_date, date, nick, color_reset, msg)
+                #no formatting
+                return msg
 
     prnt = weechat.prnt
     prnt(buffer, '\n')
-    print_info('Search for "%s" in %s%s%s.' %(pattern, color_summary, matched_lines, color_reset),
+    print_line('Search for "%s" in %s%s%s.' %(pattern, color_summary, matched_lines, color_reset),
             buffer)
     # print last <max_lines> lines
     if matched_lines.get_matches_count():
@@ -987,13 +1025,13 @@ def buffer_update():
                 # summary
                 if count or get_config_boolean('show_summary'):
                     summary = make_summary(log, lines)
-                    print_info(summary, buffer)
+                    print_line(summary, buffer)
 
             # separator
             if not count and lines:
                 prnt(buffer, '\n')
     else:
-        print_info('No matches found.', buffer)
+        print_line('No matches found.', buffer)
 
     # set title
     global time_start
@@ -1002,6 +1040,7 @@ def buffer_update():
     time_total = time_end - time_start
     # percent of the total time used for grepping
     time_grep_pct = (time_grep - time_start)/time_total*100
+    #debug('time: %.4f seconds (%.2f%%)' %(time_total, time_grep_pct))
     if not count and len_total_lines > max_lines:
         note = ' (last %s lines shown)' %len(matched_lines)
     else:
@@ -1024,14 +1063,14 @@ def split_line(s):
         date, nick, msg = s.split('\t', 2) # date, nick, message
     else:
         # looks like log isn't in weechat's format
-        weechat_format = False # incoming lines won't be formatted if they have 2 tabs
+        weechat_format = False # incoming lines won't be formatted
         date, nick, msg = '', '', s
     # remove tabs
     if '\t' in msg:
         msg = msg.replace('\t', '    ')
     return date, nick, msg
 
-def print_info(s, buffer=None, display=False):
+def print_line(s, buffer=None, display=False):
     """Prints 's' in script's buffer as 'script_nick'. For displaying search summaries."""
     if buffer is None:
         buffer = buffer_create()
@@ -1043,7 +1082,7 @@ def buffer_create(title=None):
     """Returns our buffer pointer, creates and cleans the buffer if needed."""
     buffer = weechat.buffer_search('python', SCRIPT_NAME)
     if not buffer:
-        buffer = weechat.buffer_new(SCRIPT_NAME, 'buffer_input', '', 'buffer_close', '')
+        buffer = weechat.buffer_new(SCRIPT_NAME, 'buffer_input', '', '', '')
         weechat.buffer_set(buffer, 'time_for_each_line', '0')
         weechat.buffer_set(buffer, 'nicklist', '0')
         weechat.buffer_set(buffer, 'title', title or 'grep output buffer')
@@ -1082,24 +1121,22 @@ def buffer_input(data, buffer, input_data):
         error("There isn't any previous search to repeat.", buffer=buffer)
     return WEECHAT_RC_OK
 
-def buffer_close(*args):
-    return WEECHAT_RC_OK
-
-
 ### Commands ###
 def cmd_init():
+    """Resets global vars."""
     global home_dir, cache_dir, nick_dict
     global pattern, matchcase, number, count, exact, hilight
     global tail, head, after_context, before_context
     hilight = ''
     head = tail = after_context = before_context = False
     matchcase = count = exact = False
-    number = None
+    pattern = number = None
     home_dir = get_home()
     cache_dir = {} # for avoid walking the dir tree more than once per command
     nick_dict = {} # nick cache for don't calculate nick color every time
 
 def cmd_grep_parsing(args, buffer=''):
+    """Parses args for /grep and grep input buffer."""
     global pattern, matchcase, number, count, exact, hilight
     global tail, head, after_context, before_context
     global log_name, buffer_name, only_buffers, all
@@ -1156,16 +1193,20 @@ def cmd_grep_parsing(args, buffer=''):
                 hilight = '%s,%s' %(color_hilight, color_reset)
             # we pass the colors in the variable itself because check_string() must not use
             # weechat's module when applying the colors (this is for grep in a hooked process)
+            count = False
         elif opt in ('e', 'exact'):
             exact = not exact
+            count = False
         elif opt in ('a', 'all'):
             all = not all
         elif opt in ('h', 'head'):
             head = not head
             tail = False
+            count = False
         elif opt in ('t', 'tail'):
             tail = not tail
             head = False
+            count = False
         elif opt in ('b', 'buffer'):
             only_buffers = True
         elif opt in ('n', 'number'):
@@ -1174,11 +1215,16 @@ def cmd_grep_parsing(args, buffer=''):
             n = positive_number(opt, val)
             after_context = n
             before_context = n
+            count = False
         elif opt in ('A', 'after-context'):
             after_context = positive_number(opt, val)
+            before_context = False
+            count = False
         elif opt in ('B', 'before-context'):
             before_context = positive_number(opt, val)
-    # more checks
+            after_context = False
+            count = False
+    # number check
     if number is not None:
         if number == 0:
             head = tail = False
@@ -1245,7 +1291,7 @@ def cmd_grep(data, buffer, args):
         search_buffer = get_all_buffers()
     elif buffer_name:
         search_buffer = get_buffer_by_name(buffer_name)
-        if search_buffer is None:
+        if not search_buffer:
             # there's no buffer, try in the logs
             log_file = get_file_by_name(buffer_name)
             if not log_file:
@@ -1308,34 +1354,34 @@ def cmd_logs(data, buffer, args):
         file_list.sort()
 
     file_sizes = map(lambda x: human_readable_size(get_size(x)), file_list)
-    if weechat.config_string(weechat.config_get('weechat.look.prefix_align')) == 'none' \
-            and file_list:
-        # lets do alignment for the file list
-        L = file_sizes[:]
+    # calculate column lenght
+    if file_list:
+        L = file_list[:]
         L.sort(key=len)
         bigest = L[-1]
-        column_len = len(bigest)
+        column_len = len(bigest) + 3
     else:
         column_len = ''
+
     buffer = buffer_create()
     if get_config_boolean('clear_buffer'):
         weechat.buffer_clear(buffer)
     file_list = zip(file_list, file_sizes)
     msg = 'Found %s logs.' %len(file_list)
-    print_info(msg, buffer, display=True)
-    for file, size in file_list:
-        separator = column_len and ' '*(column_len - len(size))
-        weechat.prnt(buffer, '%s%s\t%s' %(separator, size, strip_home(file)))
-    if file_list:
-        print_info(msg, buffer)
-    return WEECHAT_RC_OK
 
+    print_line(msg, buffer, display=True)
+    for file, size in file_list:
+        separator = column_len and '.'*(column_len - len(file))
+        weechat.prnt(buffer, '%s %s %s' %(strip_home(file), separator, size))
+    if file_list:
+        print_line(msg, buffer)
+    return WEECHAT_RC_OK
 
 ### Completion ###
 def completion_log_files(data, completion_item, buffer, completion):
     #debug('completion: %s' %', '.join((data, completion_item, buffer, completion)))
     global home_dir
-    for log in dir_list(home_dir):
+    for log in dir_list(home_dir, include_dir=True):
         weechat.hook_completion_list_add(completion, strip_home(log), 0, weechat.WEECHAT_LIST_POS_SORT)
     return WEECHAT_RC_OK
 
@@ -1344,7 +1390,6 @@ def completion_grep_args(data, completion_item, buffer, completion):
             'after-context', 'before-context', 'context'):
         weechat.hook_completion_list_add(completion, '--' + arg, 0, weechat.WEECHAT_LIST_POS_SORT)
     return WEECHAT_RC_OK
-
 
 ### Templates ###
 def make_url_regexp(buffer, *args):
@@ -1470,13 +1515,13 @@ if __name__ == '__main__' and import_ok and \
 
     # colors
     color_date        = weechat.color('brown')
-    color_delimiter   = weechat.color('green')
     color_info        = weechat.color('cyan')
-    color_script_nick = weechat.color('lightcyan')
     color_hilight     = weechat.color('lightred')
     color_reset       = weechat.color('reset')
     color_title       = weechat.color('yellow')
     color_summary     = weechat.color('lightcyan')
+    color_delimiter   = weechat.color('chat_delimiters')
+    color_script_nick = weechat.color('chat_nick')
     
     # pretty [grep]
     script_nick = '%s[%s%s%s]%s' %(color_delimiter, color_script_nick, SCRIPT_NAME, color_delimiter,
@@ -1484,6 +1529,5 @@ if __name__ == '__main__' and import_ok and \
     script_nick_nocolor = '[%s]' %SCRIPT_NAME
     # paragraph separator when using context options
     context_sep = '%s\t%s--' %(script_nick, color_info)
-
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
