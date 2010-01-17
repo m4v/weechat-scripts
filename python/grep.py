@@ -860,7 +860,7 @@ def show_matching_lines():
 # defined here for commodity
 grep_proccess_cmd = """python -c "
 import sys, tempfile, cPickle
-sys.path.append('%(home)s/python/dev') # add WeeChat script dir so we can import grep
+sys.path.append('%(home)s/python') # add WeeChat script dir so we can import grep
 from grep import make_regexp, grep_file, strip_home, SCRIPT_VERSION
 logs = (%(logs)s, )
 try:
