@@ -594,7 +594,7 @@ def invertible_check_string(s, invert, *args):
         if invert:
             return None
         else:
-            return s
+            return m
     elif invert:
         return s
 
