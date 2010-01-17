@@ -148,7 +148,7 @@ except ImportError:
 
 SCRIPT_NAME    = "grep"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.6.2"
+SCRIPT_VERSION = "0.6.2-dev"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Search in buffers and logs"
 SCRIPT_COMMAND = "grep"
@@ -243,14 +243,24 @@ class linesList(list):
         self.matches_count = 0
         self.stripped_lines = 0
 
+    def append(self, item):
+        """Append lines, can be a string or a list with strings."""
+        if isinstance(item, str):
+            list.append(self, item)
+        else:
+            self.extend(item)
+
     def append_separator(self):
         """adds a separator into the list, makes sure it doen't add two together."""
         s = self._sep
         if (self and self[-1] != s) or not self:
             self.append(s)
 
-    def count_match(self):
-        self.matches_count += 1
+    def count_match(self, item=None):
+        if item is None or isinstance(item, str):
+            self.matches_count += 1
+        else:
+            self.matches_count += len(item)
 
     def strip_separator(self):
         """removes separators if there are first or/and last in the list."""
@@ -564,7 +574,7 @@ def check_string(s, regexp, hilight='', exact=False):
     elif exact:
         matchlist = regexp.findall(s)
         if matchlist:
-            return ' '.join(matchlist)
+            return matchlist
     elif hilight:
         matchlist = regexp.findall(s)
         if matchlist:
@@ -633,7 +643,7 @@ def grep_file(file, head, tail, after_context, before_context, count, regexp, hi
                         except IndexError:
                             pass
                 append(line)
-                count_match()
+                count_match(line)
                 if after_context:
                     id, offset = 0, 0
                     while id < after_context + offset:
@@ -664,7 +674,7 @@ def grep_file(file, head, tail, after_context, before_context, count, regexp, hi
             line = check(line)
             if line:
                 count or append(line)
-                count_match()
+                count_match(line)
                 if after_context:
                     id, offset = 0, 0
                     while id < after_context + offset:
@@ -763,7 +773,7 @@ def grep_buffer(buffer, head, tail, after_context, before_context, count, regexp
                         append(context_line)
                     infolist_next(infolist)
             count or append(line)
-            count_match()
+            count_match(line)
             if after_context:
                 id, offset = 0, 0
                 while id < after_context + offset:
@@ -1391,7 +1401,7 @@ if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
         SCRIPT_DESC, '', ''):
     home_dir = get_home()
-    
+
     # for scripts that are only in the autoload path 
     sys.path.append(path.join(weechat.info_get('weechat_dir', ''), 'python/autoload'))
 
