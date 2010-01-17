@@ -137,7 +137,7 @@
 
 from os import path
 from os import stat
-import getopt, time
+import sys, getopt, time
 
 try:
     import weechat
@@ -1391,6 +1391,9 @@ if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
         SCRIPT_DESC, '', ''):
     home_dir = get_home()
+    
+    # for scripts that are only in the autoload path 
+    sys.path.append(path.join(weechat.info_get('weechat_dir', ''), 'python/autoload'))
 
     weechat.hook_command(SCRIPT_COMMAND, cmd_grep.__doc__,
             "[log <file> | buffer <name> | stop] [-a|--all] [-b|--buffer] [-c|--count] [-m|--matchcase] "
