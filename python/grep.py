@@ -567,14 +567,13 @@ def make_regexp(pattern, matchcase=False):
         raise Exception, 'Bad pattern, %s' %e
     return regexp
 
-def check_string(s, regexp, hilight='', exact=False, invert=False):
+def check_string(s, regexp, hilight='', exact=False):
     """Checks 's' with a regexp and returns it if is a match."""
-    if not regexp or invert:
+    if not regexp:
         return s
     elif exact:
         matchlist = regexp.findall(s)
         if matchlist:
-            # TODO invert matchlist
             return matchlist
     elif hilight:
         matchlist = regexp.findall(s)
@@ -586,7 +585,17 @@ def check_string(s, regexp, hilight='', exact=False, invert=False):
                 s = s.replace(m, '%s%s%s' %(color_hilight, m, color_reset))
             return s
     # no need for findall() here
-    elif regexp.search(s) or invert:
+    elif regexp.search(s):
+        return s
+
+def invertible_check_string(s, invert, *args):
+    m = check_string(s, *args)
+    if m:
+        if invert:
+            return None
+        else:
+            return s
+    elif invert:
         return s
 
 def grep_file(file, head, tail, after_context, before_context, count, regexp, hilight, exact, invert):
@@ -603,7 +612,7 @@ def grep_file(file, head, tail, after_context, before_context, count, regexp, hi
     append = lines.append
     count_match = lines.count_match
     separator = lines.append_separator
-    check = lambda s: check_string(s, regexp, hilight, exact, invert)
+    check = lambda s: invertible_check_string(s, invert, regexp, hilight, exact)
     
     file_object = open(file, 'r')
     if tail or before_context:
@@ -748,7 +757,7 @@ def grep_buffer(buffer, head, tail, after_context, before_context, count, regexp
     append = lines.append
     count_match = lines.count_match
     separator = lines.append_separator
-    check = lambda s: check_string(s, regexp, hilight, exact, invert)
+    check = lambda s: invertible_check_string(s, invert, regexp, hilight, exact)
 
     if before_context:
         before_context_range = range(1, before_context + 1)
