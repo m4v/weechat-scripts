@@ -961,7 +961,7 @@ def get_grep_file_status():
 ### Grep buffer ###
 def buffer_update():
     """Updates our buffer with new lines."""
-    global matched_lines, pattern, count, hilight
+    global matched_lines, pattern, count, hilight, invert
     time_grep = now()
 
     buffer = buffer_create()
@@ -974,9 +974,10 @@ def buffer_update():
         weechat.buffer_clear(buffer)
 
     def _make_summary(log, lines, note):
-        return "%s matches \"%s%s%s\" in %s%s%s%s" \
-                %(lines.matches_count, color_summary, pattern, color_info, color_summary, log,
-                  color_reset, note)
+        return "%s matches \"%s%s%s\"%s in %s%s%s%s" \
+                %(lines.matches_count, color_summary, pattern, color_info,
+                  invert and ' (inverted)' or '',
+                  color_summary, log, color_reset, note)
 
     if count:
         make_summary = lambda log, lines : _make_summary(log, lines, ' (not shown)')
@@ -1067,9 +1068,9 @@ def buffer_update():
         note = ' (last %s lines shown)' %len(matched_lines)
     else:
         note = ''
-    title = "Search in %s%s%s | %s matches%s | pattern \"%s%s%s\" | %.4f seconds (%.2f%%)" \
+    title = "Search in %s%s%s | %s matches%s | pattern \"%s%s%s\"%s | %.4f seconds (%.2f%%)" \
             %(color_title, matched_lines, color_reset, matched_lines.get_matches_count(), note,
-              color_title, pattern, color_reset, time_total, time_grep_pct)
+              color_title, pattern, color_reset, invert and ' (inverted)' or '', time_total, time_grep_pct)
     weechat.buffer_set(buffer, 'title', title)
 
     if get_config_boolean('go_to_buffer'):
@@ -1162,7 +1163,7 @@ def cmd_grep_parsing(args):
     global pattern, matchcase, number, count, exact, hilight, invert
     global tail, head, after_context, before_context
     global log_name, buffer_name, only_buffers, all
-    opts, args = getopt.gnu_getopt(args.split(), 'cmHeahtin:bA:B:C:o', ['count', 'matchcase', 'hilight',
+    opts, args = getopt.gnu_getopt(args.split(), 'cmHeahtivn:bA:B:C:o', ['count', 'matchcase', 'hilight',
         'exact', 'all', 'head', 'tail', 'number=', 'buffer', 'after-context=', 'before-context=',
         'context=', 'invert', 'only-match'])
     #debug(opts, 'opts: '); debug(args, 'args: ')
@@ -1237,7 +1238,7 @@ def cmd_grep_parsing(args):
             before_context = positive_number(opt, val)
             after_context = False
             count = False
-        elif opt in ('i', 'invert'):
+        elif opt in ('i', 'v', 'invert'):
             invert = not invert
     # number check
     if number is not None:
