@@ -699,21 +699,19 @@ def grep_buffer(buffer, head, tail, after_context, before_context, count, regexp
         not."""
         string_remove_color = weechat.string_remove_color
         infolist_string = weechat.infolist_string
-        get_prefix = lambda infolist : string_remove_color(infolist_string(infolist, 'prefix'), '')
-        get_message = lambda infolist : string_remove_color(infolist_string(infolist, 'message'), '')
         grep_buffer = weechat.buffer_search('python', SCRIPT_NAME)
         if grep_buffer and buffer == grep_buffer:
             def function(infolist):
-                prefix = get_prefix(infolist)
-                message = get_message(infolist)
-                if script_nick_nocolor == prefix: # ignore our lines
+                prefix = infolist_string(infolist, 'prefix')
+                message = infolist_string(infolist, 'message')
+                if prefix: # only our messages have prefix, ignore it
                     return None
-                return '%s\t%s' %(prefix, message.replace(' ', '\t', 1))
+                return message
         else:
             infolist_time = weechat.infolist_time
             def function(infolist):
-                prefix = get_prefix(infolist)
-                message = get_message(infolist)
+                prefix = string_remove_color(infolist_string(infolist, 'prefix'), '')
+                message = string_remove_color(infolist_string(infolist, 'message'), '')
                 date = infolist_time(infolist, 'date')
                 return '%s\t%s\t%s' %(date, prefix, message)
         return function
@@ -974,16 +972,20 @@ def buffer_update():
         format_line = lambda s : '%s %s %s' %split_line(s)
     else:
         def format_line(s):
-            global nick_dict
+            global nick_dict, weechat_format
             date, nick, msg = split_line(s)
-            try:
-                nick = nick_dict[nick]
-            except KeyError:
-                # cache nick
-                nick_c = color_nick(nick)
-                nick_dict[nick] = nick_c
-                nick = nick_c
-            return '%s%s %s%s %s' %(color_date, date, nick, color_reset, msg)
+            if weechat_format:
+                try:
+                    nick = nick_dict[nick]
+                except KeyError:
+                    # cache nick
+                    nick_c = color_nick(nick)
+                    nick_dict[nick] = nick_c
+                    nick = nick_c
+                return '%s%s %s%s %s' %(color_date, date, nick, color_reset, msg)
+            else:
+                #no formatting
+                return msg
 
     prnt = weechat.prnt
     prnt(buffer, '\n')
@@ -1435,13 +1437,13 @@ if __name__ == '__main__' and import_ok and \
 
     # colors
     color_date        = weechat.color('brown')
-    color_delimiter   = weechat.color('green')
     color_info        = weechat.color('cyan')
-    color_script_nick = weechat.color('lightcyan')
     color_hilight     = weechat.color('lightred')
     color_reset       = weechat.color('reset')
     color_title       = weechat.color('yellow')
     color_summary     = weechat.color('lightcyan')
+    color_delimiter   = weechat.color('chat_delimiters')
+    color_script_nick = weechat.color('chat_nick')
     
     # pretty [grep]
     script_nick = '%s[%s%s%s]%s' %(color_delimiter, color_script_nick, SCRIPT_NAME, color_delimiter,
