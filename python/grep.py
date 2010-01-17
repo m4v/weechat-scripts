@@ -67,6 +67,7 @@
 #
 #   History:
 #   2010-01-17
+#   version 0.6.2: removed 2.6-ish code
 #   version 0.6.1: fixed bug when grepping in grep's buffer
 #
 #   2010-01-14
@@ -147,7 +148,7 @@ except ImportError:
 
 SCRIPT_NAME    = "grep"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.6.1"
+SCRIPT_VERSION = "0.6.2"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Search in buffers and logs"
 SCRIPT_COMMAND = "grep"
