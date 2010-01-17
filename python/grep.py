@@ -844,7 +844,7 @@ def show_matching_lines():
         else:
             # we hook a process so grepping runs in background.
             #debug('on background')
-            global hook_file_grep
+            global hook_file_grep, script_path
             timeout = 1000*60*10 # 10 min
 
             def shell_escapes(s):
@@ -857,8 +857,8 @@ def show_matching_lines():
 
             cmd = grep_proccess_cmd %dict(logs=files_string, head=head, pattern=pattern, tail=tail,
                     hilight=hilight, after_context=after_context, before_context=before_context,
-                    exact=exact, matchcase=matchcase, home_dir=home_dir, version=SCRIPT_VERSION,
-                    home=weechat.info_get('weechat_dir', ''), count=count)
+                    exact=exact, matchcase=matchcase, home_dir=home_dir, script_path=script_path,
+                    count=count)
 
             #debug(cmd)
             hook_file_grep = weechat.hook_process(cmd, timeout, 'grep_file_callback', '')
@@ -871,13 +871,10 @@ def show_matching_lines():
 # defined here for commodity
 grep_proccess_cmd = """python -c "
 import sys, cPickle
-sys.path.append('%(home)s/python') # add WeeChat script dir so we can import grep
-sys.path.append('%(home)s/python/autoload')
-from grep import make_regexp, grep_file, strip_home, SCRIPT_VERSION
+sys.path.append('%(script_path)s') # add WeeChat script dir so we can import grep
+from grep import make_regexp, grep_file, strip_home
 logs = (%(logs)s, )
 try:
-    if '%(version)s' != SCRIPT_VERSION:
-        raise Exception, 'Can\\'t spawn new process, script version mismatch'
     regexp = make_regexp('%(pattern)s', %(matchcase)s)
     d = {}
     for log in logs:
@@ -1402,8 +1399,11 @@ if __name__ == '__main__' and import_ok and \
         SCRIPT_DESC, '', ''):
     home_dir = get_home()
 
-    # for scripts that are only in the autoload path 
-    sys.path.append(path.join(weechat.info_get('weechat_dir', ''), 'python/autoload'))
+    # for import ourselves
+    global script_path
+    script_path = path.dirname(__file__)
+    sys.path.append(script_path)
+
 
     weechat.hook_command(SCRIPT_COMMAND, cmd_grep.__doc__,
             "[log <file> | buffer <name> | stop] [-a|--all] [-b|--buffer] [-c|--count] [-m|--matchcase] "
