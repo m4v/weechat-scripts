@@ -47,7 +47,7 @@ SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Notification system, using dbus or libnotify. Works with WeeChat in screen."
 SCRIPT_COMMAND = "inotify"
 
-DAEMON_URL = 'http://github.com/m4v/weechat-scripts/blob/m4v/python/inotify-daemon'
+DAEMON_URL = 'http://github.com/m4v/inotify-daemon/raw/master/inotify-daemon'
 DAEMON     = 'inotify-daemon'
 
 ### Default Settings ###
