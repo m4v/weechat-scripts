@@ -350,16 +350,17 @@ def strip_home(s, dir=''):
     return s
 
 ### Messages ###
-def debug(s, prefix=''):
+def debug(s, prefix='', buffer=None):
     """Debug msg"""
     if not weechat.config_get_plugin('debug'): return
-    buffer_name = 'DEBUG_' + SCRIPT_NAME
-    buffer = weechat.buffer_search('python', buffer_name)
-    if not buffer:
-        buffer = weechat.buffer_new(buffer_name, '', '', '', '')
-        weechat.buffer_set(buffer, 'nicklist', '0')
-        weechat.buffer_set(buffer, 'time_for_each_line', '0')
-        weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
+    if buffer is None:
+        buffer_name = 'DEBUG_' + SCRIPT_NAME
+        buffer = weechat.buffer_search('python', buffer_name)
+        if not buffer:
+            buffer = weechat.buffer_new(buffer_name, '', '', '', '')
+            weechat.buffer_set(buffer, 'nicklist', '0')
+            weechat.buffer_set(buffer, 'time_for_each_line', '0')
+            weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
     weechat.prnt(buffer, '%s\t%s' %(prefix, s))
 
 def error(s, prefix=None, buffer='', trace=''):
@@ -1174,7 +1175,7 @@ def cmd_grep_parsing(args, buffer=''):
     if args:
         pattern_tmpl = args  
         pattern = _tmplRe.sub(tmplReplacer, args)
-        debug('Using regexp: %s' %pattern)
+        debug('Using regexp: %s' %pattern, buffer='', prefix=script_nick)
     if not pattern:
         raise Exception, 'No pattern for grep the logs.'
 
