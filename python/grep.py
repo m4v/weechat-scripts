@@ -1403,7 +1403,7 @@ def completion_log_files(data, completion_item, buffer, completion):
 
 def completion_grep_args(data, completion_item, buffer, completion):
     for arg in ('count', 'all', 'matchcase', 'hilight', 'exact', 'head', 'tail', 'number', 'buffer',
-            'after-context', 'before-context', 'context'):
+            'after-context', 'before-context', 'context', 'invert', 'only-match'):
         weechat.hook_completion_list_add(completion, '--' + arg, 0, weechat.WEECHAT_LIST_POS_SORT)
     return WEECHAT_RC_OK
 
