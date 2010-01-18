@@ -67,6 +67,7 @@
 #
 #   History:
 #   2010-01-17
+#   version 0.6.2: removed 2.6-ish code
 #   version 0.6.1: fixed bug when grepping in grep's buffer
 #
 #   2010-01-14
@@ -136,7 +137,7 @@
 
 from os import path
 from os import stat
-import getopt, time, re
+import sys, getopt, time, re
 
 try:
     import weechat
@@ -242,14 +243,24 @@ class linesList(list):
         self.matches_count = 0
         self.stripped_lines = 0
 
+    def append(self, item):
+        """Append lines, can be a string or a list with strings."""
+        if isinstance(item, str):
+            list.append(self, item)
+        else:
+            self.extend(item)
+
     def append_separator(self):
         """adds a separator into the list, makes sure it doen't add two together."""
         s = self._sep
         if (self and self[-1] != s) or not self:
             self.append(s)
 
-    def count_match(self):
-        self.matches_count += 1
+    def count_match(self, item=None):
+        if item is None or isinstance(item, str):
+            self.matches_count += 1
+        else:
+            self.matches_count += len(item)
 
     def strip_separator(self):
         """removes separators if there are first or/and last in the list."""
@@ -564,7 +575,7 @@ def check_string(s, regexp, hilight='', exact=False):
     elif exact:
         matchlist = regexp.findall(s)
         if matchlist:
-            return ' '.join(matchlist)
+            return matchlist
     elif hilight:
         matchlist = regexp.findall(s)
         if matchlist:
@@ -578,7 +589,17 @@ def check_string(s, regexp, hilight='', exact=False):
     elif regexp.search(s):
         return s
 
-def grep_file(file, head, tail, after_context, before_context, count, regexp, hilight, exact):
+def invertible_check_string(s, invert, *args):
+    m = check_string(s, *args)
+    if m:
+        if invert:
+            return None
+        else:
+            return m
+    elif invert:
+        return s
+
+def grep_file(file, head, tail, after_context, before_context, count, regexp, hilight, exact, invert):
     """Return a list of lines that match 'regexp' in 'file', if no regexp returns all lines."""
     if count:
         tail = head = after_context = before_context = exact = False
@@ -592,7 +613,7 @@ def grep_file(file, head, tail, after_context, before_context, count, regexp, hi
     append = lines.append
     count_match = lines.count_match
     separator = lines.append_separator
-    check = lambda s: check_string(s, regexp, hilight, exact)
+    check = lambda s: invertible_check_string(s, invert, regexp, hilight, exact)
     
     file_object = open(file, 'r')
     if tail or before_context:
@@ -633,7 +654,7 @@ def grep_file(file, head, tail, after_context, before_context, count, regexp, hi
                         except IndexError:
                             pass
                 append(line)
-                count_match()
+                count_match(line)
                 if after_context:
                     id, offset = 0, 0
                     while id < after_context + offset:
@@ -664,7 +685,7 @@ def grep_file(file, head, tail, after_context, before_context, count, regexp, hi
             line = check(line)
             if line:
                 count or append(line)
-                count_match()
+                count_match(line)
                 if after_context:
                     id, offset = 0, 0
                     while id < after_context + offset:
@@ -686,7 +707,8 @@ def grep_file(file, head, tail, after_context, before_context, count, regexp, hi
     file_object.close()
     return lines
 
-def grep_buffer(buffer, head, tail, after_context, before_context, count, regexp, hilight, exact):
+def grep_buffer(buffer, head, tail, after_context, before_context, count, regexp, hilight, exact,
+        invert):
     """Return a list of lines that match 'regexp' in 'buffer', if no regexp returns all lines."""
     lines = linesList()
     if count:
@@ -736,7 +758,7 @@ def grep_buffer(buffer, head, tail, after_context, before_context, count, regexp
     append = lines.append
     count_match = lines.count_match
     separator = lines.append_separator
-    check = lambda s: check_string(s, regexp, hilight, exact)
+    check = lambda s: invertible_check_string(s, invert, regexp, hilight, exact)
 
     if before_context:
         before_context_range = range(1, before_context + 1)
@@ -763,7 +785,7 @@ def grep_buffer(buffer, head, tail, after_context, before_context, count, regexp
                         append(context_line)
                     infolist_next(infolist)
             count or append(line)
-            count_match()
+            count_match(line)
             if after_context:
                 id, offset = 0, 0
                 while id < after_context + offset:
@@ -796,7 +818,7 @@ def show_matching_lines():
     Greps buffers in search_in_buffers or files in search_in_files and updates grep buffer with the
     result.
     """
-    global pattern, matchcase, number, count, exact, hilight
+    global pattern, matchcase, number, count, exact, hilight, invert
     global tail, head, after_context, before_context
     global search_in_files, search_in_buffers, matched_lines, home_dir
     global time_start
@@ -810,7 +832,7 @@ def show_matching_lines():
         for buffer in search_in_buffers:
             buffer_name = weechat.buffer_get_string(buffer, 'name')
             matched_lines[buffer_name] = grep_buffer(buffer, head, tail, after_context,
-                    before_context, count, regexp, hilight, exact)
+                    before_context, count, regexp, hilight, exact, invert)
 
     # logs
     if search_in_files:
@@ -829,12 +851,12 @@ def show_matching_lines():
             for log in search_in_files:
                 log_name = strip_home(log)
                 matched_lines[log_name] = grep_file(log, head, tail, after_context, before_context,
-                        count, regexp, hilight, exact)
+                        count, regexp, hilight, exact, invert)
             buffer_update()
         else:
             # we hook a process so grepping runs in background.
             #debug('on background')
-            global hook_file_grep
+            global hook_file_grep, script_path
             timeout = 1000*60*10 # 10 min
 
             def shell_escapes(s):
@@ -847,8 +869,8 @@ def show_matching_lines():
 
             cmd = grep_proccess_cmd %dict(logs=files_string, head=head, pattern=pattern, tail=tail,
                     hilight=hilight, after_context=after_context, before_context=before_context,
-                    exact=exact, matchcase=matchcase, home_dir=home_dir, version=SCRIPT_VERSION,
-                    home=weechat.info_get('weechat_dir', ''), count=count)
+                    exact=exact, matchcase=matchcase, home_dir=home_dir, script_path=script_path,
+                    count=count, invert=invert)
 
             #debug(cmd)
             hook_file_grep = weechat.hook_process(cmd, timeout, 'grep_file_callback', '')
@@ -862,18 +884,16 @@ def show_matching_lines():
 # defined here for commodity
 grep_proccess_cmd = """python -c "
 import sys, cPickle, cStringIO
-sys.path.append('%(home)s/python/dev') # add WeeChat script dir so we can import grep
-from grep import make_regexp, grep_file, strip_home, SCRIPT_VERSION
+sys.path.append('%(script_path)s') # add WeeChat script dir so we can import grep
+from grep import make_regexp, grep_file, strip_home
 logs = (%(logs)s, )
 try:
-    if '%(version)s' != SCRIPT_VERSION:
-        raise Exception, 'Can\\'t spawn new process, script version mismatch'
     regexp = make_regexp('%(pattern)s', %(matchcase)s)
     d = {}
     for log in logs:
         log_name = strip_home(log, '%(home_dir)s')
         lines = grep_file(log, %(head)s, %(tail)s, %(after_context)s, %(before_context)s,
-        %(count)s, regexp, '%(hilight)s', %(exact)s)
+        %(count)s, regexp, '%(hilight)s', %(exact)s, %(invert)s)
         d[log_name] = lines
     s_out = cStringIO.StringIO()
     cPickle.dump(d, s_out, 0)
@@ -947,7 +967,7 @@ def get_grep_file_status():
 ### Grep buffer ###
 def buffer_update():
     """Updates our buffer with new lines."""
-    global matched_lines, pattern_tmpl, count, hilight
+    global matched_lines, pattern_tmpl, count, hilight, invert
     pattern = pattern_tmpl
     time_grep = now()
 
@@ -961,9 +981,10 @@ def buffer_update():
         weechat.buffer_clear(buffer)
 
     def _make_summary(log, lines, note):
-        return "%s matches \"%s%s%s\" in %s%s%s%s" \
-                %(lines.matches_count, color_summary, pattern, color_info, color_summary, log,
-                  color_reset, note)
+        return "%s matches \"%s%s%s\"%s in %s%s%s%s" \
+                %(lines.matches_count, color_summary, pattern, color_info,
+                  invert and ' (inverted)' or '',
+                  color_summary, log, color_reset, note)
 
     if count:
         make_summary = lambda log, lines : _make_summary(log, lines, ' (not shown)')
@@ -1054,9 +1075,9 @@ def buffer_update():
         note = ' (last %s lines shown)' %len(matched_lines)
     else:
         note = ''
-    title = "Search in %s%s%s | %s matches%s | pattern \"%s%s%s\" | %.4f seconds (%.2f%%)" \
+    title = "Search in %s%s%s | %s matches%s | pattern \"%s%s%s\"%s | %.4f seconds (%.2f%%)" \
             %(color_title, matched_lines, color_reset, matched_lines.get_matches_count(), note,
-              color_title, pattern, color_reset, time_total, time_grep_pct)
+              color_title, pattern, color_reset, invert and ' (inverted)' or '', time_total, time_grep_pct)
     weechat.buffer_set(buffer, 'title', title)
 
     if get_config_boolean('go_to_buffer'):
@@ -1134,10 +1155,10 @@ def buffer_input(data, buffer, input_data):
 def cmd_init():
     """Resets global vars."""
     global home_dir, cache_dir, nick_dict
-    global pattern_tmpl, pattern, matchcase, number, count, exact, hilight
+    global pattern_tmpl, pattern, matchcase, number, count, exact, hilight, invert
     global tail, head, after_context, before_context
     hilight = ''
-    head = tail = after_context = before_context = False
+    head = tail = after_context = before_context = invert = False
     matchcase = count = exact = False
     pattern_tmpl = pattern = number = None
     home_dir = get_home()
@@ -1146,13 +1167,13 @@ def cmd_init():
 
 def cmd_grep_parsing(args, buffer=''):
     """Parses args for /grep and grep input buffer."""
-    global pattern_tmpl, pattern, matchcase, number, count, exact, hilight
+    global pattern_tmpl, pattern, matchcase, number, count, exact, hilight, invert
     global tail, head, after_context, before_context
     global log_name, buffer_name, only_buffers, all
-    opts, args = getopt.gnu_getopt(args.split(), 'cmHeahtin:bA:B:C:', ['count', 'matchcase', 'hilight',
+    opts, args = getopt.gnu_getopt(args.split(), 'cmHeahtivn:bA:B:C:o', ['count', 'matchcase', 'hilight',
         'exact', 'all', 'head', 'tail', 'number=', 'buffer', 'after-context=', 'before-context=',
-        'context='])
-    debug(opts, 'opts: '); debug(args, 'args: ')
+        'context=', 'invert', 'only-match'])
+    #debug(opts, 'opts: '); debug(args, 'args: ')
     if len(args) >= 2:
         if args[0] == 'log':
             del args[0]
@@ -1213,7 +1234,7 @@ def cmd_grep_parsing(args, buffer=''):
             # we pass the colors in the variable itself because check_string() must not use
             # weechat's module when applying the colors (this is for grep in a hooked process)
             count = False
-        elif opt in ('e', 'exact'):
+        elif opt in ('e', 'exact', 'o', 'only-match'):
             exact = not exact
             count = False
         elif opt in ('a', 'all'):
@@ -1243,6 +1264,8 @@ def cmd_grep_parsing(args, buffer=''):
             before_context = positive_number(opt, val)
             after_context = False
             count = False
+        elif opt in ('i', 'v', 'invert'):
+            invert = not invert
     # number check
     if number is not None:
         if number == 0:
@@ -1485,6 +1508,12 @@ if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
         SCRIPT_DESC, '', ''):
     home_dir = get_home()
+
+    # for import ourselves
+    global script_path
+    script_path = path.dirname(__file__)
+    sys.path.append(script_path)
+
 
     weechat.hook_command(SCRIPT_COMMAND, cmd_grep.__doc__,
             "[log <file> | buffer <name> | stop] [-a|--all] [-b|--buffer] [-c|--count] [-m|--matchcase] "
