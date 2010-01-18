@@ -136,7 +136,7 @@
 
 from os import path
 from os import stat
-import getopt, time
+import getopt, time, re
 
 try:
     import weechat
@@ -1151,20 +1151,28 @@ def cmd_grep_parsing(args, buffer=''):
         elif args[0] == 'buffer':
             del args[0]
             buffer_name = args.pop(0)
-    if args and args[0][0] == '%' and args[0][1:] in templates:
-        # is a template
-        tmpl, args = args[0][1:], args[1:]
-        template = templates[tmpl]
-        if callable(template):
-            pattern = template(buffer, *args)
-        else:
-            pattern = template
-    else:
-        args = ' '.join(args) # join pattern for keep spaces
-        if args:
-            pattern = args
-        elif not pattern:
-            raise Exception, 'No pattern for grep the logs.'
+    
+    def tmplReplacer(match):
+        """This function will replace templates with regexps"""
+        s = match.groups()[0]
+        debug(s)
+        tmpl_args = s.split()
+        tmpl_key = tmpl_args[0]
+        del tmpl_args[0]
+        try:
+            template = templates[tmpl_key]
+            if callable(template):
+                return template(buffer, *tmpl_args)
+            else:
+                return template
+        except:
+            return '%%{%s}' %s
+
+    args = ' '.join(args) # join pattern for keep spaces
+    if args:
+        pattern = _tmplRe.sub(tmplReplacer, args)
+    if not pattern:
+        raise Exception, 'No pattern for grep the logs.'
 
     def positive_number(opt, val):
         try:
@@ -1392,10 +1400,11 @@ def completion_grep_args(data, completion_item, buffer, completion):
     return WEECHAT_RC_OK
 
 ### Templates ###
+_tmplRe = re.compile(r'%\{(\w+.*?)\}')
 def make_url_regexp(buffer, *args):
     if args:
         words = r'(?:%s)' %'|'.join(args)
-        return r'(\w+://[^\s]*%s[^\s]*(?:/[^\])>\s]*)?)' %words
+        return r'((?:\w+://|www\.)[^\s]*%s[^\s]*(?:/[^\])>\s]*)?)' %words
     else:
         return url
 
