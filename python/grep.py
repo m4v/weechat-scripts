@@ -350,7 +350,7 @@ def strip_home(s, dir=''):
     return s
 
 ### Messages ###
-def debug(s, prefix='debug'):
+def debug(s, prefix=''):
     """Debug msg"""
     if not weechat.config_get_plugin('debug'): return
     buffer_name = 'DEBUG_' + SCRIPT_NAME
@@ -851,8 +851,9 @@ def show_matching_lines():
 
             #debug(cmd)
             hook_file_grep = weechat.hook_process(cmd, timeout, 'grep_file_callback', '')
+            global pattern_tmpl
             if hook_file_grep:
-                buffer_create("Searching for '%s' in %s worth of data..." %(pattern,
+                buffer_create("Searching for '%s' in %s worth of data..." %(pattern_tmpl,
                     human_readable_size(size)))
     else:
         buffer_update()
@@ -939,7 +940,8 @@ def get_grep_file_status():
 ### Grep buffer ###
 def buffer_update():
     """Updates our buffer with new lines."""
-    global matched_lines, pattern, count, hilight
+    global matched_lines, pattern_tmpl, count, hilight
+    pattern = pattern_tmpl
     time_grep = now()
 
     buffer = buffer_create()
@@ -1125,19 +1127,19 @@ def buffer_input(data, buffer, input_data):
 def cmd_init():
     """Resets global vars."""
     global home_dir, cache_dir, nick_dict
-    global pattern, matchcase, number, count, exact, hilight
+    global pattern_tmpl, pattern, matchcase, number, count, exact, hilight
     global tail, head, after_context, before_context
     hilight = ''
     head = tail = after_context = before_context = False
     matchcase = count = exact = False
-    pattern = number = None
+    pattern_tmpl = pattern = number = None
     home_dir = get_home()
     cache_dir = {} # for avoid walking the dir tree more than once per command
     nick_dict = {} # nick cache for don't calculate nick color every time
 
 def cmd_grep_parsing(args, buffer=''):
     """Parses args for /grep and grep input buffer."""
-    global pattern, matchcase, number, count, exact, hilight
+    global pattern_tmpl, pattern, matchcase, number, count, exact, hilight
     global tail, head, after_context, before_context
     global log_name, buffer_name, only_buffers, all
     opts, args = getopt.gnu_getopt(args.split(), 'cmHeahtin:bA:B:C:', ['count', 'matchcase', 'hilight',
@@ -1170,7 +1172,9 @@ def cmd_grep_parsing(args, buffer=''):
 
     args = ' '.join(args) # join pattern for keep spaces
     if args:
+        pattern_tmpl = args  
         pattern = _tmplRe.sub(tmplReplacer, args)
+        debug('Using regexp: %s' %pattern)
     if not pattern:
         raise Exception, 'No pattern for grep the logs.'
 
@@ -1398,6 +1402,9 @@ def completion_grep_args(data, completion_item, buffer, completion):
             'after-context', 'before-context', 'context'):
         weechat.hook_completion_list_add(completion, '--' + arg, 0, weechat.WEECHAT_LIST_POS_SORT)
     return WEECHAT_RC_OK
+
+def completion_grep_tmpl(data, completion_item, buffer, completion):
+    pass
 
 ### Templates ###
 _tmplRe = re.compile(r'%\{(\w+.*?)\}')
