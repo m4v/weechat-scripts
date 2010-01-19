@@ -1211,6 +1211,7 @@ def cmd_grep_parsing(args):
         elif opt in ('e', 'exact', 'o', 'only-match'):
             exact = not exact
             count = False
+            invert = False
         elif opt in ('a', 'all'):
             all = not all
         elif opt in ('h', 'head'):
@@ -1240,6 +1241,7 @@ def cmd_grep_parsing(args):
             count = False
         elif opt in ('i', 'v', 'invert'):
             invert = not invert
+            exact = False
     # number check
     if number is not None:
         if number == 0:
