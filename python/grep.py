@@ -617,7 +617,10 @@ def grep_file(file, head, tail, after_context, before_context, count, regexp, hi
     append = lines.append
     count_match = lines.count_match
     separator = lines.append_separator
-    check = lambda s: invertible_check_string(s, invert, regexp, hilight, exact)
+    if invert:
+        check = lambda s: invertible_check_string(s, invert, regexp, hilight, exact)
+    else:
+        check = lambda s: check_string(s, regexp, hilight, exact)
     
     file_object = open(file, 'r')
     if tail or before_context:
@@ -762,7 +765,10 @@ def grep_buffer(buffer, head, tail, after_context, before_context, count, regexp
     append = lines.append
     count_match = lines.count_match
     separator = lines.append_separator
-    check = lambda s: invertible_check_string(s, invert, regexp, hilight, exact)
+    if invert:
+        check = lambda s: invertible_check_string(s, invert, regexp, hilight, exact)
+    else:
+        check = lambda s: check_string(s, regexp, hilight, exact)
 
     if before_context:
         before_context_range = range(1, before_context + 1)
