@@ -1423,8 +1423,7 @@ def make_host_regexp(buffer, *args):
     regexp = []
     for nick in args:
         host = get_host(buffer, nick)
-        if not host:
-            continue
+        if not host: continue
         host = host[host.find('@')+1:].replace('.', '\\.')
         regexp.append(host)
     if regexp:
@@ -1437,13 +1436,35 @@ def make_username_regexp(buffer, *args):
         return ''
     regexp = []
     for nick in args:
-        host = get_host(buffer, nick)
-        if not host:
-            continue
-        user = host[host.find('=')+1:host.find('@')] # FIXME this is too freenode specific
+        user = get_username(buffer, nick)
+        if not user: continue
         regexp.append(user)
     if regexp:
         return '|'.join(regexp)
+    return ''
+
+def make_hex_username_regexp(buffer, *args):
+    debug('make_hex_username: %s' %str(args))
+    if not buffer:
+        return ''
+    regexp = []
+    try:
+        for nick in args:
+            user = get_username(buffer, nick)
+            if not user: continue
+            hex = map(lambda n: user[n:n+2], range(0, len(user), 2))
+            hex = map(lambda s: int(s, 16), hex)
+            regexp.append('.'.join(map(str, hex)))
+    except:
+        return ''
+    if regexp:
+        return '|'.join(regexp)
+    return ''
+
+def get_username(buffer, nick):
+    host = get_host(buffer, nick)
+    if host:
+        return host[host.find('=')+1:host.find('@')] # FIXME this is too freenode specific
     return ''
 
 def get_host(buffer, nick):
@@ -1458,6 +1479,7 @@ def get_host(buffer, nick):
             host = weechat.infolist_string(nick_infolist, 'host')
             break
     weechat.infolist_free(nick_infolist)
+    debug('get_host %s' %host)
     return host
 
 # stolen from urlbar
@@ -1472,6 +1494,7 @@ templates = {
         'url'  :make_url_regexp,
         'host' :make_host_regexp,
         'user' :make_username_regexp,
+        'hexuser':make_hex_username_regexp,
         }
 
 ### Main ###
