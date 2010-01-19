@@ -880,7 +880,7 @@ def show_matching_lines():
         buffer_update()
 
 # defined here for commodity
-grep_proccess_cmd = """python -c "
+grep_proccess_cmd = """python -Bc "
 import sys, cPickle
 sys.path.append('%(script_path)s') # add WeeChat script dir so we can import grep
 from grep import make_regexp, grep_file, strip_home
