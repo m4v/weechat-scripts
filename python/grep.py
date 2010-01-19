@@ -310,9 +310,14 @@ def color_nick(nick):
             %(modes.find(mode) + 1)))
     else:
         mode = mode_color = ''
-    color_nicks_number = config_int('weechat.look.color_nicks_number')
-    idx = (sum(map(ord, nick))%color_nicks_number) + 1
-    nick_color = wcolor(config_string('weechat.color.chat_nick_color%02d' %idx))
+    # nick color
+    nick_color = weechat.info_get('irc_nick_color', nick)
+    if not nick_color:
+        # probably we're in WeeChat 0.3.0
+        #debug('no irc_nick_color')
+        color_nicks_number = config_int('weechat.look.color_nicks_number')
+        idx = (sum(map(ord, nick))%color_nicks_number) + 1
+        nick_color = wcolor(config_string('weechat.color.chat_nick_color%02d' %idx))
     return ''.join((prefix_c, prefix, mode_color, mode, nick_color, nick, suffix_c, suffix))
 
 ### Config and value validation ###
@@ -1419,7 +1424,6 @@ if __name__ == '__main__' and import_ok and \
     global script_path
     script_path = path.dirname(__file__)
     sys.path.append(script_path)
-
 
     weechat.hook_command(SCRIPT_COMMAND, cmd_grep.__doc__,
             "[log <file> | buffer <name> | stop] [-a|--all] [-b|--buffer] [-c|--count] [-m|--matchcase] "
