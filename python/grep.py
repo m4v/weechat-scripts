@@ -71,6 +71,7 @@
 #   but removed from help)
 #   * use new 'irc_nick_color' info
 #   * don't generate bytecode when spawning a new process
+#   * show active options in buffer title
 #
 #   2010-01-17
 #   version 0.6.2: removed 2.6-ish code
@@ -600,23 +601,16 @@ def check_string(s, regexp, hilight='', exact=False):
     elif regexp.search(s):
         return s
 
-def invertible_check_string(s, invert, *args):
-    m = check_string(s, *args)
-    if m:
-        if invert:
-            return None
-        else:
-            return m
-    elif invert:
-        return s
-
 def grep_file(file, head, tail, after_context, before_context, count, regexp, hilight, exact, invert):
     """Return a list of lines that match 'regexp' in 'file', if no regexp returns all lines."""
     if count:
-        tail = head = after_context = before_context = exact = False
+        tail = head = after_context = before_context = False
         hilight = ''
     elif exact:
         before_context = after_context = False
+        hilight = ''
+    elif invert:
+        hilight = ''
     #debug(' '.join(map(str, (file, head, tail, after_context, before_context))))
 
     lines = linesList()
@@ -625,7 +619,11 @@ def grep_file(file, head, tail, after_context, before_context, count, regexp, hi
     count_match = lines.count_match
     separator = lines.append_separator
     if invert:
-        check = lambda s: invertible_check_string(s, invert, regexp, hilight, exact)
+        def check(s):
+            if check_string(s, regexp, hilight, exact):
+                return None
+            else:
+                return s
     else:
         check = lambda s: check_string(s, regexp, hilight, exact)
     
@@ -726,7 +724,7 @@ def grep_buffer(buffer, head, tail, after_context, before_context, count, regexp
     """Return a list of lines that match 'regexp' in 'buffer', if no regexp returns all lines."""
     lines = linesList()
     if count:
-        tail = head = after_context = before_context = exact = False
+        tail = head = after_context = before_context = False
         hilight = ''
     elif exact:
         before_context = after_context = False
@@ -773,7 +771,11 @@ def grep_buffer(buffer, head, tail, after_context, before_context, count, regexp
     count_match = lines.count_match
     separator = lines.append_separator
     if invert:
-        check = lambda s: invertible_check_string(s, invert, regexp, hilight, exact)
+        def check(s):
+            if check_string(s, regexp, hilight, exact):
+                return None
+            else:
+                return s
     else:
         check = lambda s: check_string(s, regexp, hilight, exact)
 
@@ -1092,9 +1094,10 @@ def buffer_update():
         note = ' (last %s lines shown)' %len(matched_lines)
     else:
         note = ''
-    title = "Search in %s%s%s | %s matches%s | pattern \"%s%s%s\"%s | %.4f seconds (%.2f%%)" \
+    title = "Search in %s%s%s %s matches%s | pattern \"%s%s%s\"%s %s | %.4f seconds (%.2f%%)" \
             %(color_title, matched_lines, color_reset, matched_lines.get_matches_count(), note,
-              color_title, pattern, color_reset, invert and ' (inverted)' or '', time_total, time_grep_pct)
+              color_title, pattern, color_reset, invert and ' (inverted)' or '', format_options(),
+              time_total, time_grep_pct)
     weechat.buffer_set(buffer, 'title', title)
 
     if get_config_boolean('go_to_buffer'):
@@ -1124,6 +1127,46 @@ def print_line(s, buffer=None, display=False):
     say('%s%s' %(color_info, s), buffer=buffer)
     if display and get_config_boolean('go_to_buffer'):
         weechat.buffer_set(buffer, 'display', '1')
+
+def format_options():
+    global matchcase, number, count, exact, hilight, invert
+    global tail, head, after_context, before_context
+    chars = 'cHmov'
+    options = []
+    append = options.append
+    if count or hilight or matchcase or exact or invert:
+        append('-')
+        for i, flag in enumerate((count, hilight, matchcase, exact, invert)):
+            if flag:
+                append(chars[i])
+
+    if head or tail:
+        n = get_config_int('default_tail_head')
+        debug('%s, %s %s' %(n, head, tail))
+        if head:
+            append(' -h')
+            if head != n:
+                append('n')
+                append(head)
+        elif tail:
+            append(' -t')
+            if tail != n:
+                append('n')
+                append(tail)
+
+    if before_context and after_context and (before_context == after_context):
+        append(' -C')
+        append(before_context)
+    else:
+        if before_context:
+            append(' -B')
+            append(before_context)
+        if after_context:
+            append(' -A')
+            append(after_context)
+
+    return ''.join(map(str, options)).strip()
+
 
 def buffer_create(title=None):
     """Returns our buffer pointer, creates and cleans the buffer if needed."""
@@ -1250,21 +1293,17 @@ def cmd_grep_parsing(args, buffer=''):
                 hilight = '%s,%s' %(color_hilight, color_reset)
             # we pass the colors in the variable itself because check_string() must not use
             # weechat's module when applying the colors (this is for grep in a hooked process)
-            count = False
         elif opt in ('e', 'exact', 'o', 'only-match'):
             exact = not exact
-            count = False
             invert = False
         elif opt in ('a', 'all'):
             all = not all
         elif opt in ('h', 'head'):
             head = not head
             tail = False
-            count = False
         elif opt in ('t', 'tail'):
             tail = not tail
             head = False
-            count = False
         elif opt in ('b', 'buffer'):
             only_buffers = True
         elif opt in ('n', 'number'):
@@ -1273,15 +1312,10 @@ def cmd_grep_parsing(args, buffer=''):
             n = positive_number(opt, val)
             after_context = n
             before_context = n
-            count = False
         elif opt in ('A', 'after-context'):
             after_context = positive_number(opt, val)
-            before_context = False
-            count = False
         elif opt in ('B', 'before-context'):
             before_context = positive_number(opt, val)
-            after_context = False
-            count = False
         elif opt in ('i', 'v', 'invert'):
             invert = not invert
             exact = False
