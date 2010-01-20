@@ -599,16 +599,6 @@ def check_string(s, regexp, hilight='', exact=False):
     elif regexp.search(s):
         return s
 
-def invertible_check_string(s, invert, *args):
-    m = check_string(s, *args)
-    if m:
-        if invert:
-            return None
-        else:
-            return m
-    elif invert:
-        return s
-
 def grep_file(file, head, tail, after_context, before_context, count, regexp, hilight, exact, invert):
     """Return a list of lines that match 'regexp' in 'file', if no regexp returns all lines."""
     if count:
@@ -624,7 +614,11 @@ def grep_file(file, head, tail, after_context, before_context, count, regexp, hi
     count_match = lines.count_match
     separator = lines.append_separator
     if invert:
-        check = lambda s: invertible_check_string(s, invert, regexp, hilight, exact)
+        def check(s):
+            if check_string(s, regexp, hilight, exact):
+                return None
+            else:
+                return s
     else:
         check = lambda s: check_string(s, regexp, hilight, exact)
     
@@ -772,7 +766,11 @@ def grep_buffer(buffer, head, tail, after_context, before_context, count, regexp
     count_match = lines.count_match
     separator = lines.append_separator
     if invert:
-        check = lambda s: invertible_check_string(s, invert, regexp, hilight, exact)
+        def check(s):
+            if check_string(s, regexp, hilight, exact):
+                return None
+            else:
+                return s
     else:
         check = lambda s: check_string(s, regexp, hilight, exact)
 
