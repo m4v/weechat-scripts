@@ -47,7 +47,8 @@ SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Notification system, using dbus or libnotify. Works with WeeChat in screen."
 SCRIPT_COMMAND = "inotify"
 
-DAEMON_URL = 'http://github.com/m4v/weechat-scripts/blob/m4v/python/inotify-daemon'
+DAEMON_URL = 'http://github.com/m4v/inotify-daemon/raw/master/inotify-daemon'
+DAEMON     = 'inotify-daemon'
 
 ### Default Settings ###
 settings = {
@@ -386,6 +387,23 @@ def inactive():
     else:
         return False
 
+config_string = lambda s : weechat.config_string(weechat.config_get(s))
+def get_nick(s):
+    """Strip nickmodes and prefix, suffix."""
+    if not s: return ''
+    # prefix and suffix
+    prefix = config_string('irc.look.nick_prefix')
+    suffix = config_string('irc.look.nick_suffix')
+    if s[0] == prefix:
+        s = s[1:]
+    if s[-1] == suffix:
+        s = s[:-1]
+    # nick mode
+    modes = '@!+%'
+    if s[0] in modes:
+        s = s[1:]
+    return s
+
 def notify_msg(data, buffer, time, tags, display, hilight, prefix, msg):
     if data and 'notify_message' not in tags:
         # weechat 0.3.0 bug
@@ -394,8 +412,7 @@ def notify_msg(data, buffer, time, tags, display, hilight, prefix, msg):
     #        prefix='MESSAGE')
     if hilight == '1' and display == '1':
         channel = weechat.buffer_get_string(buffer, 'short_name')
-        if prefix[0] in '@+#!': # strip user modes
-            prefix = prefix[1:]
+        prefix = get_nick(prefix)
         if weechat.info_get('irc_is_channel', channel) \
                 and channel not in ignore_channel \
                 and prefix not in ignore_nick \
@@ -410,6 +427,7 @@ def notify_priv(data, buffer, time, tags, display, hilight, prefix, msg):
         return WEECHAT_RC_OK
     #debug('  '.join((data, buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
     #        prefix='PRIVATE')
+    prefix = get_nick(prefix)
     if display == '1' \
             and prefix not in ignore_nick \
             and not in_window(buffer):
@@ -475,15 +493,17 @@ if __name__ == '__main__' and import_ok and \
 
     server = Server()
 
-    weechat.hook_command(SCRIPT_COMMAND, SCRIPT_DESC, '[test [text] | quit ]', 
+    weechat.hook_command(SCRIPT_COMMAND, SCRIPT_DESC, '[test [text] | notify [text] | restart | quit ]', 
 """
-test: sends a test notification, with 'text' if provided.
-quit: forces remote daemon to shutdown, after this notifications won't be available and the daemon
-should be started again manually.
+   test: sends a test notification, with 'text' if provided.
+ notify: same as test, but the notification is send through the notification queue.
+restart: forces remote daemon to restart.
+   quit: forces remote daemon to shutdown, after this notifications won't be available
+         and the daemon should be started again manually.
 
 Setting notification ignores:
   It's possible to filter notification by channel or by nick, with the config options
-   'ignore_channel' and 'ignore_nick' in plugins.var.python.%s
+   'ignore_channel' and 'ignore_nick' in plugins.var.python.%(script)s
   Each config option accepts a comma separated list of patterns that should be
    ignored. Wildcards '*', '?' and char groups [..] can be used.
   An ignore exception can be added by prefixing '!' in the pattern.
@@ -494,7 +514,13 @@ Examples:
   Setting 'ignore_channel' to '*ubuntu*,!#ubuntu-es':
    will ignore notifications from any channel with the word 'ubuntu' except from
    #ubuntu-es.
-""" %SCRIPT_NAME
+
+Daemon:
+  %(script)s script needs to connect to an external daemon for send notifications,
+  which can be used in localhost or remotelly. Download the daemon from:
+  %(daemon_url)s
+  and check its help with ./%(daemon)s --help
+""" %dict(script=SCRIPT_NAME, daemon_url=DAEMON_URL, daemon=DAEMON)
             ,'test|notify|restart|quit', 'cmd_notify', '')
 
     weechat.hook_config('plugins.var.python.%s.ignore_*' %SCRIPT_NAME, 'ignore_update', '')

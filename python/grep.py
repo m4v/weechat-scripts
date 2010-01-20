@@ -66,6 +66,12 @@
 #
 #
 #   History:
+#   2010-01-19
+#   version 0.6.3: added options --invert --only-match (replaces --exact, which is still available
+#   but removed from help)
+#   * use new 'irc_nick_color' info
+#   * don't generate bytecode when spawning a new process
+#
 #   2010-01-17
 #   version 0.6.2: removed 2.6-ish code
 #   version 0.6.1: fixed bug when grepping in grep's buffer
@@ -310,9 +316,14 @@ def color_nick(nick):
             %(modes.find(mode) + 1)))
     else:
         mode = mode_color = ''
-    color_nicks_number = config_int('weechat.look.color_nicks_number')
-    idx = (sum(map(ord, nick))%color_nicks_number) + 1
-    nick_color = wcolor(config_string('weechat.color.chat_nick_color%02d' %idx))
+    # nick color
+    nick_color = weechat.info_get('irc_nick_color', nick)
+    if not nick_color:
+        # probably we're in WeeChat 0.3.0
+        #debug('no irc_nick_color')
+        color_nicks_number = config_int('weechat.look.color_nicks_number')
+        idx = (sum(map(ord, nick))%color_nicks_number) + 1
+        nick_color = wcolor(config_string('weechat.color.chat_nick_color%02d' %idx))
     return ''.join((prefix_c, prefix, mode_color, mode, nick_color, nick, suffix_c, suffix))
 
 ### Config and value validation ###
@@ -613,7 +624,10 @@ def grep_file(file, head, tail, after_context, before_context, count, regexp, hi
     append = lines.append
     count_match = lines.count_match
     separator = lines.append_separator
-    check = lambda s: invertible_check_string(s, invert, regexp, hilight, exact)
+    if invert:
+        check = lambda s: invertible_check_string(s, invert, regexp, hilight, exact)
+    else:
+        check = lambda s: check_string(s, regexp, hilight, exact)
     
     file_object = open(file, 'r')
     if tail or before_context:
@@ -758,7 +772,10 @@ def grep_buffer(buffer, head, tail, after_context, before_context, count, regexp
     append = lines.append
     count_match = lines.count_match
     separator = lines.append_separator
-    check = lambda s: invertible_check_string(s, invert, regexp, hilight, exact)
+    if invert:
+        check = lambda s: invertible_check_string(s, invert, regexp, hilight, exact)
+    else:
+        check = lambda s: check_string(s, regexp, hilight, exact)
 
     if before_context:
         before_context_range = range(1, before_context + 1)
@@ -882,7 +899,7 @@ def show_matching_lines():
         buffer_update()
 
 # defined here for commodity
-grep_proccess_cmd = """python -c "
+grep_proccess_cmd = """python -Bc "
 import sys, cPickle, cStringIO
 sys.path.append('%(script_path)s') # add WeeChat script dir so we can import grep
 from grep import make_regexp, grep_file, strip_home
@@ -1237,6 +1254,7 @@ def cmd_grep_parsing(args, buffer=''):
         elif opt in ('e', 'exact', 'o', 'only-match'):
             exact = not exact
             count = False
+            invert = False
         elif opt in ('a', 'all'):
             all = not all
         elif opt in ('h', 'head'):
@@ -1266,6 +1284,7 @@ def cmd_grep_parsing(args, buffer=''):
             count = False
         elif opt in ('i', 'v', 'invert'):
             invert = not invert
+            exact = False
     # number check
     if number is not None:
         if number == 0:
@@ -1429,7 +1448,7 @@ def completion_log_files(data, completion_item, buffer, completion):
 
 def completion_grep_args(data, completion_item, buffer, completion):
     for arg in ('count', 'all', 'matchcase', 'hilight', 'exact', 'head', 'tail', 'number', 'buffer',
-            'after-context', 'before-context', 'context'):
+            'after-context', 'before-context', 'context', 'invert', 'only-match'):
         weechat.hook_completion_list_add(completion, '--' + arg, 0, weechat.WEECHAT_LIST_POS_SORT)
     return WEECHAT_RC_OK
 
@@ -1514,37 +1533,41 @@ if __name__ == '__main__' and import_ok and \
     script_path = path.dirname(__file__)
     sys.path.append(script_path)
 
-
     weechat.hook_command(SCRIPT_COMMAND, cmd_grep.__doc__,
             "[log <file> | buffer <name> | stop] [-a|--all] [-b|--buffer] [-c|--count] [-m|--matchcase] "
-            "[-H|--hilight] [-e|--exact] [(-h|--head)|(-t|--tail) [-n|--number <n>]] "
+            "[-H|--hilight] [-o|--only-match] [-i|-v|--invert] [(-h|--head)|(-t|--tail) [-n|--number <n>]] "
             "[-A|--after-context <n>] [-B|--before-context <n>] [-C|--context <n> ] <expression>",
-            # help
-            "    log <file>: Search in one log that matches <file> in the logger path.\n"
-            "                 Use '*' and '?' as wildcards.\n"
-            " buffer <name>: Search in buffer <name>, if there's no buffer with <name> it will\n"
-            "                try to search for a log file.\n"
-            "          stop: Stops a currently running search.\n"
-            "      -a --all: Search in all open buffers.\n"
-            "                If used with 'log <file>' search in all logs that matches <file>.\n"
-            "   -b --buffer: Search only in buffers, not in file logs.\n"
-            "    -c --count: Just count the number of matched lines instead of showing them.\n"
-            "-m --matchcase: Don't do case insensible search.\n"
-            "  -H --hilight: Colour exact matches in output buffer.\n"
-            "    -e --exact: Print exact matches only.\n"
-            "     -t --tail: Print the last 10 matching lines.\n"
-            "     -h --head: Print the first 10 matching lines.\n"
-            "-n --number <n>: Overrides default number of lines for --tail or --head.\n"
-            "-A --after-context <n>: Shows <n> lines of trailing context after matching lines.\n"
-            "-B --before-context <n>: Shows <n> lines of leading context before matching lines.\n"
-            "-C --context <n>: Same as using both --after-context and --before-context simultaneously.\n"
-            "  <expression>: Expression to search.\n\n"
-            "Grep buffer:\n"
-            "  Input line accepts most arguemnts of /grep, it'll repeat last search using the new \n"
-            "  arguments provided. You can't search in different logs from the buffer's input.\n"
-            "  Boolean arguments like --count, --tail, --head, --hilight, ... are toggleable\n\n"
-            "Python regular expression syntax:\n"
-            "See http://docs.python.org/lib/re-syntax.html\n",
+# help
+"""
+     log <file>: Search in one log that matches <file> in the logger path.
+                 Use '*' and '?' as wildcards.
+  buffer <name>: Search in buffer <name>, if there's no buffer with <name> it will
+                 try to search for a log file.
+           stop: Stops a currently running search.
+       -a --all: Search in all open buffers.
+                 If used with 'log <file>' search in all logs that matches <file>.
+    -b --buffer: Search only in buffers, not in file logs.
+     -c --count: Just count the number of matched lines instead of showing them.
+ -m --matchcase: Don't do case insensible search.
+   -H --hilight: Colour exact matches in output buffer.
+-o --only-match: Print only the matching part of the line.
+ -v -i --invert: Print lines that don't match the regular expression.
+      -t --tail: Print the last 10 matching lines.
+      -h --head: Print the first 10 matching lines.
+-n --number <n>: Overrides default number of lines for --tail or --head.
+-A --after-context <n>: Shows <n> lines of trailing context after matching lines.
+-B --before-context <n>: Shows <n> lines of leading context before matching lines.
+-C --context <n>: Same as using both --after-context and --before-context simultaneously.
+  <expression>: Expression to search.
+
+Grep buffer:
+  Input line accepts most arguemnts of /grep, it'll repeat last search using the new
+  arguments provided. You can't search in different logs from the buffer's input.
+  Boolean arguments like --count, --tail, --head, --hilight, ... are toggleable
+
+Python regular expression syntax:
+  See http://docs.python.org/lib/re-syntax.html
+""",
             # completion template
             "buffer %(buffers_names) %(grep_arguments)|%*"
             "||log %(grep_log_files)|%(filename) %(grep_arguments)|%*"

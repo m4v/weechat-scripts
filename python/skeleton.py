@@ -49,16 +49,17 @@ script_nick    = "[%s]" %SCRIPT_NAME
 settings = {}
 
 ### Messages ###
-def debug(s, prefix='debug'):
+def debug(s, prefix='', buffer=None):
     """Debug msg"""
     if not weechat.config_get_plugin('debug'): return
-    buffer_name = 'DEBUG_' + SCRIPT_NAME
-    buffer = weechat.buffer_search('python', buffer_name)
-    if not buffer:
-        buffer = weechat.buffer_new(buffer_name, '', '', '', '')
-        weechat.buffer_set(buffer, 'nicklist', '0')
-        weechat.buffer_set(buffer, 'time_for_each_line', '0')
-        weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
+    if buffer is None:
+        buffer_name = 'DEBUG_' + SCRIPT_NAME
+        buffer = weechat.buffer_search('python', buffer_name)
+        if not buffer:
+            buffer = weechat.buffer_new(buffer_name, '', '', '', '')
+            weechat.buffer_set(buffer, 'nicklist', '0')
+            weechat.buffer_set(buffer, 'time_for_each_line', '0')
+            weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
     weechat.prnt(buffer, '%s\t%s' %(prefix, s))
 
 def error(s, prefix=None, buffer='', trace=''):
@@ -76,7 +77,6 @@ def say(s, prefix=None, buffer=''):
     """normal msg"""
     prefix = prefix or script_nick
     weechat.prnt(buffer, '%s\t%s' %(prefix, s))
-
 
 ### Config functions and value validation ###
 boolDict = {'on':True, 'off':False}
@@ -112,7 +112,6 @@ def get_config_valid_string(config, valid_strings=valid_methods):
         return default
     return value
 
-
 ### Main ###
 if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
@@ -123,5 +122,7 @@ if __name__ == '__main__' and import_ok and \
         if not weechat.config_is_set_plugin(opt):
             weechat.config_set_plugin(opt, val)
 
+    weechat.hook_command(SCRIPT_COMMAND, "desc" , "opts",
+            "help", '', 'command', '')
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
