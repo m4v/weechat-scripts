@@ -612,7 +612,7 @@ def invertible_check_string(s, invert, *args):
 def grep_file(file, head, tail, after_context, before_context, count, regexp, hilight, exact, invert):
     """Return a list of lines that match 'regexp' in 'file', if no regexp returns all lines."""
     if count:
-        tail = head = after_context = before_context = exact = False
+        tail = head = after_context = before_context = False
         hilight = ''
     elif exact:
         before_context = after_context = False
@@ -725,7 +725,7 @@ def grep_buffer(buffer, head, tail, after_context, before_context, count, regexp
     """Return a list of lines that match 'regexp' in 'buffer', if no regexp returns all lines."""
     lines = linesList()
     if count:
-        tail = head = after_context = before_context = exact = False
+        tail = head = after_context = before_context = False
         hilight = ''
     elif exact:
         before_context = after_context = False
@@ -1227,7 +1227,6 @@ def cmd_grep_parsing(args):
             count = False
         elif opt in ('e', 'exact', 'o', 'only-match'):
             exact = not exact
-            count = False
             invert = False
         elif opt in ('a', 'all'):
             all = not all
