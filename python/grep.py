@@ -1124,26 +1124,26 @@ def print_line(s, buffer=None, display=False):
 def format_options():
     global matchcase, number, count, exact, hilight, invert
     global tail, head, after_context, before_context
-    chars = 'cHmov'
     options = []
     append = options.append
-    if count or hilight or matchcase or exact or invert:
-        append('-')
-        for i, flag in enumerate((count, hilight, matchcase, exact, invert)):
-            if flag:
-                append(chars[i])
+    insert = options.insert
+    chars = 'cHmov'
+    for i, flag in enumerate((count, hilight, matchcase, exact, invert)):
+        if flag:
+            append(chars[i])
 
     if head or tail:
         n = get_config_int('default_tail_head')
-        debug('%s, %s %s' %(n, head, tail))
         if head:
-            append(' -h')
+            append('h')
             if head != n:
+                insert(-1, ' -')
                 append('n')
                 append(head)
         elif tail:
-            append(' -t')
+            append('t')
             if tail != n:
+                insert(-1, ' -')
                 append('n')
                 append(tail)
 
@@ -1158,8 +1158,10 @@ def format_options():
             append(' -A')
             append(after_context)
 
-    return ''.join(map(str, options)).strip()
-
+    s = ''.join(map(str, options)).strip()
+    if s[0] != '-':
+        s = '-' + s
+    return s
 
 def buffer_create(title=None):
     """Returns our buffer pointer, creates and cleans the buffer if needed."""
