@@ -993,7 +993,7 @@ def buffer_update():
         weechat.buffer_clear(buffer)
 
     def _make_summary(log, lines, note):
-        return "%s matches \"%s%s%s\"%s in %s%s%s%s" \
+        return '%s matches "%s%s%s"%s in %s%s%s%s' \
                 %(lines.matches_count, color_summary, pattern, color_info,
                   invert and ' (inverted)' or '',
                   color_summary, log, color_reset, note)
@@ -1034,7 +1034,8 @@ def buffer_update():
 
     prnt = weechat.prnt
     prnt(buffer, '\n')
-    print_line('Search for "%s" in %s%s%s.' %(pattern, color_summary, matched_lines, color_reset),
+    print_line('Search for "%s%s%s"%s in %s%s%s.' %(color_summary, pattern, color_info,
+        invert and ' (inverted)' or '', color_summary, matched_lines, color_reset),
             buffer)
     # print last <max_lines> lines
     if matched_lines.get_matches_count():
