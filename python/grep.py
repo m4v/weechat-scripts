@@ -143,9 +143,9 @@
 #
 ###
 
-from os import path
-from os import stat
-import sys, getopt, time
+import sys, getopt, time, os
+path = os.path
+stat = os.stat
 
 try:
     import weechat
@@ -156,7 +156,7 @@ except ImportError:
 
 SCRIPT_NAME    = "grep"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.6.4"
+SCRIPT_VERSION = "0.6.4-dev"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Search in buffers and logs"
 SCRIPT_COMMAND = "grep"
@@ -900,7 +900,7 @@ def show_matching_lines():
         buffer_update()
 
 # defined here for commodity
-grep_proccess_cmd = """python -Bc "
+grep_proccess_cmd = """python -c "
 import sys, cPickle
 sys.path.append('%(script_path)s') # add WeeChat script dir so we can import grep
 from grep import make_regexp, grep_file, strip_home
@@ -1465,15 +1465,23 @@ def completion_grep_args(data, completion_item, buffer, completion):
     return WEECHAT_RC_OK
 
 ### Main ###
+def delete_bytecode():
+    global script_path
+    bytecode = path.join(script_path, SCRIPT_NAME + '.pyc')
+    if path.isfile(bytecode):
+        os.remove(bytecode)
+    return WEECHAT_RC_OK
+
 if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
-        SCRIPT_DESC, '', ''):
+        SCRIPT_DESC, 'delete_bytecode', ''):
     home_dir = get_home()
 
     # for import ourselves
     global script_path
     script_path = path.dirname(__file__)
     sys.path.append(script_path)
+    delete_bytecode()
 
     weechat.hook_command(SCRIPT_COMMAND, cmd_grep.__doc__,
             "[log <file> | buffer <name> | stop] [-a|--all] [-b|--buffer] [-c|--count] [-m|--matchcase] "
