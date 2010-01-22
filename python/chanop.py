@@ -396,6 +396,8 @@ class Message(object):
         else:
             command = self.command
         debug(command)
+        if weechat.config_get_plugin('debug') == '2':
+            return True
         weechat.command(self.buffer, command)
         return True
 
@@ -877,7 +879,7 @@ class Ban(CommandNeedsOp):
             self.queue_clear()
 
     def ban(self, *banmask, **kwargs):
-        cmd = '/ban %s' %' '.join(banmask)
+        cmd = '/mode +b %s' %' '.join(banmask)
         self.queue(cmd, **kwargs)
 
 
@@ -916,7 +918,7 @@ class UnBan(Ban):
             self.queue_clear()
 
     def unban(self, *banmask):
-        cmd = '/unban %s' %' '.join(banmask)
+        cmd = '/mode -b %s' %' '.join(banmask)
         self.queue(cmd)
 
 
@@ -992,10 +994,10 @@ class KickBan(Ban, Kick):
             banmask = self.make_banmask(hostmask)
             self.add_ban(banmask, hostmask)
             if not self.invert:
-                self.kick(nick, reason, wait=0.2)
+                self.kick(nick, reason, wait=0)
                 self.ban(banmask)
             else:
-                self.ban(banmask, wait=0.2)
+                self.ban(banmask, wait=0)
                 self.kick(nick, reason)
         else:
             say("Sorry, found nothing to kickban.", buffer=self.buffer)
@@ -1025,10 +1027,10 @@ class MultiKickBan(KickBan):
                     banmask = self.make_banmask(hostmask)
                     self.add_ban(banmask, hostmask)
                     if not self.invert:
-                        self.kick(nick, reason, wait=0.2)
+                        self.kick(nick, reason, wait=0)
                         self.ban(banmask)
                     else:
-                        self.ban(banmask, wait=0.2)
+                        self.ban(banmask, wait=0)
                         self.kick(nick, reason)
         else:
             say("Sorry, found nothing to kickban.", buffer=self.buffer)
