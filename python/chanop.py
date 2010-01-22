@@ -387,10 +387,16 @@ class Message(object):
         self.buffer = buffer
 
     def __call__(self):
+        #debug('Message: wait %s' %self.wait)
         if self.wait:
-            weechat.command(self.buffer, '/wait %s %s' %(self.wait, self.command))
+            if isinstance(self.wait, float):
+                command = '/wait %sms %s' %(int(self.wait*1000), self.command)
+            else:
+               command = '/wait %s %s' %(self.wait, self.command)
         else:
-            weechat.command(self.buffer, self.command)
+            command = self.command
+        debug(command)
+        weechat.command(self.buffer, command)
         return True
 
 
@@ -439,10 +445,10 @@ class CommandQueue(object):
 
 
     def queue(self, cmd, type='Normal', wait=1, **kwargs):
-        #debug('queue: wait %s' %wait)
+        #debug('queue: wait %s self.wait %s' %(wait, self.wait))
         pack = getattr(self, type)(cmd, wait=self.wait, **kwargs)
         self.wait += wait
-        #debug('queue: %s' %pack)
+        #debug('queue: wait %s %s' %(self.wait, pack))
         self.commands.append(pack)
 
     # it happened once and it wasn't pretty
@@ -986,10 +992,10 @@ class KickBan(Ban, Kick):
             banmask = self.make_banmask(hostmask)
             self.add_ban(banmask, hostmask)
             if not self.invert:
-                self.kick(nick, reason, wait=0)
+                self.kick(nick, reason, wait=0.2)
                 self.ban(banmask)
             else:
-                self.ban(banmask, wait=0)
+                self.ban(banmask, wait=0.2)
                 self.kick(nick, reason)
         else:
             say("Sorry, found nothing to kickban.", buffer=self.buffer)
@@ -1019,10 +1025,10 @@ class MultiKickBan(KickBan):
                     banmask = self.make_banmask(hostmask)
                     self.add_ban(banmask, hostmask)
                     if not self.invert:
-                        self.kick(nick, reason, wait=0)
+                        self.kick(nick, reason, wait=0.2)
                         self.ban(banmask)
                     else:
-                        self.ban(banmask, wait=0)
+                        self.ban(banmask, wait=0.2)
                         self.kick(nick, reason)
         else:
             say("Sorry, found nothing to kickban.", buffer=self.buffer)
