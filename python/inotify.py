@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 ###
-# Copyright (c) 2009 by Elián Hanisch <lambdae2@gmail.com>
+# Copyright (c) 2009-2010 by Elián Hanisch <lambdae2@gmail.com>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -24,14 +24,17 @@
 #   * /inotify
 #     See /help inotify
 #
-#   Notify methods:
-#
 #   Settings:
-#   * plugins.var.python.inotify: #TODO
+#   * plugins.var.python.inotify.server_uri:
+#   * plugins.var.python.inotify.server_method:
+#   * plugins.var.python.inotify.color_nick:
+#   * plugins.var.python.inotify.ignore_channel:
+#   * plugins.var.python.inotify.ignore_nick:
 #
-#
-#   TODO:
-#   * add support for more notification methods
+#   Notify methods:
+#   * any:
+#   * libnotify:
+#   * dbus
 #
 #
 #   History:
