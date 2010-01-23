@@ -41,7 +41,7 @@ SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
 SCRIPT_VERSION = "0.1-dev"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Format for Freenode's CAPAB"
-SCRIPT_COMMAND = ""
+SCRIPT_COMMAND = "capab"
 
 script_nick    = "[%s]" %SCRIPT_NAME
 
@@ -113,10 +113,13 @@ def get_config_valid_string(config, valid_strings=valid_methods):
     return value
 
 nick_dict = {}
-def privmsg_print_cb(data, modifier, modifier_data, string):
+def privmsg_print_cb(server_name, modifier, modifier_data, string):
     plugin, buffer, tags = modifier_data.split(';', 2)
-    if plugin != 'irc' or 'irc_privmsg' not in tags:
+    if plugin != 'irc' \
+            or buffer[:buffer.find('.')] != server_name \
+            or 'irc_privmsg' not in tags:
         return string
+
     #debug("print data: %s" %modifier_data)
     #debug("print string: %s" %repr(string))
     nick = string[:string.find('\t')]
@@ -132,7 +135,10 @@ def privmsg_print_cb(data, modifier, modifier_data, string):
         pass
     return string
 
-def privmsg_signal_cb(data, modifier, modifier_data, string):
+def privmsg_signal_cb(server_name, modifier, modifier_data, string):
+    if modifier_data != server_name:
+        return string
+
     #debug('signal data: %s' %modifier_data)
     #debug('signal string: %s' %string)
     head, sep, msg = string.partition(' :')
@@ -146,10 +152,27 @@ def privmsg_signal_cb(data, modifier, modifier_data, string):
     else:
         return string
 
+def cmd_capab(data, buffer, args):
+    if not args:
+        return WEECHAT_RC_OK
+
+    server = args.split()[0]
+    server_buffer = weechat.buffer_search('irc', 'server.%s' %server)
+    if server_buffer:
+        say('Enabling IDENFITY-MSG capability on %s' %server)
+        weechat.command(server_buffer, '/quote capab identify-msg')
+        weechat.hook_modifier('irc_in_PRIVMSG', 'privmsg_signal_cb', server)
+        weechat.hook_modifier('irc_in_NOTICE', 'privmsg_signal_cb', server)
+        weechat.hook_modifier('weechat_print', 'privmsg_print_cb', server)
+
+    return WEECHAT_RC_OK
+
 ### Main ###
 if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
         SCRIPT_DESC, '', ''):
+
+    weechat.hook_command(SCRIPT_COMMAND, '', '', '', '', 'cmd_capab', '')
 
     # settings
     for opt, val in settings.iteritems():
@@ -157,9 +180,5 @@ if __name__ == '__main__' and import_ok and \
             weechat.config_set_plugin(opt, val)
 
     ident_color = weechat.color('chat_nick')
-
-    weechat.hook_modifier('irc_in_PRIVMSG', 'privmsg_signal_cb', '')
-    weechat.hook_modifier('irc_in_NOTICE', 'privmsg_signal_cb', '')
-    weechat.hook_modifier('weechat_print', 'privmsg_print_cb', '')
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
