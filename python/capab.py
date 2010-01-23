@@ -112,7 +112,7 @@ def get_config_valid_string(config, valid_strings=valid_methods):
         return default
     return value
 
-nick_dict = {}
+ident_nick = {}
 def privmsg_print_cb(server_name, modifier, modifier_data, string):
     plugin, buffer, tags = modifier_data.split(';', 2)
     if plugin != 'irc' \
@@ -126,7 +126,7 @@ def privmsg_print_cb(server_name, modifier, modifier_data, string):
     nick_key = weechat.string_remove_color(nick, '').lstrip('@+')
     #debug('print nick: %s' %_nick)
     try:
-        ident = nick_dict[nick_key]
+        ident = ident_nick[nick_key]
         if not ident:
             msg = string[string.find('\t'):]
             return '%s~%s%s' %(ident_color, nick, msg)
@@ -147,7 +147,7 @@ def privmsg_signal_cb(server_name, modifier, modifier_data, string):
         msg = msg[1:]
         nick = head[1:head.find('!')]
         #debug('print nick: %s' %nick)
-        nick_dict[nick] = char == '+' 
+        ident_nick[nick] = char == '+'
         return '%s :%s' %(head, msg)
     else:
         return string
