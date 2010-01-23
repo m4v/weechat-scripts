@@ -124,9 +124,10 @@ def privmsg_print_cb(data, modifier, modifier_data, string):
     #debug('print nick: %s' %_nick)
     try:
         ident = nick_dict[nick_key]
-        if ident:
+        if not ident:
             msg = string[string.find('\t'):]
-            return '%s%s+%s' %(nick, ident_color, msg)
+            return '%s~%s%s' %(ident_color, nick, msg)
+            #return '%s%s+%s' %(nick, ident_color, msg)
     except KeyError:
         pass
     return string
@@ -155,7 +156,7 @@ if __name__ == '__main__' and import_ok and \
         if not weechat.config_is_set_plugin(opt):
             weechat.config_set_plugin(opt, val)
 
-    ident_color = weechat.color('green')
+    ident_color = weechat.color('chat_nick')
 
     weechat.hook_modifier('irc_in_PRIVMSG', 'privmsg_signal_cb', '')
     weechat.hook_modifier('irc_in_NOTICE', 'privmsg_signal_cb', '')
