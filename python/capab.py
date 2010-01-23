@@ -46,7 +46,9 @@ SCRIPT_COMMAND = "capab"
 script_nick    = "[%s]" %SCRIPT_NAME
 
 ### Config ###
-settings = {}
+settings = {
+'servers':  '',
+}
 
 ### Messages ###
 def debug(s, prefix='', buffer=None):
@@ -112,6 +114,24 @@ def get_config_valid_string(config, valid_strings=valid_methods):
         return default
     return value
 
+def get_config_list(config):
+    value = weechat.config_get_plugin(config)
+    if value:
+        return value.split(',')
+    else:
+        return []
+
+def set_config_list(config, value):
+    old_value = get_config_list(config)
+    if isinstance(value, list):
+        old_value.extend(value)
+    else:
+        old_value.append(value)
+    value = set(old_value)
+    str_value = ','.join(value)
+    weechat.config_set_plugin(config, str_value)
+
+
 ident_nick = {}
 def privmsg_print_cb(server_name, modifier, modifier_data, string):
     plugin, buffer, tags = modifier_data.split(';', 2)
@@ -152,25 +172,31 @@ def privmsg_signal_cb(server_name, modifier, modifier_data, string):
     else:
         return string
 
+def enable_capab(server):
+    server_buffer = weechat.buffer_search('irc', 'server.%s' %server)
+    if server_buffer:
+        weechat.command(server_buffer, '/quote capab identify-msg')
+        weechat.hook_modifier('irc_in_PRIVMSG', 'privmsg_signal_cb', server)
+        weechat.hook_modifier('irc_in_NOTICE', 'privmsg_signal_cb', server)
+        weechat.hook_modifier('weechat_print', 'privmsg_print_cb', server)
+        return True
+
 def cmd_capab(data, buffer, args):
     if not args:
         return WEECHAT_RC_OK
 
     server = args.split()[0]
-    server_buffer = weechat.buffer_search('irc', 'server.%s' %server)
-    if server_buffer:
-        say('Enabling IDENFITY-MSG capability on %s' %server)
-        weechat.command(server_buffer, '/quote capab identify-msg')
-        weechat.hook_modifier('irc_in_PRIVMSG', 'privmsg_signal_cb', server)
-        weechat.hook_modifier('irc_in_NOTICE', 'privmsg_signal_cb', server)
-        weechat.hook_modifier('weechat_print', 'privmsg_print_cb', server)
-
+    say('Enabling IDENFITY-MSG capability on %s' %server)
+    if enable_capab(server):
+        set_config_list('servers', server)
     return WEECHAT_RC_OK
 
 ### Main ###
 if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
         SCRIPT_DESC, '', ''):
+
+    ident_color = weechat.color('chat_nick')
 
     weechat.hook_command(SCRIPT_COMMAND, '', '', '', '', 'cmd_capab', '')
 
@@ -179,6 +205,9 @@ if __name__ == '__main__' and import_ok and \
         if not weechat.config_is_set_plugin(opt):
             weechat.config_set_plugin(opt, val)
 
-    ident_color = weechat.color('chat_nick')
+    servers = get_config_list('servers')
+    for server in servers:
+        enable_capab(server)
+
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
