@@ -117,35 +117,33 @@ def privmsg_print_cb(data, modifier, modifier_data, string):
     plugin, buffer, tags = modifier_data.split(';', 2)
     if plugin != 'irc' or 'irc_privmsg' not in tags:
         return string
-    debug("print data: %s" %modifier_data)
-    debug("print string: %s" %repr(string))
+    #debug("print data: %s" %modifier_data)
+    #debug("print string: %s" %repr(string))
     nick = string[:string.find('\t')]
-    _nick = weechat.string_remove_color(nick, '').lstrip('@+')
-    debug('print nick: %s' %_nick)
+    nick_key = weechat.string_remove_color(nick, '').lstrip('@+')
+    #debug('print nick: %s' %_nick)
     try:
-        ident = nick_dict[_nick]
+        ident = nick_dict[nick_key]
         if ident:
-            nick = '%s%s+' %(nick, weechat.color('green'))
             msg = string[string.find('\t'):]
-            return '%s%s' %(nick, msg)
+            return '%s%s+%s' %(nick, ident_color, msg)
     except KeyError:
-        return string
+        pass
     return string
 
 def privmsg_signal_cb(data, modifier, modifier_data, string):
-    debug('signal data: %s' %modifier_data)
-    debug('signal string: %s' %string)
+    #debug('signal data: %s' %modifier_data)
+    #debug('signal string: %s' %string)
     head, sep, msg = string.partition(' :')
     char = msg[0]
     if char in '+-':
         msg = msg[1:]
         nick = head[1:head.find('!')]
-        debug('print nick: %s' %nick)
-        if char == '+':
-            nick_dict[nick] = True
-        else:
-            nick_dict[nick] = False
-    return '%s :%s' %(head, msg)
+        #debug('print nick: %s' %nick)
+        nick_dict[nick] = char == '+' 
+        return '%s :%s' %(head, msg)
+    else:
+        return string
 
 ### Main ###
 if __name__ == '__main__' and import_ok and \
@@ -157,8 +155,10 @@ if __name__ == '__main__' and import_ok and \
         if not weechat.config_is_set_plugin(opt):
             weechat.config_set_plugin(opt, val)
 
-    
+    ident_color = weechat.color('green')
+
     weechat.hook_modifier('irc_in_PRIVMSG', 'privmsg_signal_cb', '')
+    weechat.hook_modifier('irc_in_NOTICE', 'privmsg_signal_cb', '')
     weechat.hook_modifier('weechat_print', 'privmsg_print_cb', '')
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
