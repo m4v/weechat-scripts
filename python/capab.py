@@ -132,7 +132,40 @@ def set_config_list(config, value):
     weechat.config_set_plugin(config, str_value)
 
 
+def update_nicklist(buffer_name, nick):
+    debug('updating nicklist for %s %s' %(buffer_name, nick))
+    buffer = weechat.buffer_search('irc', buffer_name)
+    if buffer:
+        nick_pointer = weechat.nicklist_search_nick(buffer, '', nick)
+        if nick_pointer:
+            infolist = weechat.infolist_get('nicklist', buffer, '')
+            infolist_string = weechat.infolist_string
+            infolist_next = weechat.infolist_next
+            while infolist_next(infolist):
+                if nick == infolist_string(infolist, 'name') \
+                        and infolist_string(infolist, 'type') == 'nick':
+                    color = infolist_string(infolist, 'color')
+                    group = infolist_string(infolist, 'group_name')
+                    prefix = infolist_string(infolist, 'prefix')
+                    prefix_color = infolist_string(infolist, 'prefix_color')
+                    if prefix[0] != '~':
+                        if prefix == ' ':
+                            prefix = '~'
+                        else:
+                            prefix = '~' + prefix
+                    if color == 'bar_fg':
+                        color = 'brown'
+                    group_pointer = weechat.nicklist_search_group(buffer, '', group)
+                    debug('adding nick: %s%s to %s' %(prefix, nick, group)) 
+                    weechat.nicklist_remove_nick(buffer, nick_pointer)
+                    weechat.nicklist_add_nick(buffer, group_pointer, nick, color, prefix,
+                            prefix_color, 1)
+                    break
+            weechat.infolist_free(infolist)
+
+
 ident_nick = {}
+nicklist = set()
 def privmsg_print_cb(server_name, modifier, modifier_data, string):
     plugin, buffer, tags = modifier_data.split(';', 2)
     if plugin != 'irc' \
@@ -149,6 +182,9 @@ def privmsg_print_cb(server_name, modifier, modifier_data, string):
         ident = ident_nick[nick_key]
         if not ident:
             msg = string[string.find('\t'):]
+            if (buffer, nick_key) not in nicklist:
+                update_nicklist(buffer, nick_key)
+                nicklist.add((buffer, nick_key))
             return '%s~%s%s' %(ident_color, nick, msg)
             #return '%s%s+%s' %(nick, ident_color, msg)
     except KeyError:
