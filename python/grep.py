@@ -66,6 +66,9 @@
 #
 #
 #   History:
+#   2010-01-24
+#   version 0.6.5: disable bytecode is a 2.6 feature, instead, resort to delete the bytecode manually
+#
 #   2010-01-19
 #   version 0.6.4: bug fix
 #   version 0.6.3: added options --invert --only-match (replaces --exact, which is still available
@@ -156,7 +159,7 @@ except ImportError:
 
 SCRIPT_NAME    = "grep"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.6.4-dev"
+SCRIPT_VERSION = "0.6.5"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Search in buffers and logs"
 SCRIPT_COMMAND = "grep"
@@ -913,7 +916,6 @@ try:
         lines = grep_file(log, %(head)s, %(tail)s, %(after_context)s, %(before_context)s,
         %(count)s, regexp, '%(hilight)s', %(exact)s, %(invert)s)
         d[log_name] = lines
-    #fd = tempfile.NamedTemporaryFile('wb', delete=False)
     fdname = '/tmp/grep_search.tmp'
     fd = open(fdname, 'wb')
     print fdname
