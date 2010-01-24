@@ -1491,10 +1491,10 @@ def completion_grep_args(data, completion_item, buffer, completion):
     for arg in ('count', 'all', 'matchcase', 'hilight', 'exact', 'head', 'tail', 'number', 'buffer',
             'after-context', 'before-context', 'context', 'invert', 'only-match'):
         weechat.hook_completion_list_add(completion, '--' + arg, 0, weechat.WEECHAT_LIST_POS_SORT)
+    for tmpl in templates:
+        weechat.hook_completion_list_add(completion, '%{' + tmpl, 0, weechat.WEECHAT_LIST_POS_SORT)
     return WEECHAT_RC_OK
 
-def completion_grep_tmpl(data, completion_item, buffer, completion):
-    pass
 
 ### Templates ###
 _tmplRe = re.compile(r'%\{(\w+.*?)\}')
