@@ -132,40 +132,81 @@ def set_config_list(config, value):
     weechat.config_set_plugin(config, str_value)
 
 
-def update_nicklist(buffer_name, nick):
-    debug('updating nicklist for %s %s' %(buffer_name, nick))
-    buffer = weechat.buffer_search('irc', buffer_name)
-    if buffer:
-        nick_pointer = weechat.nicklist_search_nick(buffer, '', nick)
+def update_nicklist(buffer_name):
+    buffer_pointer = weechat.buffer_search('irc', buffer_name)
+    if not buffer_pointer:
+        return
+
+    group_pointers = {}
+
+    infolist = weechat.infolist_get('nicklist', buffer_pointer, '')
+    infolist_string = weechat.infolist_string
+    infolist_next = weechat.infolist_next
+    while infolist_next(infolist):
+        if not infolist_string(infolist, 'type') == 'nick':
+            continue
+
+        nick = infolist_string(infolist, 'name')
+        if nick not in ident_nick:
+            continue
+        
+        group = infolist_string(infolist, 'group_name')
+        color = infolist_string(infolist, 'color')
+        prefix = infolist_string(infolist, 'prefix')
+        prefix_color = infolist_string(infolist, 'prefix_color')
+
+        if ident_nick[nick]:
+            prefix_new = ' '
+            group_new = '080|ident'
+            color_new = 'green'
+        else:
+            prefix_new = '~'
+            group_new = '081|unident'
+            color_new = 'brown'
+            prefix_color = 'cyan'
+
+        if prefix[0] != prefix_new[0]:
+            if prefix == ' ':
+                prefix = prefix_new
+                prefix_new = ''
+            elif prefix_new != ' ':
+                prefix = prefix_new + prefix
+                prefix_new = ''
+
+        if color == 'bar_fg':
+            color = color_new
+            color_new = ''
+
+        if group[:2] == '08':
+            group = group_new
+            group_new = ''
+            try:
+                group_pointer = group_pointers[group]
+            except KeyError:
+                group_pointer = weechat.nicklist_search_group(buffer_pointer, '', group)
+                if not group_pointer:
+                    group_pointer = weechat.nicklist_add_group(buffer_pointer, '', group,
+                            'weechat.color.nicklist_group', 1)
+                group_pointers[group] = group_pointer
+        else:
+            group_pointer = weechat.nicklist_search_group(buffer_pointer, '', group)
+
+        if prefix_new and group_new and color_new:
+            # nothing to change
+            continue
+
+        #debug('adding nick: %s%s to %s' %(prefix, nick, group))
+        nick_pointer = weechat.nicklist_search_nick(buffer_pointer, '', nick)
         if nick_pointer:
-            infolist = weechat.infolist_get('nicklist', buffer, '')
-            infolist_string = weechat.infolist_string
-            infolist_next = weechat.infolist_next
-            while infolist_next(infolist):
-                if nick == infolist_string(infolist, 'name') \
-                        and infolist_string(infolist, 'type') == 'nick':
-                    color = infolist_string(infolist, 'color')
-                    group = infolist_string(infolist, 'group_name')
-                    prefix = infolist_string(infolist, 'prefix')
-                    prefix_color = infolist_string(infolist, 'prefix_color')
-                    if prefix[0] != '~':
-                        if prefix == ' ':
-                            prefix = '~'
-                        else:
-                            prefix = '~' + prefix
-                    if color == 'bar_fg':
-                        color = 'brown'
-                    group_pointer = weechat.nicklist_search_group(buffer, '', group)
-                    debug('adding nick: %s%s to %s' %(prefix, nick, group)) 
-                    weechat.nicklist_remove_nick(buffer, nick_pointer)
-                    weechat.nicklist_add_nick(buffer, group_pointer, nick, color, prefix,
-                            prefix_color, 1)
-                    break
-            weechat.infolist_free(infolist)
+            weechat.nicklist_remove_nick(buffer_pointer, nick_pointer)
+        nick_pointer = weechat.nicklist_add_nick(buffer_pointer, group_pointer, nick, color,
+                prefix, prefix_color, 1)
+        nicklist[buffer_name, nick] = (buffer_pointer, nick_pointer)
+    weechat.infolist_free(infolist)
 
 
 ident_nick = {}
-nicklist = set()
+nicklist = {}
 def privmsg_print_cb(server_name, modifier, modifier_data, string):
     plugin, buffer, tags = modifier_data.split(';', 2)
     if plugin != 'irc' \
@@ -180,11 +221,13 @@ def privmsg_print_cb(server_name, modifier, modifier_data, string):
     #debug('print nick: %s' %_nick)
     try:
         ident = ident_nick[nick_key]
+        #if (buffer, nick_key) not in nicklist:
+            #debug('updating nicklist for %s %s' %(buffer, nick))
+            #update_nicklist(buffer)
+            #debug('added! %s' %str((buffer, nick_key)))
+            #nicklist.add((buffer, nick_key))
         if not ident:
             msg = string[string.find('\t'):]
-            if (buffer, nick_key) not in nicklist:
-                update_nicklist(buffer, nick_key)
-                nicklist.add((buffer, nick_key))
             return '%s~%s%s' %(ident_color, nick, msg)
             #return '%s%s+%s' %(nick, ident_color, msg)
     except KeyError:
@@ -208,12 +251,45 @@ def privmsg_signal_cb(server_name, modifier, modifier_data, string):
     else:
         return string
 
+def part_signal_cb(server_name, signal, signal_data):
+    #debug('signal: %s' %signal)
+    #debug('signal data: %s' %signal_data)
+    signal_data = signal_data.split()
+    host = signal_data[0]
+    channel = signal_data[2]
+    nick = host[1:host.find('!')]
+    buffer = '%s.%s' %(server_name, channel)
+    key = (buffer, nick)
+    if key in nicklist:
+        weechat.nicklist_remove_nick(*nicklist[key])
+        del nicklist[key]
+    elif nick == weechat.info_get('irc_nick', server_name):
+        for b, n in nicklist.keys():
+            if b == buffer:
+                weechat.nicklist_remove_nick(*nicklist[b, n])
+                del nicklist[b, n]
+    return WEECHAT_RC_OK
+
+def quit_signal_cb(server_name, signal, signal_data):
+    #debug('signal: %s' %signal)
+    #debug('signal data: %s' %signal_data)
+    nick = signal_data[1:signal_data.find('!')]
+    if nick in ident_nick:
+        del ident_nick[nick]
+    for b, n in nicklist.keys():
+        if n == nick:
+            weechat.nicklist_remove_nick(*nicklist[b, n])
+            del nicklist[b, n]
+    return WEECHAT_RC_OK
+
 def enable_capab(server):
     server_buffer = weechat.buffer_search('irc', 'server.%s' %server)
     if server_buffer:
         weechat.command(server_buffer, '/quote capab identify-msg')
         weechat.hook_modifier('irc_in_PRIVMSG', 'privmsg_signal_cb', server)
         weechat.hook_modifier('irc_in_NOTICE', 'privmsg_signal_cb', server)
+        #weechat.hook_signal('%s,irc_in_PART' %server, 'part_signal_cb', server)
+        #weechat.hook_signal('%s,irc_in_QUIT' %server, 'quit_signal_cb', server)
         weechat.hook_modifier('weechat_print', 'privmsg_print_cb', server)
         return True
 
@@ -228,9 +304,14 @@ def cmd_capab(data, buffer, args):
     return WEECHAT_RC_OK
 
 ### Main ###
+def script_unload():
+    for b, n in nicklist.keys():
+        weechat.nicklist_remove_nick(*nicklist[b, n])
+    return WEECHAT_RC_OK
+
 if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
-        SCRIPT_DESC, '', ''):
+        SCRIPT_DESC, 'script_unload', ''):
 
     ident_color = weechat.color('chat_nick')
 
