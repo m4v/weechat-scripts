@@ -167,6 +167,8 @@ except ImportError:
 
 import getopt, time, fnmatch
 
+now = lambda : int(time.time())
+
 ### Messages ###
 def debug(s, prefix='debug'):
     """Debug msg"""
@@ -403,7 +405,7 @@ class Message(object):
                command = '/wait %s %s' %(self.wait, self.command)
         else:
             command = self.command
-        debug(command)
+        debug('%s %s' %(now(), command))
         if weechat.config_get_plugin('debug') == '2':
             return True
         weechat.command(self.buffer, command)
@@ -606,7 +608,7 @@ class CommandChanop(Command):
             if not value:
                 raise Exception, "No command defined for get op."
             self.queue(self.replace_vars(value), type='WaitForOp', server=self.server,
-                    channel=self.channel, nick=self.nick, wait=0)
+                    channel=self.channel, nick=self.nick)
         return op
 
     def drop_op(self):
