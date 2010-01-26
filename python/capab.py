@@ -243,11 +243,16 @@ def privmsg_signal_cb(server_name, modifier, modifier_data, string):
     #debug('signal string: %s' %string)
     head, sep, msg = string.partition(' :')
     char = msg[0]
-    if char in '+-':
-        msg = msg[1:]
+
+    def trim(s):
+        msg = s[1:]
         nick = head[1:head.find('!')]
         #debug('print nick: %s' %nick)
         ident_nick[nick] = char == '+'
+        return msg
+
+    if char in '+-':
+        msg = trim(msg)
         return '%s :%s' %(head, msg)
     elif bouncerRe:
         #debug('msg: %s' %msg)
@@ -258,14 +263,9 @@ def privmsg_signal_cb(server_name, modifier, modifier_data, string):
             msg = msg[len(prefix):]
             char = msg[0]
             if char in '+-':
-                msg = msg[1:]
-                nick = head[1:head.find('!')]
-                #debug('print nick: %s' %nick)
-                ident_nick[nick] = char == '+'
+                msg = trim(msg)
                 return '%s :%s%s' %(head, prefix, msg)
-        return string
-    else:
-        return string
+    return string
 
 def part_signal_cb(server_name, signal, signal_data):
     #debug('signal: %s' %signal)
