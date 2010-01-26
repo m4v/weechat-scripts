@@ -97,7 +97,7 @@ def get_config_dict(config):
         return {}
     values = value.split(';;')
     values = map(lambda s: s.split('=>'), values)
-    debug(values)
+    #debug(values)
     return dict(values)
 
 def load_replace_table():
