@@ -1249,6 +1249,21 @@ class DeVoice(Voice):
         self.devoice(self.args)
 
 
+class Mode(CommandNeedsOp):
+    help = ("Changes channel modes.", "",
+            "")
+
+    _command = 'omode'
+    callback = 'cmd_mode'
+
+    def command_op(self):
+        self.mode(self.args)
+
+    def mode(self, modes):
+        cmd = '/mode %s' %modes
+        self.queue(cmd)
+
+
 def chanop_init():
     servers = Infolist('irc_server')
     while servers.next():
@@ -1352,6 +1367,7 @@ if __name__ == '__main__' and import_ok and \
     cmd_mute = Mute('omute', 'cmd_mute')
 
     cmd_topic = Topic()
+    cmd_mode  = Mode()
     cmd_ban_list = BanWithList()
 
     cmd_voice = Voice()
