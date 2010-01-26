@@ -1051,9 +1051,19 @@ def banlist_367(data, modifier, modifier_data, string):
     return ''
 
 def banlist_368(data, modifier, modifier_data, string):
+    global waiting_for_completion
     key = tuple(data.split(','))
     weechat.unhook(hooks_banlist[key][0])
     weechat.unhook(hooks_banlist[key][1])
+    if waiting_for_completion:
+        buffer = waiting_for_completion[0]
+        completion = waiting_for_completion[1]
+        banlist = chanop_banlist.banmasks(buffer)
+        weechat.buffer_set(buffer, 'input', '/%s %s' %(cmd_unban._command, banlist.next()))
+        # XXX change cmd_unban by the UnBan class      ^
+        for ban in banlist:
+            weechat.hook_completion_list_add(completion, ban, 0, weechat.WEECHAT_LIST_POS_SORT)
+        waiting_for_completion = None
     return ''
 
 
@@ -1065,7 +1075,7 @@ class UnBan(Ban):
                   script (bans that were applied with this script) will be removed and only *if*
                   <nick> is present in the channel.""")
 
-    completion = '%(chanop_banmask)'
+    completion = '%(chanop_banmask)|%*'
 
     def search_bans(self, hostmask):
         return chanop_banlist.hostmask_match(self.server, self.channel, hostmask)
@@ -1271,6 +1281,7 @@ def chanop_init():
         config = 'channels.%s' %server
         value = weechat.config_get_plugin(config)
         if value:
+            # XXX define a get_config_list
             buffer = weechat.buffer_search('irc', 'server.%s' %server)
             channels = value.split(',')
             for channel in channels:
@@ -1311,12 +1322,20 @@ def invert_kickban_order_conf_cb(data, config, value):
     return WEECHAT_RC_OK
 
 ### completion
+global waiting_for_completion
+waiting_for_completion = None
 def banmask_completion(data, completion_item, buffer, completion):
-    fetch_ban_list(buffer)
     banmasks = chanop_banlist.banmasks(buffer)
-    debug('banmask completion: %s' %(banmasks, ))
-    for ban in banmasks:
-        weechat.hook_completion_list_add(completion, ban, 0, weechat.WEECHAT_LIST_POS_SORT)
+    if not banmasks:
+        global waiting_for_completion
+        waiting_for_completion = (buffer, completion)
+        weechat.buffer_set(buffer, 'input', '/%s fetching banmasks...' %cmd_unban._command)
+        # XXX change cmd_unban by the UnBan class                       ^
+    else:
+        debug('banmask completion: %s' %(banmasks, ))
+        for ban in banmasks:
+            weechat.hook_completion_list_add(completion, ban, 0, weechat.WEECHAT_LIST_POS_SORT)
+    fetch_ban_list(buffer)
     return WEECHAT_RC_OK
 
 # default settings
