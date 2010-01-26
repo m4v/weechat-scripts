@@ -167,17 +167,33 @@ except ImportError:
 
 import getopt, time, fnmatch
 
-### messages
-def debug(s, prefix='', buffer=''):
+### Messages ###
+def debug(s, prefix='debug'):
     """Debug msg"""
-    weechat.prnt(buffer, 'debug:\t%s %s' %(prefix, s))
+    if not weechat.config_get_plugin('debug'): return
+    buffer_name = 'DEBUG_' + SCRIPT_NAME
+    buffer = weechat.buffer_search('python', buffer_name)
+    if not buffer:
+        buffer = weechat.buffer_new(buffer_name, '', '', '', '')
+        weechat.buffer_set(buffer, 'nicklist', '0')
+        weechat.buffer_set(buffer, 'time_for_each_line', '0')
+        weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
+    weechat.prnt(buffer, '%s\t%s' %(prefix, s))
 
-def error(s, prefix=SCRIPT_NAME, buffer=''):
+def error(s, prefix=None, buffer='', trace=''):
     """Error msg"""
-    weechat.prnt(buffer, '%s%s: %s' %(weechat.prefix('error'), prefix, s))
+    prefix = prefix or script_nick
+    weechat.prnt(buffer, '%s%s %s' %(weechat.prefix('error'), prefix, s))
+    if weechat.config_get_plugin('debug'):
+        if not trace:
+            import traceback
+            if traceback.sys.exc_type:
+                trace = traceback.format_exc()
+        not trace or weechat.prnt('', trace)
 
-def say(s, prefix='', buffer=''):
-    """Normal msg"""
+def say(s, prefix=None, buffer=''):
+    """normal msg"""
+    prefix = prefix or script_nick
     weechat.prnt(buffer, '%s\t%s' %(prefix, s))
 
 ### config and value validation
@@ -379,10 +395,18 @@ class Message(object):
         self.buffer = buffer
 
     def __call__(self):
+        #debug('Message: wait %s' %self.wait)
         if self.wait:
-            weechat.command(self.buffer, '/wait %s %s' %(self.wait, self.command))
+            if isinstance(self.wait, float):
+                command = '/wait %sms %s' %(int(self.wait*1000), self.command)
+            else:
+               command = '/wait %s %s' %(self.wait, self.command)
         else:
-            weechat.command(self.buffer, self.command)
+            command = self.command
+        debug(command)
+        if weechat.config_get_plugin('debug') == '2':
+            return True
+        weechat.command(self.buffer, command)
         return True
 
 
@@ -431,10 +455,10 @@ class CommandQueue(object):
 
 
     def queue(self, cmd, type='Normal', wait=1, **kwargs):
-        #debug('queue: wait %s' %wait)
+        #debug('queue: wait %s self.wait %s' %(wait, self.wait))
         pack = getattr(self, type)(cmd, wait=self.wait, **kwargs)
         self.wait += wait
-        #debug('queue: %s' %pack)
+        #debug('queue: wait %s %s' %(self.wait, pack))
         self.commands.append(pack)
 
     # it happened once and it wasn't pretty
@@ -892,7 +916,7 @@ class Ban(CommandNeedsOp):
             self.queue_clear()
 
     def ban(self, *banmask, **kwargs):
-        cmd = '/ban %s' %' '.join(banmask)
+        cmd = '/mode +b %s' %' '.join(banmask)
         self.queue(cmd, **kwargs)
 
 
@@ -931,7 +955,7 @@ class UnBan(Ban):
             self.queue_clear()
 
     def unban(self, *banmask):
-        cmd = '/unban %s' %' '.join(banmask)
+        cmd = '/mode -b %s' %' '.join(banmask)
         self.queue(cmd)
 
 
@@ -1146,6 +1170,15 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_config('plugins.var.python.%s.merge_bans' %SCRIPT_NAME, 'merge_bans_conf_cb', '')
     weechat.hook_config('plugins.var.python.%s.invert_kickban_order' %SCRIPT_NAME,
             'invert_kickban_order_conf_cb', '')
+
+    # colors
+    color_delimiter   = weechat.color('chat_delimiters')
+    color_script_nick = weechat.color('chat_nick')
+    color_reset   = weechat.color('reset')
+    
+    # pretty [chanop]
+    script_nick = '%s[%s%s%s]%s' %(color_delimiter, color_script_nick, SCRIPT_NAME, color_delimiter,
+            color_reset)
 
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
