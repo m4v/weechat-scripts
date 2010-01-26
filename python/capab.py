@@ -48,6 +48,7 @@ script_nick    = "[%s]" %SCRIPT_NAME
 ### Config ###
 settings = {
 'servers':  '',
+'bouncer_prefix': r'\[\d\d:\d\d\]\s',
 }
 
 ### Messages ###
@@ -248,6 +249,21 @@ def privmsg_signal_cb(server_name, modifier, modifier_data, string):
         #debug('print nick: %s' %nick)
         ident_nick[nick] = char == '+'
         return '%s :%s' %(head, msg)
+    elif bouncerRe:
+        #debug('msg: %s' %msg)
+        m = bouncerRe.search(msg)
+        if m:
+            prefix = m.group()
+            #debug('prefix: %s' %prefix)
+            msg = msg[len(prefix):]
+            char = msg[0]
+            if char in '+-':
+                msg = msg[1:]
+                nick = head[1:head.find('!')]
+                #debug('print nick: %s' %nick)
+                ident_nick[nick] = char == '+'
+                return '%s :%s%s' %(head, prefix, msg)
+        return string
     else:
         return string
 
@@ -314,6 +330,17 @@ if __name__ == '__main__' and import_ok and \
         SCRIPT_DESC, 'script_unload', ''):
 
     ident_color = weechat.color('chat_nick')
+    r = weechat.config_get_plugin('bouncer_prefix')
+    bouncerRe = None
+    if r:
+        try:
+            import re
+            if r[0] != '^':
+                r = '^' + r
+            bouncerRe = re.compile(r)
+        except:
+            bouncerRe = None
+            error('bad regexp %s' %r)
 
     weechat.hook_command(SCRIPT_COMMAND, '', '', '', '', 'cmd_capab', '')
 
