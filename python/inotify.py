@@ -37,6 +37,11 @@
 #   * dbus
 #
 #
+#   TODO
+#   replace fnmatch by re (?)
+#   fix notify actions
+#   add commands for configure ignores
+#
 #   History:
 #   2010-
 #   version:
@@ -237,6 +242,7 @@ class Server(object):
                ' \'%s\' is correct and if it\'s running.' %self.address)
 
     def send_rpc(self, *args):
+        debug('sending rpc: %s' %' '.join(map(repr, args)))
         if self.remote:
             return self._send_rpc_process(*args)
         try:
@@ -402,17 +408,16 @@ def get_nick(s):
     if s[-1] == suffix:
         s = s[:-1]
     # nick mode
-    modes = '@!+%'
-    if s[0] in modes:
-        s = s[1:]
+    modes = '~+@!%'
+    s = s.lstrip(modes)
     return s
 
 def notify_msg(data, buffer, time, tags, display, hilight, prefix, msg):
     if data and 'notify_message' not in tags:
         # weechat 0.3.0 bug
         return WEECHAT_RC_OK
-    #debug('  '.join((data, buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
-    #        prefix='MESSAGE')
+    debug('  '.join((data, buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
+            prefix='MESSAGE')
     if hilight == '1' and display == '1':
         channel = weechat.buffer_get_string(buffer, 'short_name')
         prefix = get_nick(prefix)
@@ -420,7 +425,7 @@ def notify_msg(data, buffer, time, tags, display, hilight, prefix, msg):
                 and channel not in ignore_channel \
                 and prefix not in ignore_nick \
                 and not in_window(buffer):
-            #debug('%sSending notification: %s' %(weechat.color('lightgreen'), channel), prefix='NOTIFY')
+            debug('%sSending notification: %s' %(weechat.color('lightgreen'), channel), prefix='NOTIFY')
             send_notify(msg, channel=channel, nick=prefix)
     return WEECHAT_RC_OK
 
@@ -428,13 +433,13 @@ def notify_priv(data, buffer, time, tags, display, hilight, prefix, msg):
     if data and 'notify_private' not in tags:
         # weechat 0.3.0 bug
         return WEECHAT_RC_OK
-    #debug('  '.join((data, buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
-    #        prefix='PRIVATE')
+    debug('  '.join((data, buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
+            prefix='PRIVATE')
     prefix = get_nick(prefix)
     if display == '1' \
             and prefix not in ignore_nick \
             and not in_window(buffer):
-        #debug('%sSending notification: %s' %(weechat.color('lightgreen'), prefix), prefix='NOTIFY')
+        debug('%sSending notification: %s' %(weechat.color('lightgreen'), prefix), prefix='NOTIFY')
         send_notify(msg, channel=prefix)
     return WEECHAT_RC_OK
 
