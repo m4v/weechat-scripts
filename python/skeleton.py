@@ -34,6 +34,8 @@ try:
     WEECHAT_RC_OK = weechat.WEECHAT_RC_OK
     import_ok = True
 except ImportError:
+    print "This script must be run under WeeChat."
+    print "Get WeeChat now at: http://www.weechat.org/"
     import_ok = False
 
 SCRIPT_NAME    = "skeleton"
@@ -41,9 +43,7 @@ SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
 SCRIPT_VERSION = "0.1-dev"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "I'm a script!"
-SCRIPT_COMMAND = ""
-
-script_nick    = "[%s]" %SCRIPT_NAME
+SCRIPT_COMMAND = "skeleton"
 
 ### Config ###
 settings = {}
@@ -116,6 +116,15 @@ def get_config_valid_string(config, valid_strings=valid_methods):
 if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
         SCRIPT_DESC, '', ''):
+
+    # colors
+    color_delimiter   = weechat.color('chat_delimiters')
+    color_script_nick = weechat.color('chat_nick')
+    color_reset   = weechat.color('reset')
+
+    # pretty [SCRIPT_NAME]
+    script_nick = '%s[%s%s%s]%s' %(color_delimiter, color_script_nick, SCRIPT_NAME, color_delimiter,
+            color_reset)
 
     # settings
     for opt, val in settings.iteritems():
