@@ -252,19 +252,21 @@ def privmsg_signal_cb(server_name, modifier, modifier_data, string):
         return msg
 
     if char in '+-':
-        msg = trim(msg)
-        return '%s :%s' %(head, msg)
+        s = trim(msg)
+        debug('-> %s\n=> %s' %(msg, s))
+        return '%s :%s' %(head, s)
     elif bouncerRe:
         #debug('msg: %s' %msg)
         m = bouncerRe.search(msg)
         if m:
             prefix = m.group()
             #debug('prefix: %s' %prefix)
-            msg = msg[len(prefix):]
-            char = msg[0]
+            s = msg[len(prefix):]
+            char = s[0]
             if char in '+-':
-                msg = trim(msg)
-                return '%s :%s%s' %(head, prefix, msg)
+                s = trim(s)
+                debug('-> %s\n=> %s' %(msg, s))
+                return '%s :%s%s' %(head, prefix, s)
     return string
 
 def part_signal_cb(server_name, signal, signal_data):
