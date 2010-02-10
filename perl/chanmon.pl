@@ -1,6 +1,6 @@
 #
 # chanmon.pl - Channel Monitoring for weechat 0.3.0
-# Version 1.8
+# Version 1.7.1
 #
 # Add 'Channel Monitor' buffer that you can position to show IRC channel
 # messages in a single location without constantly switching buffers
@@ -50,7 +50,7 @@
 #
 # History:
 # 2010-02-10, m4v <lambdae2@gmail.com>:
-#	v1.8:	-fix: chanmon was leaking infolists, changed how chanmon
+#	v1.7.1:	-fix: chanmon was leaking infolists, changed how chanmon
 #			detects if the buffer is displayed or not.
 # 2010-01-25, KenjiE20 <longbow@longbowslair.co.uk>:
 # 	v1.7:	-fixture: Let chanmon be aware of nick_prefix/suffix
@@ -496,7 +496,7 @@ sub print_help
 	return weechat::WEECHAT_RC_OK;
 }
 
-weechat::register("chanmon", "KenjiE20", "1.8", "GPL3", "Channel Monitor", "", "");
+weechat::register("chanmon", "KenjiE20", "1.7.1", "GPL3", "Channel Monitor", "", "");
 weechat::hook_print("", "", "", 0, "chanmon_new_message", "");
 weechat::hook_command("monitor", "Toggles monitoring for a channel (must be used in the channel buffer itself)", "", "", "", "chanmon_toggle", "");
 weechat::hook_command("dynmon", "Toggles 'dynamic' monitoring (auto-disable monitoring for current channel)", "", "", "", "chanmon_dyn_toggle", "");
