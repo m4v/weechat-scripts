@@ -48,7 +48,7 @@ script_nick    = "[%s]" %SCRIPT_NAME
 ### Config ###
 settings = {
 'servers':  '',
-'bouncer_prefix': r'\[\d\d:\d\d\]\s',
+'bouncer_prefix': r'\[\d\d(:\d\d)+\]\s',
 }
 
 ### Messages ###
@@ -122,14 +122,16 @@ def get_config_list(config):
     else:
         return []
 
-def set_config_list(config, value):
-    old_value = get_config_list(config)
-    if isinstance(value, list):
-        old_value.extend(value)
-    else:
-        old_value.append(value)
-    value = set(old_value)
-    str_value = ','.join(value)
+def add_config_list(config, value):
+    values = set(get_config_list(config))
+    values.add(value)
+    str_value = ','.join(values)
+    weechat.config_set_plugin(config, str_value)
+
+def rem_config_list(config, value):
+    values = set(get_config_list(config))
+    values.remove(value)
+    str_value = ','.join(values)
     weechat.config_set_plugin(config, str_value)
 
 
@@ -300,15 +302,27 @@ def quit_signal_cb(server_name, signal, signal_data):
             del nicklist[b, n]
     return WEECHAT_RC_OK
 
+capab_hooks = {}
 def enable_capab(server):
     server_buffer = weechat.buffer_search('irc', 'server.%s' %server)
     if server_buffer:
-        weechat.command(server_buffer, '/quote capab identify-msg')
-        weechat.hook_modifier('irc_in_PRIVMSG', 'privmsg_signal_cb', server)
-        weechat.hook_modifier('irc_in_NOTICE', 'privmsg_signal_cb', server)
+        weechat.command(server_buffer, '/quote cap req :identify-msg')
+        capab_hooks[server] = (
+                weechat.hook_modifier('irc_in_PRIVMSG', 'privmsg_signal_cb', server),
+                weechat.hook_modifier('irc_in_NOTICE', 'privmsg_signal_cb', server),
         #weechat.hook_signal('%s,irc_in_PART' %server, 'part_signal_cb', server)
         #weechat.hook_signal('%s,irc_in_QUIT' %server, 'quit_signal_cb', server)
-        weechat.hook_modifier('weechat_print', 'privmsg_print_cb', server)
+                weechat.hook_modifier('weechat_print', 'privmsg_print_cb', server),
+                )
+        return True
+
+def disable_capab(server):
+    server_buffer = weechat.buffer_search('irc', 'server.%s' %server)
+    if server_buffer:
+        weechat.command(server_buffer, '/quote cap req :-identify-msg')
+        for hook in capab_hooks[server]:
+            weechat.unhook(hook)
+        del capab_hooks[server]
         return True
 
 def cmd_capab(data, buffer, args):
@@ -316,15 +330,25 @@ def cmd_capab(data, buffer, args):
         return WEECHAT_RC_OK
 
     server = args.split()[0]
-    say('Enabling IDENFITY-MSG capability on %s' %server)
-    if enable_capab(server):
-        set_config_list('servers', server)
+    list = get_config_list('servers')
+    if server not in list:
+        say('Enabling IDENFITY-MSG capability on %s' %server)
+        if enable_capab(server):
+            add_config_list('servers', server)
+    else:
+        say('Disabling IDENFITY-MSG capability on %s' %server)
+        if disable_capab(server):
+            rem_config_list('servers', server)
+
     return WEECHAT_RC_OK
 
 ### Main ###
 def script_unload():
     for b, n in nicklist.keys():
         weechat.nicklist_remove_nick(*nicklist[b, n])
+
+    for server in capab_hooks.keys():
+        disable_capab(server)
     return WEECHAT_RC_OK
 
 if __name__ == '__main__' and import_ok and \
