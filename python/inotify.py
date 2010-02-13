@@ -68,6 +68,8 @@ settings = {
 #'ignore_text'   : '',
 }
 
+max_error_count = 3
+
 try:
     import weechat
     WEECHAT_RC_OK = weechat.WEECHAT_RC_OK
@@ -81,7 +83,7 @@ import xmlrpclib, socket
 from fnmatch import fnmatch
 
 # remote daemon timeout
-socket.setdefaulttimeout(3)
+socket.setdefaulttimeout(5)
 
 ### Messages ###
 def debug(s, prefix=''):
@@ -233,8 +235,10 @@ class Server(object):
             self._error_connect()
 
     def _error(self, s):
-        if self.error_count < 5: # stop sending error msg after 5 errors in a row
+        if self.error_count < max_error_count: # stop sending error msg after max reached
             error(s)
+        elif self.error_count == max_error_count:
+            error('Suppressing future error messages...')
         self.error_count += 1
 
     def _error_connect(self):
@@ -293,15 +297,15 @@ import xmlrpclib
 try:
     server = xmlrpclib.Server('%(server_uri)s')
     print getattr(server, '%(method)s')(%(args)s)
-except:
-    print 'error'"
+except Exception, e:
+    print 'error: %%s' %%e"
 """
 
 def rpc_process_cb(data, command, rc, stdout, stderr):
     debug("%s\nstderr: %s\nstdout: %s" %(rc, repr(stderr), repr(stdout)))
     if stdout:
         if stdout == 'OK\n':
-            pass
+            server.error_count = 0
         elif stdout.startswith('warning:'):
             server._error(stdout[8:])
             if server.error_count < 10:
@@ -504,16 +508,17 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_command(SCRIPT_COMMAND, SCRIPT_DESC, '[test [text] | notify [text] | restart | quit ]', 
 """
    test: sends a test notification, with 'text' if provided.
- notify: same as test, but the notification is send through the notification queue.
+ notify: same as test, but the notification is send through the notification
+         queue.
 restart: forces remote daemon to restart.
-   quit: forces remote daemon to shutdown, after this notifications won't be available
-         and the daemon should be started again manually.
+   quit: forces remote daemon to shutdown, after this notifications won't be
+         available and the daemon should be started again manually.
 
 Setting notification ignores:
-  It's possible to filter notification by channel or by nick, with the config options
-   'ignore_channel' and 'ignore_nick' in plugins.var.python.%(script)s
+  It's possible to filter notification by channel or by nick, with the config
+  options 'ignore_channel' and 'ignore_nick' in plugins.var.python.%(script)s
   Each config option accepts a comma separated list of patterns that should be
-   ignored. Wildcards '*', '?' and char groups [..] can be used.
+  ignored. Wildcards '*', '?' and char groups [..] can be used.
   An ignore exception can be added by prefixing '!' in the pattern.
 
 Examples:
