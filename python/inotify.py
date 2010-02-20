@@ -340,7 +340,7 @@ class Server(object):
                ' \'%s\' is correct and if it\'s running.' %self.address)
 
     def send_rpc(self, *args):
-        debug('sending rpc: %s' %' '.join(map(repr, args)))
+        #debug('sending rpc: %s' %' '.join(map(repr, args)))
         if self.remote:
             return self._send_rpc_process(*args)
         try:
@@ -374,7 +374,7 @@ class Server(object):
 
         args = ', '.join(map(quoted, args))
         cmd = rpc_process_cmd %{'server_uri':self.address, 'method':self.method, 'args':args}
-        debug(cmd)
+        #debug(cmd)
         weechat.hook_process(cmd, 30000, 'rpc_process_cb', '')
 
     def quit(self):
@@ -400,7 +400,7 @@ except Exception, e:
 """
 
 def rpc_process_cb(data, command, rc, stdout, stderr):
-    debug("%s\nstderr: %s\nstdout: %s" %(rc, repr(stderr), repr(stdout)))
+    #debug("%s\nstderr: %s\nstdout: %s" %(rc, repr(stderr), repr(stdout)))
     if stdout:
         if stdout == 'OK\n':
             server.error_count = 0
@@ -484,8 +484,8 @@ def notify_msg(data, buffer, time, tags, display, hilight, prefix, msg):
     if data and 'notify_message' not in tags:
         # weechat 0.3.0 bug
         return WEECHAT_RC_OK
-    debug('  '.join((data, buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
-            prefix='MESSAGE')
+    #debug('  '.join((data, buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
+    #        prefix='MESSAGE')
     if hilight == '1' and display == '1':
         channel = weechat.buffer_get_string(buffer, 'short_name')
         prefix = get_nick(prefix)
@@ -493,7 +493,7 @@ def notify_msg(data, buffer, time, tags, display, hilight, prefix, msg):
                 and channel not in ignore_channel \
                 and msg not in ignore_text \
                 and not is_displayed(buffer):
-            debug('%sSending notification: %s' %(weechat.color('lightgreen'), channel), prefix='NOTIFY')
+            #debug('%sSending notification: %s' %(weechat.color('lightgreen'), channel), prefix='NOTIFY')
             send_notify(msg, channel=channel, nick=prefix)
     return WEECHAT_RC_OK
 
@@ -501,14 +501,14 @@ def notify_priv(data, buffer, time, tags, display, hilight, prefix, msg):
     if data and 'notify_private' not in tags:
         # weechat 0.3.0 bug
         return WEECHAT_RC_OK
-    debug('  '.join((data, buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
-            prefix='PRIVATE')
+    #debug('  '.join((data, buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
+    #        prefix='PRIVATE')
     prefix = get_nick(prefix)
     if display == '1' \
             and prefix not in ignore_nick \
             and msg not in ignore_text \
             and not is_displayed(buffer):
-        debug('%sSending notification: %s' %(weechat.color('lightgreen'), prefix), prefix='NOTIFY')
+        #debug('%sSending notification: %s' %(weechat.color('lightgreen'), prefix), prefix='NOTIFY')
         send_notify(msg, channel=prefix)
     return WEECHAT_RC_OK
 
