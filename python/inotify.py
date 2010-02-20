@@ -136,6 +136,7 @@ def debug(s, prefix=''):
 
 def error(s, prefix='', buffer='', trace=''):
     """Error msg"""
+    if weechat.config_get_plugin('quiet'): return
     prefix = prefix or script_nick
     weechat.prnt(buffer, '%s%s %s' %(weechat.prefix('error'), prefix, s))
     if weechat.config_get_plugin('debug'):
@@ -184,8 +185,40 @@ def get_config_valid_string(config, valid_strings=valid_methods):
         return default
     return value
 
-# FIXME use something more integrated with weechat
-color_table = ('teal', 'darkmagenta', 'darkgreen', 'brown', 'blue', 'darkblue', 'darkcyan', 'magenta', 'green', 'grey')
+### Class definitions ###
+class Infolist(object):
+    """Class for reading WeeChat's infolists."""
+
+    fields = {'buffer':'pointer'}
+
+    def __init__(self, name, args=''):
+        self.cursor = 0
+        self.pointer = weechat.infolist_get(name, '', args)
+        if self.pointer == '':
+            raise Exception('Infolist initialising failed')
+
+    def __del__(self):
+        """Purge infolist if is no longer referenced."""
+        self.free()
+
+    def __getitem__(self, name):
+        """Implement the evaluation of self[name]."""
+        type = self.fields[name]
+        return getattr(self, 'get_%s' %type)(name)
+
+    def get_pointer(self, name):
+        return weechat.infolist_pointer(self.pointer, name)
+
+    def next(self):
+        self.cursor = weechat.infolist_next(self.pointer)
+        return self.cursor
+
+    def free(self):
+        if self.pointer:
+            #debug('Freeing Infolist')
+            weechat.infolist_free(self.pointer)
+            self.pointer = ''
+
 
 class Ignores(object):
     def __init__(self, ignore_type):
@@ -355,6 +388,8 @@ def rpc_process_cb(data, command, rc, stdout, stderr):
         error(stderr)
     return WEECHAT_RC_OK
 
+color_table = ('teal', 'darkmagenta', 'darkgreen', 'brown', 'blue', 'darkblue', 'darkcyan', 'magenta', 'green', 'grey')
+
 def color_tag(nick):
     n = len(color_table)
     #generic_nick = nick.strip('_`').lower()
@@ -384,40 +419,6 @@ def send_notify(s, channel='', nick=''):
     #command = getattr(server, 'kde4')
     s = format(s, nick)
     server.enqueue(s, channel)
-
-class Infolist(object):
-    """Class for reading WeeChat's infolists."""
-
-    fields = {'buffer':'pointer'}
-
-    def __init__(self, name, args=''):
-        self.cursor = 0
-        self.pointer = weechat.infolist_get(name, '', args)
-        if self.pointer == '':
-            raise Exception('Infolist initialising failed')
-
-    def __del__(self):
-        """Purge infolist if is no longer referenced."""
-        self.free()
-
-    def __getitem__(self, name):
-        """Implement the evaluation of self[name]."""
-        type = self.fields[name]
-        return getattr(self, 'get_%s' %type)(name)
-
-    def get_pointer(self, name):
-        return weechat.infolist_pointer(self.pointer, name)
-
-    def next(self):
-        self.cursor = weechat.infolist_next(self.pointer)
-        return self.cursor
-
-    def free(self):
-        if self.pointer:
-            #debug('Freeing Infolist')
-            weechat.infolist_free(self.pointer)
-            self.pointer = ''
-
 
 def is_displayed(buffer):
     """Returns True if buffer is in a window and the user is active. This is for not show
