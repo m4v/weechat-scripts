@@ -203,40 +203,6 @@ def get_config_valid_string(config, valid_strings=valid_methods):
     return value
 
 ### Class definitions ###
-class Infolist(object):
-    """Class for reading WeeChat's infolists."""
-
-    fields = {'buffer':'pointer'}
-
-    def __init__(self, name, args=''):
-        self.cursor = 0
-        self.pointer = weechat.infolist_get(name, '', args)
-        if self.pointer == '':
-            raise Exception('Infolist initialising failed')
-
-    def __del__(self):
-        """Purge infolist if is no longer referenced."""
-        self.free()
-
-    def __getitem__(self, name):
-        """Implement the evaluation of self[name]."""
-        type = self.fields[name]
-        return getattr(self, 'get_%s' %type)(name)
-
-    def get_pointer(self, name):
-        return weechat.infolist_pointer(self.pointer, name)
-
-    def next(self):
-        self.cursor = weechat.infolist_next(self.pointer)
-        return self.cursor
-
-    def free(self):
-        if self.pointer:
-            #debug('Freeing Infolist')
-            weechat.infolist_free(self.pointer)
-            self.pointer = ''
-
-
 class Ignores(object):
     def __init__(self, ignore_type):
         self.ignore_type = ignore_type
