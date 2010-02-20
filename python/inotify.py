@@ -17,8 +17,7 @@
 ###
 
 ###
-# Notifycation system
-#
+# Notifications for WeeChat
 #
 #   Commands:
 #   * /inotify
@@ -26,15 +25,52 @@
 #
 #   Settings:
 #   * plugins.var.python.inotify.server_uri:
+#   inotify-daemon address and port to connect, must be the same address the daemon is using.
+#   Uses localhost and port 6677 as defaults.
+#
+#       Examples:
+#       http://www.your.home.com:6677
+#       http://localhost:6677
+#
 #   * plugins.var.python.inotify.server_method:
+#   Notification method supported by the daemon to use. Defaults to 'libnotify'.
+#   See below for detailed help about them.
+#
 #   * plugins.var.python.inotify.color_nick:
+#   Will use coloured nicks in notifications.
+#
 #   * plugins.var.python.inotify.ignore_channel:
+#   Comma separated list of patterns for define ignores. Notifications from channels which name
+#   matches any of these patterns will be ignored.
+#   Wildcards '*', '?' and char groups [..] can be used.
+#   An ignore exception can be added by prefixing '!' in the pattern.
+#
+#       Example:
+#       *ubuntu*,!#ubuntu-offtopic
+#       any notifications from a 'ubuntu' channel will be ignored, except from #ubuntu-offtopic
+#
 #   * plugins.var.python.inotify.ignore_nick:
+#   Same as ignore_channel, but for nicknames.
+#
+#       Example:
+#       troll,b[0o]t
+#       will ignore notifications from troll, bot and b0t
+#
+#   * plugins.var.python.inotify.ignore_text:
+#   Same as ignore_channel, but for the contents of the message.
+#
 #
 #   Notify methods:
-#   * any:
 #   * libnotify:
-#   * dbus
+#   Use libnotify for notifications, needs python-notify installed in the machine running the
+#   daemon. This is the default method.
+#
+#   * dbus:
+#   Uses dbus directly for notifications, this is KDE4 specific, might not work in other desktops.
+#   Needs python-dbus in the machine running the daemon.
+#
+#   * any:
+#   Use daemon's configured method, this is usually libnotify.
 #
 #
 #   TODO
@@ -52,7 +88,7 @@ SCRIPT_NAME    = "inotify"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
 SCRIPT_VERSION = "0.1-dev"
 SCRIPT_LICENSE = "GPL3"
-SCRIPT_DESC    = "Notification system, using dbus or libnotify. Works with WeeChat in screen."
+SCRIPT_DESC    = "Notification system, supports dbus or libnotify, and WeeChat with screen."
 SCRIPT_COMMAND = "inotify"
 
 DAEMON_URL = 'http://github.com/m4v/inotify-daemon/raw/master/inotify-daemon'
@@ -175,6 +211,7 @@ class Ignores(object):
                 return True
         return False
 
+
 class Server(object):
     def __init__(self):
         self._reset()
@@ -287,6 +324,7 @@ class Server(object):
         self.server.restart()
 
 
+### Functions ###
 def msg_flush(*args):
     server.flush()
     return WEECHAT_RC_OK
@@ -514,8 +552,9 @@ restart: forces remote daemon to restart.
          available and the daemon should be started again manually.
 
 Setting notification ignores:
-  It's possible to filter notification by channel or by nick, with the config
-  options 'ignore_channel' and 'ignore_nick' in plugins.var.python.%(script)s
+  It's possible to filter notification by channel, by nick or by message content,
+  with the config options 'ignore_channel', 'ignore_nick' and 'ignore_text' in
+  plugins.var.python.%(script)s
   Each config option accepts a comma separated list of patterns that should be
   ignored. Wildcards '*', '?' and char groups [..] can be used.
   An ignore exception can be added by prefixing '!' in the pattern.
@@ -523,15 +562,16 @@ Setting notification ignores:
 Examples:
   Setting 'ignore_nick' to 'troll,b[0o]t':
    will ignore notifications from troll, bot and b0t.
-  Setting 'ignore_channel' to '*ubuntu*,!#ubuntu-es':
+  Setting 'ignore_channel' to '*ubuntu*,!#ubuntu-offtopic':
    will ignore notifications from any channel with the word 'ubuntu' except from
-   #ubuntu-es.
+   #ubuntu-offtopic.
 
 Daemon:
   %(script)s script needs to connect to an external daemon for send notifications,
   which can be used in localhost or remotelly. Download the daemon from:
   %(daemon_url)s
   and check its help with ./%(daemon)s --help
+  See also help in script file.
 """ %dict(script=SCRIPT_NAME, daemon_url=DAEMON_URL, daemon=DAEMON)
             ,'test|notify|restart|quit', 'cmd_notify', '')
 
@@ -540,5 +580,6 @@ Daemon:
 
     weechat.hook_print('', 'notify_message', '', 1, 'notify_msg', workaround)
     weechat.hook_print('', 'notify_private', '', 1, 'notify_priv', workaround)
+
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
