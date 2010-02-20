@@ -381,15 +381,13 @@ class Infolist(object):
             self.pointer = ''
 
 
-def in_window(buffer):
+def is_displayed(buffer):
     """Returns True if buffer is in a window and the user is active. This is for not show
     notifications of a visible buffer while the user is doing something and wouldn't need to be
     notified."""
-    windows = Infolist('window')
-    while windows.next():
-        if windows['buffer'] == buffer:
-            #debug('in current window')
-            return not inactive()
+    window = weechat.buffer_get_integer(buffer, 'num_displayed')
+    if window != 0:
+        return not inactive()
     return False
 
 def inactive():
@@ -428,7 +426,7 @@ def notify_msg(data, buffer, time, tags, display, hilight, prefix, msg):
         if weechat.info_get('irc_is_channel', channel) \
                 and channel not in ignore_channel \
                 and prefix not in ignore_nick \
-                and not in_window(buffer):
+                and not is_displayed(buffer):
             debug('%sSending notification: %s' %(weechat.color('lightgreen'), channel), prefix='NOTIFY')
             send_notify(msg, channel=channel, nick=prefix)
     return WEECHAT_RC_OK
@@ -442,7 +440,7 @@ def notify_priv(data, buffer, time, tags, display, hilight, prefix, msg):
     prefix = get_nick(prefix)
     if display == '1' \
             and prefix not in ignore_nick \
-            and not in_window(buffer):
+            and not is_displayed(buffer):
         debug('%sSending notification: %s' %(weechat.color('lightgreen'), prefix), prefix='NOTIFY')
         send_notify(msg, channel=prefix)
     return WEECHAT_RC_OK
