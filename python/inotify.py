@@ -65,7 +65,7 @@ settings = {
 'color_nick'     : 'on',
 'ignore_channel' : '',
 'ignore_nick'    : '',
-#'ignore_text'   : '',
+'ignore_text'    : '',
 }
 
 max_error_count = 3
@@ -423,9 +423,9 @@ def notify_msg(data, buffer, time, tags, display, hilight, prefix, msg):
     if hilight == '1' and display == '1':
         channel = weechat.buffer_get_string(buffer, 'short_name')
         prefix = get_nick(prefix)
-        if weechat.info_get('irc_is_channel', channel) \
+        if prefix not in ignore_nick \
                 and channel not in ignore_channel \
-                and prefix not in ignore_nick \
+                and msg not in ignore_text \
                 and not is_displayed(buffer):
             debug('%sSending notification: %s' %(weechat.color('lightgreen'), channel), prefix='NOTIFY')
             send_notify(msg, channel=channel, nick=prefix)
@@ -440,6 +440,7 @@ def notify_priv(data, buffer, time, tags, display, hilight, prefix, msg):
     prefix = get_nick(prefix)
     if display == '1' \
             and prefix not in ignore_nick \
+            and msg not in ignore_text \
             and not is_displayed(buffer):
         debug('%sSending notification: %s' %(weechat.color('lightgreen'), prefix), prefix='NOTIFY')
         send_notify(msg, channel=prefix)
@@ -468,7 +469,7 @@ def cmd_notify(data, buffer, args):
 def ignore_update(*args):
     ignore_channel._get_ignores()
     ignore_nick._get_ignores()
-    #ignore_text._get_ignores()
+    ignore_text._get_ignores()
     return WEECHAT_RC_OK
 
 def server_update(*args):
@@ -499,7 +500,7 @@ if __name__ == '__main__' and import_ok and \
 
     ignore_channel = Ignores('ignore_channel')
     ignore_nick = Ignores('ignore_nick')
-    #ignore_text = Ignores('ignore_text')
+    ignore_text = Ignores('ignore_text')
 
     server = Server()
 
