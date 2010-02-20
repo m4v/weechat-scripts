@@ -19,6 +19,20 @@
 ###
 # Notifications for WeeChat
 #
+#   Notification script that supports libnotify or dbus for sending notifications. Uses a daemon
+#   that must be running in the receiving machine (remotelly or locally)
+#   It uses xmlrpc protocol, so if using the scrip remotelly, the port used by the daemon must be
+#   open and not blocked by a firewall.
+#
+#   The daemon can be set in several ways, but is recommended to use your desktop autorun settings
+#   for initialise the daemon on login, this saves you the problem of losing dbus with each login.
+#   But you can still use the daemon as a detached process with screen, dtach or on boot with
+#   crontab, the daemon should be able to find a suitable dbus session if available. 
+#   The daemon *must* be always run with your user's privileges, otherwise it will fail to get a
+#   dbus session if it loses it.
+#
+#   Download the daemon from 'http://github.com/m4v/inotify-daemon/raw/master/inotify-daemon'
+#
 #   Commands:
 #   * /inotify
 #     See /help inotify
@@ -26,11 +40,11 @@
 #   Settings:
 #   * plugins.var.python.inotify.server_uri:
 #   inotify-daemon address and port to connect, must be the same address the daemon is using.
-#   Uses localhost and port 6677 as defaults.
+#   By default it uses localhost and port 7766.
 #
 #       Examples:
-#       http://www.your.home.com:6677
-#       http://localhost:6677
+#       http://www.your.home.com:7766
+#       http://localhost:7766
 #
 #   * plugins.var.python.inotify.server_method:
 #   Notification method supported by the daemon to use. Defaults to 'libnotify'.
@@ -77,6 +91,8 @@
 #   replace fnmatch by re (?)
 #   fix notify actions
 #   add commands for configure ignores
+#   fix timeouts errors (should be warnings and re-enqueue)
+#
 #
 #   History:
 #   2010-
