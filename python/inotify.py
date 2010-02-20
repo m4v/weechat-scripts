@@ -314,7 +314,7 @@ def rpc_process_cb(data, command, rc, stdout, stderr):
         else:
             server._error(stdout)
     if stderr:
-        debug(stderr)
+        error(stderr)
     return WEECHAT_RC_OK
 
 def color_tag(nick):
