@@ -104,11 +104,12 @@ SCRIPT_NAME    = "inotify"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
 SCRIPT_VERSION = "0.1-dev"
 SCRIPT_LICENSE = "GPL3"
-SCRIPT_DESC    = "Notification system, supports dbus or libnotify, and WeeChat with screen."
+SCRIPT_DESC    = "Notification system, supports dbus or libnotify."
 SCRIPT_COMMAND = "inotify"
 
 DAEMON_URL = 'http://github.com/m4v/inotify-daemon/raw/master/inotify-daemon'
 DAEMON     = 'inotify-daemon'
+DAEMON_VERSION = '0.1'
 
 ### Default Settings ###
 settings = {
@@ -265,7 +266,8 @@ class Server(object):
     def __init__(self):
         self._reset()
         self._create_server()
-        self.send_rpc('Notification script loaded')
+        if not self.error_count:
+            self.send_rpc('Notification script loaded')
 
     def _reset(self):
         self.msg = {}
@@ -315,14 +317,20 @@ class Server(object):
         try:
             self.server = xmlrpclib.Server(self.address)
             version = self.server.version()
-            if version != '0.1':
-                error('Incorrect server version, should be 0.1, but got %s' %version)
+            if version != DAEMON_VERSION:
+                error('Incorrect server version, should be %s, but got %s' %(DAEMON_VERSION,
+                    version))
+        except xmlrpclib.Fault, e:
+            self._error("A fault occurred: %s" %e, trace="Code: %s\nString: %s" (e.faultCode, e.faultString))
+        except xmlrpclib.ProtocolError, e:
+            self._error("Protocol error: %s" %e, trace="Url: %s\nCode: %s\nHeaders: %s\nMessage: %s" %(e.url, e.errcode,
+                e.headers, e.errmsg))
         except socket.error, e:
             self._error_connect()
 
-    def _error(self, s):
+    def _error(self, s, **kwargs):
         if self.error_count < max_error_count: # stop sending error msg after max reached
-            error(s)
+            error(s, **kwargs)
         elif self.error_count == max_error_count:
             error('Suppressing future error messages...')
         self.error_count += 1
@@ -349,7 +357,10 @@ class Server(object):
             else:
                 error(rt)
         except xmlrpclib.Fault, e:
-            self._error(e.faultString.split(':', 1)[1])
+            self._error("A fault occurred: %s" %e, trace="Code: %s\nString: %s" (e.faultCode, e.faultString))
+        except xmlrpclib.ProtocolError, e:
+            self._error("Protocol error: %s" %e, trace="Url: %s\nCode: %s\nHeaders: %s\nMessage: %s" %(e.url, e.errcode,
+                e.headers, e.errmsg))
         except socket.error, e:
             self._error_connect()
 
@@ -572,8 +583,8 @@ Setting notification ignores:
   It's possible to filter notification by channel, by nick or by message content,
   with the config options 'ignore_channel', 'ignore_nick' and 'ignore_text' in
   plugins.var.python.%(script)s
-  Each config option accepts a comma separated list of patterns that should be
-  ignored. Wildcards '*', '?' and char groups [..] can be used.
+  Each config option accepts a comma separated list of patterns.
+  Wildcards '*', '?' and char groups [..] can be used.
   An ignore exception can be added by prefixing '!' in the pattern.
 
 Examples:
