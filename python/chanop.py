@@ -123,7 +123,6 @@
 #
 #
 #  TODO
-#  * make /ounban more useful
 #  * use dedicated config file like in urlgrab.py
 #   (win free config value validation by WeeChat)
 #  * ban expire time
@@ -135,7 +134,6 @@
 #  * bantracker (keeps a record of ban and kicks) (?)
 #  * smart banmask (?)
 #  * multiple-channel ban (?)
-#  * Add unittests (?)
 #
 #
 #   History:
@@ -151,7 +149,7 @@
 
 SCRIPT_NAME    = "chanop"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.1.2"
+SCRIPT_VERSION = "0.2-dev"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Helper script for IRC operators"
 
@@ -1059,10 +1057,13 @@ def banlist_368(data, modifier, modifier_data, string):
         buffer = waiting_for_completion[0]
         completion = waiting_for_completion[1]
         banlist = chanop_banlist.banmasks(buffer)
-        weechat.buffer_set(buffer, 'input', '/%s %s' %(cmd_unban._command, banlist.next()))
-        # XXX change cmd_unban by the UnBan class      ^
-        for ban in banlist:
-            weechat.hook_completion_list_add(completion, ban, 0, weechat.WEECHAT_LIST_POS_SORT)
+        if banlist:
+            weechat.buffer_set(buffer, 'input', '/%s %s' %(cmd_unban._command, banlist.next()))
+            # XXX change cmd_unban by the UnBan class      ^
+            for ban in banlist:
+                weechat.hook_completion_list_add(completion, ban, 0, weechat.WEECHAT_LIST_POS_SORT)
+        else:
+            weechat.buffer_set(buffer, 'input', '/%s no bans.' %cmd_unban._command)
         waiting_for_completion = None
     return ''
 
