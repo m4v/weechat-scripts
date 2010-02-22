@@ -118,6 +118,7 @@ settings = {
 'ignore_channel' : '',
 'ignore_nick'    : '',
 'ignore_text'    : '',
+'passwd'         : '',
 }
 
 max_error_count = 3
@@ -235,7 +236,7 @@ class Server(object):
             try:
                 return f(self, *args)
             except xmlrpclib.Fault, e:
-                self._error("A fault occurred: %s" %e, trace="Code: %s\nString: %s" (e.faultCode, e.faultString))
+                self._error("A fault occurred." %e, trace="Code: %s\nString: %s" %(e.faultCode, e.faultString))
             except xmlrpclib.ProtocolError, e:
                 self._error("Protocol error: %s" %e, trace="Url: %s\nCode: %s\nHeaders: %s\nMessage: %s" %(e.url, e.errcode,
                     e.headers, e.errmsg))
@@ -324,9 +325,10 @@ class Server(object):
     @catch_exceptions
     def send_rpc(self, *args):
         debug('sending rpc: %s' %' '.join(map(repr, args)))
+        passwd = weechat.config_get_plugin('passwd')
         if self.remote:
-            return self._send_rpc_process(*args)
-        rt = getattr(self.server, self.method)(*args)
+            return self._send_rpc_process(passwd, *args)
+        rt = getattr(self.server, self.method)(passwd, *args)
         if rt == 'OK':
             self.error_count = 0 
             #debug('Success: %s' % rt)
@@ -352,11 +354,19 @@ class Server(object):
 
     @catch_exceptions
     def quit(self):
-        self.server.quit()
+        passwd = weechat.config_get_plugin('passwd')
+        rt = self.server.quit(passwd)
+        debug(rt)
+        if rt != 'OK':
+            error(rt)
 
     @catch_exceptions
     def restart(self):
-        self.server.restart()
+        passwd = weechat.config_get_plugin('passwd')
+        rt = self.server.restart(passwd)
+        debug(rt)
+        if rt != 'OK':
+            error(rt)
 
 
 ### Functions ###
