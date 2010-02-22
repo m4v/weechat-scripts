@@ -136,7 +136,7 @@ import xmlrpclib, socket
 from fnmatch import fnmatch
 
 # remote daemon timeout
-socket.setdefaulttimeout(5)
+socket.setdefaulttimeout(4)
 
 ### Messages ###
 def debug(s, prefix=''):
@@ -229,6 +229,28 @@ class Ignores(object):
 
 
 class Server(object):
+    def catch_exceptions(f):
+        """This decorator is for protect methods that comunicate with the daemon against
+        exceptions."""
+        def protected_method(self, *args):
+            try:
+                return f(self, *args)
+            except xmlrpclib.Fault, e:
+                self._error("A fault occurred: %s" %e, trace="Code: %s\nString: %s" (e.faultCode, e.faultString))
+            except xmlrpclib.ProtocolError, e:
+                self._error("Protocol error: %s" %e, trace="Url: %s\nCode: %s\nHeaders: %s\nMessage: %s" %(e.url, e.errcode,
+                    e.headers, e.errmsg))
+            except socket.error, e:
+                self._error_connect()
+            except socket.timeout, e:
+                self._error('Timeout while sending to our daemon.')
+                if self.error_count < 3: # don't requeue after 3 errors
+                    return 'retry'
+            except:
+                # catch all exception
+                self._error("An error ocurred, but I'm not sure what could it be...")
+        return protected_method
+
     def __init__(self):
         self._reset()
         self._create_server()
@@ -255,7 +277,7 @@ class Server(object):
 
     def flush(self):
         for channel, msg in self.msg.iteritems():
-            if self.send_rpc(msg, channel):
+            if self.send_rpc(msg, channel) == 'retry':
                 # daemon is restarting, try again later
                 self._restart_timer()
                 return
@@ -271,6 +293,7 @@ class Server(object):
             weechat.unhook(self.timer)
         self.timer = weechat.hook_timer(5000, 0, 1, 'msg_flush', '')
 
+    @catch_exceptions
     def _create_server(self):
         self.error_count = 0
         self.method = get_config_valid_string('server_method')
@@ -280,19 +303,11 @@ class Server(object):
             self.remote = False
         else:
             self.remote = True
-        try:
-            self.server = xmlrpclib.Server(self.address)
-            version = self.server.version()
-            if version != DAEMON_VERSION:
-                error('Incorrect server version, should be %s, but got %s' %(DAEMON_VERSION,
-                    version))
-        except xmlrpclib.Fault, e:
-            self._error("A fault occurred: %s" %e, trace="Code: %s\nString: %s" (e.faultCode, e.faultString))
-        except xmlrpclib.ProtocolError, e:
-            self._error("Protocol error: %s" %e, trace="Url: %s\nCode: %s\nHeaders: %s\nMessage: %s" %(e.url, e.errcode,
-                e.headers, e.errmsg))
-        except socket.error, e:
-            self._error_connect()
+        self.server = xmlrpclib.Server(self.address)
+        version = self.server.version()
+        if version != DAEMON_VERSION:
+            error('Incorrect server version, should be %s, but got %s' %(DAEMON_VERSION,
+                version))
 
     def _error(self, s, **kwargs):
         if self.error_count < max_error_count: # stop sending error msg after max reached
@@ -305,47 +320,40 @@ class Server(object):
         self._error('Failed to connect to our notification daemon, check if the address'
                ' \'%s\' is correct and if it\'s running.' %self.address)
 
+    @catch_exceptions
     def send_rpc(self, *args):
-        #debug('sending rpc: %s' %' '.join(map(repr, args)))
+        debug('sending rpc: %s' %' '.join(map(repr, args)))
         if self.remote:
             return self._send_rpc_process(*args)
-        try:
-            rt = getattr(self.server, self.method)(*args)
-            if rt == 'OK':
-                self.error_count = 0 
-                #debug('Success: %s' % rt)
-            elif rt.startswith('warning:'):
-                self._error(rt[8:])
-                if self.error_count < 10: # don't requeue after 10 errors
-                    #debug('repeating queue')
-                    # returning True will cause flush() to try to send msgs again later
-                    return True
-            else:
-                error(rt)
-        except xmlrpclib.Fault, e:
-            self._error("A fault occurred: %s" %e, trace="Code: %s\nString: %s" (e.faultCode, e.faultString))
-        except xmlrpclib.ProtocolError, e:
-            self._error("Protocol error: %s" %e, trace="Url: %s\nCode: %s\nHeaders: %s\nMessage: %s" %(e.url, e.errcode,
-                e.headers, e.errmsg))
-        except socket.error, e:
-            self._error_connect()
+        rt = getattr(self.server, self.method)(*args)
+        if rt == 'OK':
+            self.error_count = 0 
+            #debug('Success: %s' % rt)
+        elif rt.startswith('warning:'):
+            self._error(rt[8:])
+            if self.error_count < 10: # don't requeue after 10 errors
+                #debug('repeating queue')
+                # returning 'retry' will cause flush() to try to send msgs again later
+                return 'retry'
+        else:
+            error(rt)
 
     def _send_rpc_process(self, *args):
         def quoted(s):
-            if s[0] == "'":
-                s = r'\\' + s
-            if s[-1] == "'":
-                s = s[:-1] + r'\''
-            return  "'''%s'''" %s
+            if '"' in s:
+                s = s.replace('"', '\\"')
+            return  '"""%s"""' %s
 
         args = ', '.join(map(quoted, args))
         cmd = rpc_process_cmd %{'server_uri':self.address, 'method':self.method, 'args':args}
-        #debug(cmd)
+        debug('\nRemote cmd:%s\n' %cmd)
         weechat.hook_process(cmd, 30000, 'rpc_process_cb', '')
 
+    @catch_exceptions
     def quit(self):
         self.server.quit()
 
+    @catch_exceptions
     def restart(self):
         self.server.restart()
 
@@ -356,18 +364,19 @@ def msg_flush(*args):
     return WEECHAT_RC_OK
 
 rpc_process_cmd = """
-python -c "
+python -c '
 import xmlrpclib
 try:
-    server = xmlrpclib.Server('%(server_uri)s')
-    print getattr(server, '%(method)s')(%(args)s)
+    server = xmlrpclib.Server("%(server_uri)s")
+    print getattr(server, "%(method)s")(%(args)s)
 except Exception, e:
-    print 'error: %%s' %%e"
+    print "error: %%s" %%e'
 """
 
 def rpc_process_cb(data, command, rc, stdout, stderr):
     #debug("%s\nstderr: %s\nstdout: %s" %(rc, repr(stderr), repr(stdout)))
     if stdout:
+        debug('Reply: %s' %stdout)
         if stdout == 'OK\n':
             server.error_count = 0
         elif stdout.startswith('warning:'):
