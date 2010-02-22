@@ -1018,7 +1018,16 @@ class Ban(CommandNeedsOp):
             say("Sorry, found nothing to ban.", buffer=self.buffer)
             self.queue_clear()
 
+    def supported_modes(self):
+        return isupport[self.server]['CHANMODES'].partition(',')[0]
+
     def ban(self, *banmasks, **kwargs):
+        if self._mode != 'b' and self._mode not in self.supported_modes():
+            error("%s doesn't seem to support channel mode '%s', using regular ban." %(self.server,
+                self._mode))
+            mode = 'b'
+        else:
+            mode = self._mode
         try:
             max_modes = int(isupport[self.server]['MODES'])
         except:
@@ -1026,7 +1035,7 @@ class Ban(CommandNeedsOp):
         for n in range(0, len(banmasks), max_modes):
             slice = banmasks[n:n+max_modes]
             bans = ' '.join(slice)
-            cmd = '/mode %s%s %s' %(self._prefix, self._mode*len(slice), bans)
+            cmd = '/mode %s%s %s' %(self._prefix, mode*len(slice), bans)
             self.queue(cmd, **kwargs)
 
 
@@ -1140,20 +1149,6 @@ class Mute(Ban):
 
     _mode = 'q'
     masklist = quietlist
-    # I need a way for disable mute per network, since networks that not recognise /mode +q will do
-    # nasty stuff with the channel modes, but I can't do it in the Ban class because then KickBan
-    # will mute instead of banning, hence this decorator
-    def fallback_Ban(function_name):
-        def decorator(mute_function):
-            def new_method(self, *args, **kwargs):
-                if self.get_config_boolean('enable_mute'):
-                    return mute_function(self, *args, **kwargs)
-                else:
-                    #debug('Mute is disabled, falling back to ban')
-                    ban_function = getattr(Ban, function_name)
-                    return ban_function(self, *args, **kwargs)
-            return new_method
-        return decorator
 
 
 class UnMute(UnBan):
@@ -1355,8 +1350,6 @@ settings = {
         'enable_remove'    :'off',
         'kick_reason'      :'kthxbye!',
         'enable_multi_kick':'off',
-        'merge_bans'       :'off',      # FIXME deprecated
-        'enable_mute'      :'off',      # FIXME deprecated
         'invert_kickban_order':'off',
         }
 
