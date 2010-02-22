@@ -869,10 +869,7 @@ class Kick(CommandNeedsOp):
     def execute_op(self, args=None):
         if not args:
             args = self.args
-        if ' ' in args:
-            nick, reason = args.split(' ', 1)
-        else:
-            nick, reason = args, ''
+        nick, s, reason = args.partition(' ')
         if not reason:
             reason = self.get_config('kick_reason')
         self.kick(nick, reason)
@@ -1158,12 +1155,14 @@ class Mute(Ban):
             return new_method
         return decorator
 
+
 class UnMute(UnBan):
     command = 'ounmute'
     callback = 'cmd_unmute'
     _mode = 'q'
     masklist = quietlist
     completion = '%(chanop_quietmask)|%*'
+
 
 class KickBan(Ban, Kick):
     help = ("Kickban nick.",
@@ -1172,10 +1171,7 @@ class KickBan(Ban, Kick):
 
     invert = False
     def execute_op(self):
-        if ' ' in self.args:
-            nick, reason = self.args.split(' ', 1)
-        else:
-            nick, reason = self.args, ''
+        nick, s, reason = self.args.partition(' ')
         hostmask = self.get_host(nick)
         if hostmask:
             if not reason:
