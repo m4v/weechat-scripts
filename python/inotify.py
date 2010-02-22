@@ -21,15 +21,10 @@
 #
 #   Notification script that supports libnotify or dbus for sending notifications. Uses a daemon
 #   that must be running in the receiving machine (remotelly or locally)
-#   It uses xmlrpc protocol, so if using the scrip remotelly, the port used by the daemon must be
+#   It uses xmlrpc protocol, so if using the script remotelly, the port used by the daemon must be
 #   open and not blocked by a firewall.
 #
-#   The daemon can be set in several ways, but is recommended to use your desktop autorun settings
-#   for initialise the daemon on login, this saves you the problem of losing dbus with each login.
-#   But you can still use the daemon as a detached process with screen, dtach or on boot with
-#   crontab, the daemon should be able to find a suitable dbus session if available. 
-#   The daemon *must* be always run with your user's privileges, otherwise it will fail to get a
-#   dbus session if it loses it.
+#   The daemon can be setup in several ways, see inotify-daemon --help
 #
 #   Download the daemon from 'http://github.com/m4v/inotify-daemon/raw/master/inotify-daemon'
 #
