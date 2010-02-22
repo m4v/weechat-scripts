@@ -167,6 +167,7 @@ import getopt, time, fnmatch
 
 now = lambda : int(time.time())
 
+
 ### Messages ###
 def debug(s, prefix='debug'):
     """Debug msg"""
@@ -195,6 +196,7 @@ def say(s, prefix=None, buffer=''):
     """normal msg"""
     prefix = prefix or script_nick
     weechat.prnt(buffer, '%s\t%s' %(prefix, s))
+
 
 ### config and value validation
 boolDict = {'on':True, 'off':False}
@@ -240,8 +242,15 @@ def get_config_banmask(config='default_banmask', get_function=None):
     #debug("default banmask: %s" %values)
     return values
 
+def get_config_list(config):
+    value = weechat.config_get_plugin(config)
+    if value:
+        return value.split(',')
+    else:
+        return []
 
-### irc utils
+
+### irc utils ###
 def is_hostmask(s):
     """Returns whether or not the string s is a valid User hostmask."""
     n = s.find('!')
@@ -419,6 +428,7 @@ class Message(object):
             command = self.command
         debug('%s %s' %(now(), command))
         if weechat.config_get_plugin('debug') == '2':
+            # don't run commands
             return True
         weechat.command(self.buffer, command)
         return True
@@ -432,7 +442,7 @@ class CommandQueue(object):
     class Normal(Message):
         """Normal message"""
         def __str__(self):
-            return "<Normal(%s)>" \
+            return "<Normal %s >" \
                     %', '.join((self.command, self.buffer, str(self.wait)))
 
 
@@ -463,27 +473,26 @@ class CommandQueue(object):
             return False # returning false interrupts the queue execution
 
         def __str__(self):
-            return "<WaitForOp(%s)>" \
+            return "<WaitForOp %s >" \
                     %', '.join((self.command, self.buffer, self.server, self.channel, self.nick,
                         str(self.wait)))
 
 
     class AddChannel(Message):
+        """This message only adds a channel into chanop channel list."""
         def __init__(self, cmd, server='', channel='', **kwargs):
             self.server = server
             self.channel = channel
 
         def __call__(self):
             config = 'channels.%s' %self.server
-            value = weechat.config_get_plugin(config)
-            if not value:
+            channels = get_config_list(config)
+            if not channels:
                 weechat.config_set_plugin(config, self.channel)
-            else:
-                channels = value.split(',')
-                if self.channel not in channels:
-                    channels.append(self.channel)
-                    value = ','.join(channels)
-                    weechat.config_set_plugin(config, value)
+            elif self.channel not in channels:
+                channels.append(self.channel)
+                value = ','.join(channels)
+                weechat.config_set_plugin(config, value)
             return True
 
 
@@ -565,7 +574,7 @@ class CommandChanop(Command):
         self.channel = weechat.buffer_get_string(self.buffer, 'localvar_channel')
         self.nick = weechat.info_get('irc_nick', self.server)
 
-    def replace_vars(self, s):
+    def replace_vars(self, s): # XXX maybe can use WeeChat api?
         if '$channel' in s:
             s = s.replace('$channel', self.channel)
         if '$nick' in s:
@@ -601,11 +610,13 @@ class CommandChanop(Command):
             self.infolist.reset()
             return self.infolist
 
-    def is_op(self):
+    def has_op(self, nick=None):
+        if not nick:
+            nick = self.nick
         try:
             nicks = self._nick_infolist()
             while nicks.next():
-                if nicks['name'] == self.nick:
+                if nicks['name'] == nick:
                     if nicks['flags'] & 8:
                         return True
                     else:
@@ -613,7 +624,9 @@ class CommandChanop(Command):
         except:
             error('Not in a IRC channel.')
 
-    def has_voice(self, nick):
+    def has_voice(self, nick=None):
+        if not nick:
+            nick = self.nick
         try:
             nicks = self._nick_infolist()
             while nicks.next():
@@ -645,7 +658,7 @@ class CommandChanop(Command):
         weechat_queue.clear()
 
     def get_op(self):
-        op = self.is_op()
+        op = self.has_op()
         if op is False:
             value = self.get_config('op_command')
             if not value:
@@ -656,7 +669,7 @@ class CommandChanop(Command):
         return op
 
     def drop_op(self):
-        op = self.is_op()
+        op = self.has_op()
         if op is True:
             value = self.get_config('deop_command')
             if not value:
@@ -730,7 +743,7 @@ class BanObject(object):
         self.expires = expires
 
     def __repr__(self):
-        return "<BanObject %s %s>" %(self.banmask, self.date)
+        return "<BanObject %s %s >" %(self.banmask, self.date)
 
 
 class BanList(object):
@@ -745,7 +758,6 @@ class BanList(object):
         assert buffer
         channel = weechat.buffer_get_string(buffer, 'localvar_channel')
         server = weechat.buffer_get_string(buffer, 'localvar_server')
-        debug('%s, %s' %(server, channel))
         try:
             bans = self.bans[server, channel]
             return bans.iterkeys()
@@ -780,10 +792,10 @@ class BanList(object):
     def match(self, server, channel, hostmask):
         ban_list = []
         if hostmask:
-            debug('searching masks for %s' %hostmask)
+            #debug('searching masks for %s' %hostmask)
             try:
                 bans = self.bans[server, channel]
-                debug('Ban list: %s' %str(bans))
+                #debug('Ban list: %s' %str(bans))
                 for ban in bans.itervalues():
                     if ban.hostmask == hostmask:
                         ban_list.append(ban)
@@ -791,7 +803,7 @@ class BanList(object):
                         ban_list.append(ban)
             except KeyError:
                 pass
-            debug('found: %s' %ban_list)
+            #debug('found: %s' %ban_list)
         return ban_list
 
     def get_buffer(self):
@@ -989,7 +1001,6 @@ class Ban(CommandNeedsOp):
         return banmask
 
     def add_ban(self, banmask, hostmask=None):
-        debug('Adding ban: %s %s' %(banmask, hostmask))
         self.masklist.add(self.server, self.channel, banmask, hostmask=hostmask)
 
     def execute_op(self):
@@ -1011,7 +1022,10 @@ class Ban(CommandNeedsOp):
             self.queue_clear()
 
     def ban(self, *banmasks, **kwargs):
-        max_modes = 4 # do 4 bans per command
+        try:
+            max_modes = int(isupport[self.server]['MODES'])
+        except:
+            max_modes = 3
         for n in range(0, len(banmasks), max_modes):
             slice = banmasks[n:n+max_modes]
             bans = ' '.join(slice)
@@ -1267,14 +1281,34 @@ def chanop_init():
     servers = Infolist('irc_server')
     while servers.next():
         server = servers['name']
-        config = 'channels.%s' %server
-        value = weechat.config_get_plugin(config)
-        if value:
-            # XXX define a get_config_list
-            buffer = weechat.buffer_search('irc', 'server.%s' %server)
-            channels = value.split(',')
+        buffer = weechat.buffer_search('irc', 'server.%s' %server)
+        if buffer:
+            # get server data
+            weechat.command(buffer, '/quote version')
+            # FIXME should add some code that hides 005 mesajes
+            config = 'channels.%s' %server
+            channels = get_config_list(config)
             for channel in channels:
                 fetch_ban_list(buffer, channel)
+
+isupport = {}
+def isupport_cb(data, signal, signal_data):
+    data = signal_data.split(' ', 3)[-1]
+    data, s, s = data.rpartition(' :')
+    data = data.split()
+    server = signal.partition(',')[0]
+    d = {}
+    for s in data:
+        if '=' in s:
+            k, v = s.split('=')
+        else:
+            k, v = s, True
+        d[k] = v
+    if server in isupport:
+        isupport[server].update(d)
+    else:
+        isupport[server] = d
+    return WEECHAT_RC_OK
 
 
 ### config callbacks ###
@@ -1376,6 +1410,8 @@ if __name__ == '__main__' and import_ok and \
 
     weechat.hook_completion('chanop_banmask', '', 'banmask_completion', '')
     weechat.hook_completion('chanop_quietmask', '', 'banmask_completion', '')
+
+    weechat.hook_signal('*,irc_in_005', 'isupport_cb', '')
 
     # colors
     color_delimiter   = weechat.color('chat_delimiters')
