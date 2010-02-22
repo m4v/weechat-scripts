@@ -280,8 +280,26 @@ def get_nick(hostmask):
     else:
         return hostmask
 
+_supported_modes_cache = {}
+def supported_modes(server, mode=None):
+    """Checks if server supports a specific chanmode. If <mode> is None returns all supported
+    modes."""
+    try:
+        modes = _supported_modes_cache[server]
+    except KeyError:
+        try:
+            modes = isupport[server]['CHANMODES'].partition(',')[0]
+            _supported_modes_cache[server] = modes
+        except KeyError:
+            modes = 'b'
 
-### WeeChat Classes
+    if mode:
+        return mode in modes
+    else:
+        return modes
+
+
+### Classes definitions ###
 class Infolist(object):
     """Class for reading WeeChat's infolists."""
 
@@ -408,7 +426,6 @@ class Command(object):
             self.pointer = ''
 
 
-### Chanop Classes
 class Message(object):
     """Class that stores the command for scheduling in CommandQueue."""
     def __init__(self, cmd, buffer='', wait=0):
@@ -725,13 +742,13 @@ class CommandNeedsOp(CommandChanop):
         self.queue(cmd)
 
 
-
 deop_hook = {}
 def deop_callback(buffer, count):
     global deop_hook
     cmd_deop('', buffer, '')
     del deop_hook[buffer]
     return WEECHAT_RC_OK
+
 
 class BanObject(object):
     #__slots__ = ('banmask', 'hostmask', 'operator', 'time', 'expires', 'removed')
@@ -840,6 +857,9 @@ class BanList(object):
 
 banlist = BanList()
 quietlist = BanList()
+
+modemaskDict = { 'b':banlist, 'q': quietlist }
+
 
 ################################
 ### Chanop Command Classes ###
@@ -1018,11 +1038,11 @@ class Ban(CommandNeedsOp):
             say("Sorry, found nothing to ban.", buffer=self.buffer)
             self.queue_clear()
 
-    def supported_modes(self):
-        return isupport[self.server]['CHANMODES'].partition(',')[0]
+    def mode_is_supported(self):
+        return supported_modes(self.server, self._mode)
 
     def ban(self, *banmasks, **kwargs):
-        if self._mode != 'b' and self._mode not in self.supported_modes():
+        if self._mode != 'b' and not self.mode_is_supported():
             error("%s doesn't seem to support channel mode '%s', using regular ban." %(self.server,
                 self._mode))
             mode = 'b'
@@ -1045,55 +1065,6 @@ class BanWithList(Ban):
     def parse_args(self, *args):
         CommandChanop.parse_args(self, *args)
         banlist.show_ban_list()
-
-
-hooks_banlist = {}
-def fetch_ban_list(buffer, channel=None):
-    if not channel:
-        channel = weechat.buffer_get_string(buffer, 'localvar_channel')
-    key = (buffer, channel)
-    if key in hooks_banlist:
-        last_time = hooks_banlist[key][2]
-        if now() - last_time > 30:
-            del hooks_banlist[key]
-        else:
-            # don't fetch it again too quickly
-            return
-    cmd = '/mode %s b' %channel
-    #weechat_queue.queue(cmd, buffer=buffer)
-    debug('fetching bans %r' %cmd)
-    weechat.command(buffer, cmd)
-    hooks_banlist[key] = (
-            weechat.hook_modifier('irc_in_367', 'banlist_367', ''),
-            weechat.hook_modifier('irc_in_368', 'banlist_368', '%s,%s' %key),
-            now()
-            )
-
-def banlist_367(data, modifier, modifier_data, string):
-    #debug(string)
-    args = string.split()
-    channel, banmask, op, date = args[-4:]
-    banlist.add(modifier_data, channel.lower(), banmask, hostmask=None, operator=op, date=date)
-    return ''
-
-def banlist_368(data, modifier, modifier_data, string):
-    global waiting_for_completion
-    key = tuple(data.split(','))
-    weechat.unhook(hooks_banlist[key][0])
-    weechat.unhook(hooks_banlist[key][1])
-    if waiting_for_completion:
-        buffer = waiting_for_completion[0]
-        completion = waiting_for_completion[1]
-        banlist = banlist.list(buffer)
-        if banlist:
-            weechat.buffer_set(buffer, 'input', '/%s %s' %(cmd_unban.command, banlist.next()))
-            # XXX change cmd_unban by the UnBan class      ^
-            for ban in banlist:
-                weechat.hook_completion_list_add(completion, ban, 0, weechat.WEECHAT_LIST_POS_SORT)
-        else:
-            weechat.buffer_set(buffer, 'input', '/%s no bans.' %cmd_unban.command)
-        waiting_for_completion = None
-    return ''
 
 
 class UnBan(Ban):
@@ -1276,12 +1247,16 @@ def chanop_init():
         if buffer:
             # get server data
             weechat.command(buffer, '/quote version')
-            # FIXME should add some code that hides 005 mesajes
+            # FIXME should add some code that hides 005 messages
             config = 'channels.%s' %server
             channels = get_config_list(config)
             for channel in channels:
-                fetch_ban_list(buffer, channel)
+                # at this point 005 messages have not reached yet, so we can only fetch chanmode 'b'
+                # list and not 'q' because we don't know if it's supported
+                fetch_ban_list(buffer, channel, modes='b')
 
+
+### signal callbacks ###
 isupport = {}
 def isupport_cb(data, signal, signal_data):
     data = signal_data.split(' ', 3)[-1]
@@ -1300,6 +1275,84 @@ def isupport_cb(data, signal, signal_data):
     else:
         isupport[server] = d
     return WEECHAT_RC_OK
+
+hook_banlist = ()
+hook_banlist_time = {}
+hook_banlist_queue = []
+def fetch_ban_list(buffer, channel=None, modes='bq'):
+    """Fetches hostmasks for a given channel mode and channel."""
+
+    global hook_banlist
+    debug('fetch bans called %s %s' %(buffer, channel))
+    if not channel:
+        channel = weechat.buffer_get_string(buffer, 'localvar_channel')
+    server = weechat.buffer_get_string(buffer, 'localvar_server')
+    # check the last time we did this
+    _modes = []
+    for mode in modes:
+        key = (server, channel, mode)
+        if key in hook_banlist_time:
+            last_time = hook_banlist_time[key]
+            if now() - last_time < 60:
+                # don't fetch it again too quickly
+                continue
+        _modes.append(mode)
+    modes = ''.join(_modes)
+    if not hook_banlist and modes:
+        # only hook once
+        hook_banlist = (
+                weechat.hook_modifier('irc_in_367', 'banlist_367_cb', ''),
+                weechat.hook_modifier('irc_in_368', 'banlist_368_cb', buffer)
+                )
+    # The server will send all messages together sequentially, so is easy to tell for which channel
+    # and mode the banmask is if we keep a queue list in hook_banlist_queue
+    for mode in modes:
+        if supported_modes(server, mode):
+            key = (server, channel, mode)
+            cmd = '/mode %s %s' %(channel, mode)
+            #weechat_queue.queue(cmd, buffer=buffer)
+            debug('fetching bans %r' %cmd)
+            weechat.command(buffer, cmd)
+            hook_banlist_queue.append(key)
+            hook_banlist_time[key] = now()
+        else:
+            debug('Not supported %s %s' %(mode, server))
+
+def banlist_367_cb(data, modifier, modifier_data, string):
+    """Adds ban to the list."""
+    #debug(string)
+    args = string.split()
+    channel, banmask, op, date = args[-4:]
+    server = modifier_data
+    mode = hook_banlist_queue[0][2]
+    modemaskDict[mode].add(server, channel, banmask, hostmask=None, operator=op, date=date)
+    return ''
+
+
+def banlist_368_cb(buffer, modifier, modifier_data, string):
+    """Ban listing over."""
+    global waiting_for_completion, hook_banlist
+    server, channel, mode = hook_banlist_queue.pop(0)
+    debug('got bans for %s %s %s' %(server, channel, mode))
+    masklist = modemaskDict[mode]
+    if not hook_banlist_queue:
+        for hook in hook_banlist:
+            weechat.unhook(hook)
+        hook_banlist = ()
+        debug('over')
+    if waiting_for_completion:
+        buffer, completion  = waiting_for_completion
+        list = masklist.list(buffer)
+        input = weechat.buffer_get_string(buffer, 'input')
+        input = input[:input.find(' fetching banmask')] # remove this bit
+        if list:
+            weechat.buffer_set(buffer, 'input', '%s %s' %(input, list.next()))
+            for ban in list:
+                weechat.hook_completion_list_add(completion, ban, 0, weechat.WEECHAT_LIST_POS_SORT)
+        else:
+            weechat.buffer_set(buffer, 'input', '%s nothing.' %input)
+        waiting_for_completion = None
+    return ''
 
 
 ### config callbacks ###
@@ -1323,22 +1376,31 @@ def invert_kickban_order_conf_cb(data, config, value):
         cmd_kban.invert = False
     return WEECHAT_RC_OK
 
-### completion
+
+### completion ###
 global waiting_for_completion
 waiting_for_completion = None
 def banmask_completion(data, completion_item, buffer, completion):
-    banmasks = banlist.list(buffer)
-    if not banmasks:
-        global waiting_for_completion
-        waiting_for_completion = (buffer, completion)
-        weechat.buffer_set(buffer, 'input', '/%s fetching banmasks...' %cmd_unban.command)
-        # XXX change cmd_unban by the UnBan class                       ^
+    mode = data
+    masklist = modemaskDict[mode]
+    masks = masklist.list(buffer)
+    if not masks:
+        global waiting_for_completion, hook_banlist
+        input = weechat.buffer_get_string(buffer, 'input').strip()
+        fetch_ban_list(buffer, modes=mode)
+        # check if it's fetching a banlist or nothing (due to fetching too soon)
+        if hook_banlist:
+            waiting_for_completion = (buffer, completion)
+            weechat.buffer_set(buffer, 'input', '%s fetching banmasks...' %input)
+        else:
+            weechat.buffer_set(buffer, 'input', '%s nothing.' %input)
     else:
-        debug('banmask completion: %s' %(banmasks, ))
-        for ban in banmasks:
-            weechat.hook_completion_list_add(completion, ban, 0, weechat.WEECHAT_LIST_POS_SORT)
-    fetch_ban_list(buffer)
+        debug('banmask completion: %s' %(masks, ))
+        for mask in masks:
+            weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_SORT)
+#    fetch_ban_list(buffer)
     return WEECHAT_RC_OK
+
 
 # default settings
 settings = {
@@ -1397,8 +1459,8 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_config('plugins.var.python.%s.invert_kickban_order' %SCRIPT_NAME,
             'invert_kickban_order_conf_cb', '')
 
-    weechat.hook_completion('chanop_banmask', '', 'banmask_completion', '')
-    weechat.hook_completion('chanop_quietmask', '', 'banmask_completion', '')
+    weechat.hook_completion('chanop_banmask', '', 'banmask_completion', 'b')
+    weechat.hook_completion('chanop_quietmask', '', 'banmask_completion', 'q')
 
     weechat.hook_signal('*,irc_in_005', 'isupport_cb', '')
 
