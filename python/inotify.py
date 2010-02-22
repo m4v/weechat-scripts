@@ -26,7 +26,7 @@
 #
 #   The daemon can be setup in several ways, see inotify-daemon --help
 #
-#   Download the daemon from 'http://github.com/m4v/inotify-daemon/raw/master/inotify-daemon'
+#   Download the daemon from 'http://github.com/m4v/inotify-daemon/raw/stable/inotify-daemon'
 #
 #   Commands:
 #   * /inotify
@@ -94,21 +94,21 @@
 #
 #
 #   History:
-#   2010-
-#   version:
+#   2010-02-22
+#   version 0.1: release!
 #
 ###
 
 SCRIPT_NAME    = "inotify"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.1-dev"
+SCRIPT_VERSION = "0.1"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Notification system, supports dbus or libnotify."
 SCRIPT_COMMAND = "inotify"
 
-DAEMON_URL = 'http://github.com/m4v/inotify-daemon/raw/master/inotify-daemon'
+DAEMON_URL = 'http://github.com/m4v/inotify-daemon/raw/stable/inotify-daemon'
 DAEMON     = 'inotify-daemon'
-DAEMON_VERSION = '0.1'
+DAEMON_VERSION = '0.2'
 
 ### Default Settings ###
 settings = {
