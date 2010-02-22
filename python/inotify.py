@@ -68,6 +68,11 @@
 #   * plugins.var.python.inotify.ignore_text:
 #   Same as ignore_channel, but for the contents of the message.
 #
+#   * plugins.var.python.inotify.passwd:
+#   In the case the daemon is using a password for verify that incoming notifications are trusted.
+#   If this password doesn't match with the password setup in inotify-daemon notification will not
+#   succeed.
+#
 #
 #   Notify methods:
 #   * libnotify:
