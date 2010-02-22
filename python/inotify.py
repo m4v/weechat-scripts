@@ -54,7 +54,7 @@
 #   Will use coloured nicks in notifications.
 #
 #   * plugins.var.python.inotify.ignore_channel:
-#   Comma separated list of patterns for define ignores. Notifications from channels which name
+#   Comma separated list of patterns for define ignores. Notifications from channels where its name
 #   matches any of these patterns will be ignored.
 #   Wildcards '*', '?' and char groups [..] can be used.
 #   An ignore exception can be added by prefixing '!' in the pattern.
@@ -91,7 +91,6 @@
 #   replace fnmatch by re (?)
 #   fix notify actions
 #   add commands for configure ignores
-#   fix timeouts errors (should be warnings and re-enqueue)
 #
 #
 #   History:
@@ -230,8 +229,8 @@ class Ignores(object):
 
 class Server(object):
     def catch_exceptions(f):
-        """This decorator is for protect methods that comunicate with the daemon against
-        exceptions."""
+        """
+        This decorator is for catch exceptions in methods that comunicate with the daemon."""
         def protected_method(self, *args):
             try:
                 return f(self, *args)
@@ -303,11 +302,13 @@ class Server(object):
             self.remote = False
         else:
             self.remote = True
+            self.msg_bak = {}
         self.server = xmlrpclib.Server(self.address)
         version = self.server.version()
         if version != DAEMON_VERSION:
-            error('Incorrect server version, should be %s, but got %s' %(DAEMON_VERSION,
+            error('Incorrect daemon version, should be %s, but got %s' %(DAEMON_VERSION,
                 version))
+            error('Download the lastest %s from %s' %(DAEMON, DAEMON_URL))
 
     def _error(self, s, **kwargs):
         if self.error_count < max_error_count: # stop sending error msg after max reached
@@ -455,8 +456,8 @@ def get_nick(s):
     s = s.lstrip(modes)
     return s
 
-def notify_msg(data, buffer, time, tags, display, hilight, prefix, msg):
-    if data and 'notify_message' not in tags:
+def notify_msg(workaround, buffer, time, tags, display, hilight, prefix, msg):
+    if workaround and 'notify_message' not in tags:
         # weechat 0.3.0 bug
         return WEECHAT_RC_OK
     #debug('  '.join((data, buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
@@ -472,8 +473,8 @@ def notify_msg(data, buffer, time, tags, display, hilight, prefix, msg):
             send_notify(msg, channel=channel, nick=prefix)
     return WEECHAT_RC_OK
 
-def notify_priv(data, buffer, time, tags, display, hilight, prefix, msg):
-    if data and 'notify_private' not in tags:
+def notify_priv(workaround, buffer, time, tags, display, hilight, prefix, msg):
+    if workaround and 'notify_private' not in tags:
         # weechat 0.3.0 bug
         return WEECHAT_RC_OK
     #debug('  '.join((data, buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
@@ -497,10 +498,10 @@ def cmd_notify(data, buffer, args):
             elif cmd == 'notify':
                 send_notify(' '.join(args[1:]) or 'This is a test.', '#test')
             elif cmd == 'quit':
-                server.send_rpc('Shutting down notification daemon...')
+                say('Shutting down notification daemon...')
                 server.quit()
             elif cmd == 'restart':
-                server.send_rpc('Restarting notification daemon...')
+                say('Restarting notification daemon...')
                 server.restart()
             return WEECHAT_RC_OK
 
@@ -547,9 +548,9 @@ if __name__ == '__main__' and import_ok and \
 
     weechat.hook_command(SCRIPT_COMMAND, SCRIPT_DESC, '[test [text] | notify [text] | restart | quit ]', 
 """
-   test: sends a test notification, with 'text' if provided.
- notify: same as test, but the notification is send through the notification
-         queue.
+   test: sends a test notification, with 'text' if provided ('text' is sent raw).
+ notify: same as test, but the notification is sent through the notification
+         queue and after formatting.
 restart: forces remote daemon to restart.
    quit: forces remote daemon to shutdown, after this notifications won't be
          available and the daemon should be started again manually.
