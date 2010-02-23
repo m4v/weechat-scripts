@@ -19,14 +19,11 @@
 ###
 # Notifications for WeeChat
 #
-#   Notification script that supports libnotify or dbus for sending notifications. Uses a daemon
-#   that must be running in the receiving machine (remotelly or locally)
-#   It uses xmlrpc protocol, so if using the script remotelly, the port used by the daemon must be
-#   open and not blocked by a firewall.
+#   Notification script that uses libnotify or dbus, supports WeeChat inside screen.
+#   Uses a xmlrpc daemon that must be running in the receiving machine (remotely or locally)
 #
 #   The daemon can be setup in several ways, see inotify-daemon --help
-#
-#   Download the daemon from 'http://github.com/m4v/inotify-daemon/raw/stable/inotify-daemon'
+#   Download it from 'http://github.com/m4v/inotify-daemon/raw/stable/inotify-daemon'
 #
 #   Commands:
 #   * /inotify
@@ -91,10 +88,11 @@
 #   replace fnmatch by re (?)
 #   fix notify actions
 #   add commands for configure ignores
+#   add more notifications methods (?)
 #
 #
 #   History:
-#   2010-02-22
+#   2010-02-24
 #   version 0.1: release!
 #
 ###
@@ -103,7 +101,7 @@ SCRIPT_NAME    = "inotify"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
 SCRIPT_VERSION = "0.1"
 SCRIPT_LICENSE = "GPL3"
-SCRIPT_DESC    = "Notification system, supports dbus or libnotify."
+SCRIPT_DESC    = "Notifications for WeeChat."
 SCRIPT_COMMAND = "inotify"
 
 DAEMON_URL = 'http://github.com/m4v/inotify-daemon/raw/stable/inotify-daemon'
@@ -231,7 +229,7 @@ class Ignores(object):
 class Server(object):
     def catch_exceptions(f):
         """
-        This decorator is for catch exceptions in methods that comunicate with the daemon."""
+        This decorator is for catch exceptions in methods that communicate with the daemon."""
         def protected_method(self, *args):
             try:
                 return f(self, *args)
@@ -244,11 +242,11 @@ class Server(object):
                 self._error_connect()
             except socket.timeout, e:
                 self._error('Timeout while sending to our daemon.')
-                if self.error_count < 3: # don't requeue after 3 errors
+                if self.error_count < 3: # don't re-queue after 3 errors
                     return 'retry'
             except:
                 # catch all exception
-                self._error("An error ocurred, but I'm not sure what could it be...")
+                self._error("An error occurred, but I'm not sure what could it be...")
         return protected_method
 
     def __init__(self):
@@ -309,7 +307,7 @@ class Server(object):
         if version != DAEMON_VERSION:
             error('Incorrect daemon version, should be %s, but got %s' %(DAEMON_VERSION,
                 version))
-            error('Download the lastest %s from %s' %(DAEMON, DAEMON_URL))
+            error('Download the latest %s from %s' %(DAEMON, DAEMON_URL))
 
     def _error(self, s, **kwargs):
         if self.error_count < max_error_count: # stop sending error msg after max reached
@@ -334,7 +332,7 @@ class Server(object):
             #debug('Success: %s' % rt)
         elif rt.startswith('warning:'):
             self._error(rt[8:])
-            if self.error_count < 10: # don't requeue after 10 errors
+            if self.error_count < 10: # don't re-queue after 10 errors
                 #debug('repeating queue')
                 # returning 'retry' will cause flush() to try to send msgs again later
                 return 'retry'
@@ -557,18 +555,20 @@ if __name__ == '__main__' and import_ok and \
     server = Server()
 
     weechat.hook_command(SCRIPT_COMMAND, SCRIPT_DESC, '[test [text] | notify [text] | restart | quit ]', 
-"""
-   test: sends a test notification, with 'text' if provided ('text' is sent raw).
- notify: same as test, but the notification is sent through the notification
-         queue and after formatting.
+"""\
+   test: sends a test notification, with 'text' if provided ('text'
+         is sent raw).
+ notify: same as test, but the notification is sent through the
+         notification queue and after formatting.
 restart: forces remote daemon to restart.
-   quit: forces remote daemon to shutdown, after this notifications won't be
-         available and the daemon should be started again manually.
+   quit: forces remote daemon to shutdown, after this notifications
+         won't be available and the daemon should be started again
+         manually.
 
 Setting notification ignores:
-  It's possible to filter notification by channel, by nick or by message content,
-  with the config options 'ignore_channel', 'ignore_nick' and 'ignore_text' in
-  plugins.var.python.%(script)s
+  It's possible to filter notification by channel, by nick or by
+  message content, with the config options ignore_channel, 
+  ignore_nick and ignore_text in plugins.var.python.%(script)s
   Each config option accepts a comma separated list of patterns.
   Wildcards '*', '?' and char groups [..] can be used.
   An ignore exception can be added by prefixing '!' in the pattern.
@@ -577,14 +577,15 @@ Examples:
   Setting 'ignore_nick' to 'troll,b[0o]t':
    will ignore notifications from troll, bot and b0t.
   Setting 'ignore_channel' to '*ubuntu*,!#ubuntu-offtopic':
-   will ignore notifications from any channel with the word 'ubuntu' except from
-   #ubuntu-offtopic.
+   will ignore notifications from any channel with the word 'ubuntu'
+   except from #ubuntu-offtopic.
 
 Daemon:
-  %(script)s script needs to connect to an external daemon for send notifications,
-  which can be used in localhost or remotelly. Download the daemon from:
+  %(script)s script needs to connect to an external daemon for send
+  notifications, which can be used in localhost or remotely.
+  Download the daemon from:
   %(daemon_url)s
-  and check its help with ./%(daemon)s --help
+  and check its help with ./%(daemon)s --help.
   See also help in script file.
 """ %dict(script=SCRIPT_NAME, daemon_url=DAEMON_URL, daemon=DAEMON)
             ,'test|notify|restart|quit', 'cmd_notify', '')
