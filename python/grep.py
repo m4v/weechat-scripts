@@ -882,13 +882,8 @@ def show_matching_lines():
             global hook_file_grep, script_path
             timeout = 1000*60*10 # 10 min
 
-            def shell_escapes(s):
-                # nicks might have ` characters, must be escaped
-                if '`' in s:
-                    s = s.replace('`', '\`')
-                return "'%s'" %s
-
-            files_string = ', '.join(map(shell_escapes, search_in_files))
+            quotify = lambda s: '"%s"' %s
+            files_string = ', '.join(map(quotify, search_in_files))
 
             cmd = grep_proccess_cmd %dict(logs=files_string, head=head, pattern=pattern, tail=tail,
                     hilight=hilight, after_context=after_context, before_context=before_context,
@@ -905,18 +900,18 @@ def show_matching_lines():
         buffer_update()
 
 # defined here for commodity
-grep_proccess_cmd = """python -c "
+grep_proccess_cmd = """python -c '
 import sys, cPickle, cStringIO
-sys.path.append('%(script_path)s') # add WeeChat script dir so we can import grep
+sys.path.append("%(script_path)s") # add WeeChat script dir so we can import grep
 from grep import make_regexp, grep_file, strip_home
 logs = (%(logs)s, )
 try:
-    regexp = make_regexp('%(pattern)s', %(matchcase)s)
+    regexp = make_regexp("%(pattern)s", %(matchcase)s)
     d = {}
     for log in logs:
-        log_name = strip_home(log, '%(home_dir)s')
+        log_name = strip_home(log, "%(home_dir)s")
         lines = grep_file(log, %(head)s, %(tail)s, %(after_context)s, %(before_context)s,
-        %(count)s, regexp, '%(hilight)s', %(exact)s, %(invert)s)
+        %(count)s, regexp, "%(hilight)s", %(exact)s, %(invert)s)
         d[log_name] = lines
     s_out = cStringIO.StringIO()
     cPickle.dump(d, s_out, 0)
@@ -930,7 +925,7 @@ try:
     fd.write(s_out.getvalue())
     fd.close()
 except Exception, e:
-    print >> sys.stderr, e"
+    print >> sys.stderr, e'
 """
 
 grep_stdout = grep_stderr = ''
