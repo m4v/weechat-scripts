@@ -1637,7 +1637,7 @@ Python regular expression syntax:
 """,
             # completion template
             "buffer %(buffers_names) %(grep_arguments)|%*"
-            "||log %(grep_log_files)|%(filename) %(grep_arguments)|%*"
+            "||log %(grep_log_files) %(grep_arguments)|%*"
             "||stop"
             "||%(grep_arguments)|%*",
             'cmd_grep' ,'')
