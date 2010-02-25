@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2009 by Nils Görs <weechatter@arcor.de>
+# Copyright (c) 2010 by Nils Görs <weechatter@arcor.de>
 #
 # just a simple buddylist using the nicklist from channels you are in.
 # it also works if nicklist is hidden.
@@ -17,66 +17,91 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
-# settings:
-# /set plugins.var.perl.buddylist.color.offline
-# /set plugins.var.perl.buddylist.color.online
-# /set plugins.var.perl.buddylist.color.away
-# /set plugins.var.perl.buddylist.color.default
-# /set plugins.var.perl.buddylist.sort ("default" = sorted by nickname or "status" = sorted by status (online, away, offline)
-#
+# v0.8: - major changes - (buddylist file changed!!!)
+#	buddylist uses now server / nick structure
+#       change entries in buddylist to : servername,nickname (e.g.: freenode,nils_2)
+#	or add your buddies again with the add function.
+# v0.7: nick change will be recognize
+# v0.6: nick wasn't set to offline, if buddy leave channel
+# v0.5: server information will be used now instead of nicklist
+#	reduction of cpu load (reported by ArcAngel and tigrmesh)
+#	bar will be removed if you unload the script. (requested by bazerka)
+#	help page will be displayed when you call buddylist without arguments
 # v0.4: added option "sort"
 # v0.3: remove spaces for indenting when bar position is top/bottom
 #     : hook_config when settings changed.
-# v0.2: removed the work-around for crash when searching nick in buffer without nicklist (function nicklist_search_nick)  
+# v0.2: work-around for crash when searching nick in buffer without nicklist (function nicklist_search_nick) removed 
 # v0.1: initial release
-
+#
+# TODO: waiting for redirection ;-)
 
 use strict;
-my $prgname	= "buddylist";
-my $version	= "0.4";
-my $description	= "A simple buddylist to show if your buddies are online/away/offline.";
 
-my $buffer	= "";
-my $bar_name	= "buddylist";
-my $default_buddylist = "buddylist.txt";
-my %buddies = ();					# to store the buddylist
+my $prgname		= "buddylist";
+my $version		= "0.8";
+my $description		= "Simple buddylist that shows the status of your buddies.";
 
+my $buffer		= "";
+my $default_buddylist	= "buddylist.txt";
+my %buddies		= ();					# to store the buddylist with status for each nick
 my %buddylist_level = (0 => "online", 1 => "away", 2 => "offline");
 my %default_color_buddylist = ("online" => "yellow",
                              "away"    => "cyan",
                              "offline"    => "blue");
-my $color_default = "lightcyan";
-my $position = "top";
+my $color_default	= "lightcyan";
+my $position		= "top";
+
+my %nick_structure	= ();					# to store servername, nickname and status
+#$VAR1 = {
+#	'freenode' =>	{
+#				'nils_2' => 'online',
+#				'nick2' => 'offline',
+#				'nick3' => 'online'
+#			},                       
+#	'fu-berlin' =>	{
+#				'nils_2' => 'away'    
+#			}
+#	};
 
 # first function called by a WeeChat-script.
 weechat::register($prgname, "Nils Görs <weechatter\@arcor.de>", $version,
-                  "GPL3", $description, "", "");
+                  "GPL3", $description, "shutdown", "");
+
 init();
 buddylist_read();
 
-weechat::bar_item_new($bar_name, "build_buffer", "");
+weechat::bar_item_new($prgname, "build_buddylist", "");
+weechat::bar_new($prgname, "0", "0", "root", "", "left", "horizontal",
+					    "vertical", "0", "0", "default", "default", "default", "1",
+					    $prgname);
+weechat::command("", "/bar show " . $prgname);
 
-weechat::bar_new($bar_name, "0", "0", "root", "", "left", "horizontal",
-                 "vertical", "0", "0", "default", "default", "default", "1",
-                 $bar_name);
-
-#weechat::hook_signal("*,irc_in2_366", "check_nick", "");		# 366 waits, till nicklist is fully readed (join does not work!)
-#weechat::hook_signal("*,irc_in2_part", "check_nick", "");
-weechat::hook_signal("nicklist_changed", "check_nick", "");
-weechat::hook_config("*.$prgname.*", "config_signal", "");
+weechat::hook_signal("*,irc_in2_352", "from_hook_who","");			# RFC command with use,channel,status etc..
+weechat::hook_signal("*,irc_in_part", "remove_nick", "");
+weechat::hook_signal("*,irc_in_quit", "remove_nick", "");
+weechat::hook_signal("*,irc_in_nick", "nick_changed", "");
+weechat::hook_config("*.$prgname.*", "config_signal", "");			# buddylist settings changed?
 
 weechat::hook_command($prgname, $description,
 
 	"<add>[nick_1 [... nick_n]] | <del>[nick_1 [... nick_n]]", 
 
 	"<add> [nick(s)] add nick(s) to the buddylist\n".
-	"<del> [nick(s)] delete nick(s) from the buffylist\n".
+	"<del> [nick(s)] delete nick(s) from the buddylist\n".
 	"\n".
 	"Options:\n".
-	"'buddylist'    : path/file-name to store your buddies.\n".
-	"'color.offline': color for offline buddies.\n".
-	"'color.online' : color for online buddies.\n".
-	"'color.away'   : color for online buddies that are away.\n".
+	"'plugins.var.perl.buddylist.buddylist'    : path/file-name to store your buddies.\n".
+	"'plugins.var.perl.buddylist.color.away'   : colour for away buddies.\n".
+	"'plugins.var.perl.buddylist.color.offline': colour for offline buddies.\n".
+	"'plugins.var.perl.buddylist.color.online' : colour for online buddies.\n".
+	"'plugins.var.perl.buddylist.sort'         : sort method for buddylist.\n".
+	"                                  default : $prgname will be sort by nickname\n".
+	"                                  status  : $prgname will be sort by status (online, away, offline)\n\n".
+	"If $prgname won't refresh, check the following WeeChat options:\n".
+	"'irc.network.away_check'          : interval between two checks, in minutes. (has to be >= 1 (default:0)).\n".
+	"'irc.network.away_check_max_nicks': channels with high number of nicks will not be checked (default: 25).\n".
+	"\n".
+	"buddyname has to be written 'case sensitive' (it's recommended to use nick-completion).\n".
 	"\n".
 	"Examples:\n".
 	"Add buddy to buddylist:\n".
@@ -85,146 +110,213 @@ weechat::hook_command($prgname, $description,
 	"/$prgname del buddyname\n",
 	"add|del", "settings", "");
 
-check_nick();
-
 return weechat::WEECHAT_RC_OK;
+
 
 sub config_signal{
-  weechat::bar_item_update($bar_name);
+  weechat::bar_item_update($prgname);
   return weechat::WEECHAT_RC_OK;
 }
-
 my $str = "";
-sub build_buffer{
-$str = "";
-    # get bar position (left/right/top/bottom) and sort (default/status)
-    my $option = weechat::config_get("weechat.bar.$prgname.position");
-    if ($option ne ""){
-        $position = weechat::config_string($option);
-    }
-    my $sort = weechat::config_get_plugin("sort");
+sub build_buddylist{
+	$str = "";
+# get bar position (left/right/top/bottom) and sort (default/status)
+	my $option = weechat::config_get("weechat.bar.$prgname.position");
+	if ($option ne ""){
+		$position = weechat::config_string($option);
+	}
+	my $sort = weechat::config_get_plugin("sort");
 
-    if ($sort eq "status"){							# use sort option "status"
-      foreach (sort {$buddies{$a} <=> $buddies{$b}} (sort keys(%buddies))){	# sorted by value
-	createoutput();
-      }
-    } else {									# use "default" for sort
-      foreach ( sort { "\L$a" cmp "\L$b" } keys %buddies ){
-	createoutput();
-      }
-    }
-    return $str;
+	if ($sort eq "status"){							# use sort option "status"
+	  foreach my $s ( sort keys %nick_structure ) {				# sortiert die Server alphabetisch
+	    my $color = weechat::config_get_plugin("color.default");
+	    my $visual = " ";							# placeholder after servername
+	    my $cr = "\n";
+	    $visual  = $cr if (($position eq "left") || ($position eq "right"));
+	    $color = "default" if ($color eq "");
+	    $color = weechat::config_get_plugin("color.server");
+	    $str .= weechat::color($color) . $s . ":" . $visual;		# add servername ($s ;) to buddylist
+# sorted by value first and nick case insensitiv later on
+	  foreach my $n (sort { $nick_structure{$s}{$a} cmp $nick_structure{$s}{$b}} (sort {uc($a) cmp uc($b)} (sort keys(%{$nick_structure{$s}})))){
+			createoutput($s,$n);
+		}}
+	  } else {								# use "default" for sort by name only
+	  foreach my $s ( sort keys %nick_structure ) {				# sortiert die Server alphabetisch
+	    my $color = weechat::config_get_plugin("color.default");
+	    my $visual = " ";							# placeholder after servername
+	    my $cr = "\n";
+	    $visual  = $cr if (($position eq "left") || ($position eq "right"));
+	    $color = "default" if ($color eq "");
+	    $color = weechat::config_get_plugin("color.server");
+	    $str .= weechat::color($color) . $s . ":" . $visual;		# add servername ($s ;) to buddylist
+
+	      foreach my $n (sort {uc($a) cmp uc($b)} (sort keys(%{$nick_structure{$s}} ))){ # sort by name case insensitiv
+			createoutput($s,$n);
+	      }
+		}
+	  }
+	return $str;
 }
 sub createoutput{
-    my $cr = "\n";
-        my $color = weechat::config_get_plugin("color.default");
-        $color = "default" if ($color eq "");
-	    my $status = $buddies{$_};						# get buddy status
-            $color = weechat::config_get_plugin("color.".$buddylist_level{$status});
+	my ($server,$nick) = ($_[0],$_[1]);
+	my $cr = "\n";
+	my $color = weechat::config_get_plugin("color.default");
+	$color = "default" if ($color eq "");
+	my $status = $nick_structure{$server}{$nick};				# get buddy status
+		$color = weechat::config_get_plugin("color.".$buddylist_level{$status});
 ### visual settings for left, right or top and bottom
-            my $visual = " ";
-            $visual  = $cr if (($position eq "left") || ($position eq "right"));
-       $str .= weechat::color($color). "$_" . $visual;
-}
-
-sub check_nick{
-my $nick_name = "";
-my $nick_color = "";
-my $nicktest = ();
-   my $bufferlist = weechat::infolist_get("buffer","","");			# get list of buffers
-
-  foreach ( keys %buddies ){
-  $buddies{$_} = 2;								# set buddy to offline
-
-      while (weechat::infolist_next($bufferlist)){
-      $buffer = weechat::infolist_pointer($bufferlist,"pointer");		# get buffer pointer
-      my $name = weechat::infolist_string($bufferlist,"plugin_name");		# get name of plugin
-
-	if ($name eq "irc" and $buffer ne 0){					# irc buffer and not 0?
-	  my $found = 0;
-	  $found = weechat::nicklist_search_nick($buffer,"",$_);		# is nick in nicklist? 0 if nick not found
-	    unless ($found eq ""){
-		$buddies{$_} = 0;						# buddy is online
-		$nicktest = weechat::infolist_get("nicklist",$buffer,"");	# get list of nick
-
-		while (weechat::infolist_next($nicktest)){
-		  $nick_name = weechat::infolist_string($nicktest,"name");	# get nick
-		  $nick_color = weechat::infolist_string($nicktest,"color");	# get color for nick.
-		  $buddies{$_} = 1 if ($_ eq $nick_name and $nick_color eq "weechat.color.nicklist_away");#buddy is away.
-		}
-		weechat::infolist_free($nicktest);
-	    }
+	my $visual = " ";							# placeholder
+	my $mover = "";								# move it to right
+	if (($position eq "left") || ($position eq "right")){
+	  $visual  = $cr;
+	  $mover  = "  ";
 	}
-      }
-    }
-  weechat::infolist_free($bufferlist);
-  weechat::bar_item_update($bar_name);
-return weechat::WEECHAT_RC_OK;
+	$str .= weechat::color($color) . $mover . "$nick" . $visual;
+ }
+
+# buddy changed his nick
+sub nick_changed{
+    my ($blank, $servername, $args) = @_;
+	my ($server) = split(/,/, $servername);					# get name from server
+	$args =~ /\:(.*)\!(.*)\:(.*)/;
+	my $old_nickname = $1;
+	my $new_nickname = $3;
+	if (exists $nick_structure{$server}{$old_nickname}){			# nick in buddylist?
+	  my $status = $nick_structure{$server}{$old_nickname};			# get old buddy status
+	    $nick_structure{$server}{$new_nickname} = $status;			# add changed buddyname with old status
+	    delete $nick_structure{$server}{$old_nickname};			# delete old buddyname
+	  weechat::bar_item_update($prgname);
+	}
+}
+# buddy leaves channel
+sub remove_nick{
+#($nick,$name,$ip,$action,$channel) = ($args =~ /\:(.*)\!n=(.*)@(.*?)\s(.*)\s(.*)/; # maybe for future use
+    my ( $data, $servername, $args ) = @_;
+	my ($server) = split(/,/, $servername);					# get name from server
+	my ($nickname) = ($args =~ /\:(.*)\!/);
+	if (exists $nick_structure{$server}{$nickname}){			# nick in buddylist?
+		$nick_structure{$server}{$nickname} = 2;			# yes. but he went offline
+		weechat::bar_item_update($prgname);
+	}
+}
+# get information from who
+sub from_hook_who{
+    my ( $data, $servername, $args ) = @_;
+
+	my @words= split(" ",$args);						# [7] = nick
+	($servername) = split(/,/, $servername);				# get name from server
+	my $nickname = $words[7];
+	if (exists $nick_structure{$servername}{$nickname}){			# nick in buddylist?
+		my $status = 0;
+		$status = 1 if (substr($words[8],0,1) eq "G");# buddy is away
+		add_to_nicktable($servername, $nickname, $status);
+		weechat::bar_item_update($prgname);
+	}
+}
+# add buddy to my structure
+sub add_to_nicktable{
+    my ($servername, $nickname, $status) = @_;
+	$nick_structure{$servername}{$nickname} = $status;			# create structure
 }
 
 sub settings{
-	my ($getargs) = ($_[2]);
-	my ( $cmd, $args ) = ( $getargs =~ /(.*?)\s+(.*)/ );		# get parameters and cut cmd from nicks
-	$cmd = $getargs unless $cmd;
+my ($getargs) = ($_[2]);
+	my $servername = current_buffer_test();
+	if ($servername eq "0") {
+	  weechat::print("",weechat::prefix("error")."$prgname: You can't add nor del buddies in core buffer.");
+	return weechat::WEECHAT_RC_OK;
+	}
 
-    if (defined $args) {						# buddy name choosed?
-       foreach ( split( / +/, $args ) ) {
-	  if ($cmd eq "add"){
-	      $buddies{$_} = 2;
-	      buddylist_save();
-	  }
-	  if ($cmd eq "del" and exists $buddies{$_}){
-	      delete $buddies{$_};
-	      buddylist_save();
-	  }
-       }
-    }else{
-        weechat::print("", "$prgname : Please tell me the buddy name.");
-    }
-check_nick();
-return weechat::WEECHAT_RC_OK;
+	my ( $cmd, $args ) = ( $getargs =~ /(.*?)\s+(.*)/ );			# get parameters and cut cmd from nicks
+		$cmd = $getargs unless $cmd;
+
+	if (defined $args) {							# buddy choosed?
+		foreach ( split( / +/, $args ) ) {
+			if ($cmd eq "add"){
+				$nick_structure{$servername}{$_} = 2;
+				buddylist_save();
+			}
+			if ($cmd eq "del" and exists $nick_structure{$servername}{$_}){
+				delete $nick_structure{$servername}{$_};
+# delete servername from structure, if last nick from server was deleted
+				delete $nick_structure{$servername} if (keys (%{$nick_structure{$servername}}) == 0);
+				buddylist_save();
+			}
+		}
+	}else{
+		weechat::command("", "/help $prgname");				# no arguments given. Print help
+	}
+	weechat::bar_item_update($prgname);
+	return weechat::WEECHAT_RC_OK;
 }
-
+# check for buffer. add/del function can only be used in channels, not in core buffer
+sub current_buffer_test{
+  my $buffer_name = weechat::buffer_get_string(weechat::current_buffer(),"name");	# get current buffer name
+  if ($buffer_name =~ /\./){							# format?
+      my ($servername, $channelname) = split (/\./,$buffer_name);		# split
+      if ($servername eq "server"){						# user in server buffer?
+	return $channelname;							# yes
+	}
+      return $servername;							# user in channel buffer!
+      }
+return 0;									# in core buffer
+}
 ### read the buddylist
 sub buddylist_read {
-    my $buddylist = weechat::config_get_plugin("buddylist");
-    return unless -e $buddylist;
-    open (WL, "<", $buddylist) || DEBUG("$buddylist: $!");
+	my $buddylist = weechat::config_get_plugin("buddylist");
+	return unless -e $buddylist;
+	open (WL, "<", $buddylist) || DEBUG("$buddylist: $!");
 	while (<WL>) {
-		chomp;
-		$buddies{$_} = 2 if length $_;			# offline
+		chomp;								# kill LF
+        my ( $servername, $nickname ) = split /,/;				# servername,nickname
+	  if (not defined $nickname){
+	    close WL;
+	  weechat::print("",weechat::prefix("error")."$prgname: $buddylist is not valid.");
+	    return;
+	  }
+		$nick_structure{$servername}{$nickname} = 2  if length $_;	# offline
 	}
 	close WL;
 }
 sub buddylist_save {
-    my $buddylist = weechat::config_get_plugin( "buddylist" );
-    open (WL, ">", $buddylist) || DEBUG("write buddylist: $!");
-    print WL "$_\n" foreach ( sort { "\L$a" cmp "\L$b" } keys %buddies );
-    close WL;
+	my $buddylist = weechat::config_get_plugin( "buddylist" );
+	open (WL, ">", $buddylist) || DEBUG("write buddylist: $!");
+	  foreach my $s ( sort keys %nick_structure ) {				# sortiert die Server alphabetisch
+	      foreach my $n ( sort keys %{$nick_structure{$s}} ) {		# sortiert die Nicks alphabetisch
+		print WL "$s,$n\n";
+	      }
+	  }
+	close WL;
 }
-
-sub DEBUG {weechat::print('', "***\t" . $_[0]);}
-
 # init the settings
 sub init{
-    if ( weechat::config_get_plugin("buddylist") eq '' ) {
-        my $wd = weechat::info_get( "weechat_dir", "" );
-        $wd =~ s/\/$//;
-        weechat::config_set_plugin("buddylist", $wd . "/" . $default_buddylist );
-    }
-if (weechat::config_get_plugin("color.default") eq "")
-{
-    weechat::config_set_plugin("color.default", "default");
-}
-if (weechat::config_get_plugin("sort") eq "")
-{
-    weechat::config_set_plugin("sort", "default");
-}
+	if ( weechat::config_get_plugin("buddylist") eq '' ) {
+		my $wd = weechat::info_get( "weechat_dir", "" );
+		$wd =~ s/\/$//;
+		weechat::config_set_plugin("buddylist", $wd . "/" . $default_buddylist );
+	}
+	if (weechat::config_get_plugin("color.default") eq "")
+	{
+		weechat::config_set_plugin("color.default", "default");
+	}
+	if (weechat::config_get_plugin("color.server") eq "")
+	{
+		weechat::config_set_plugin("color.server", "default");			# default = "real white"
+	}
+	if (weechat::config_get_plugin("sort") eq "")
+	{
+		weechat::config_set_plugin("sort", "default");
+	}
 # get color settings.
-  foreach my $level (values %buddylist_level){
-    if (weechat::config_get_plugin("color.".$level) eq ""){
-        weechat::config_set_plugin("color.".$level,
-                                   $default_color_buddylist{$level});
-    }
-  }
+	foreach my $level (values %buddylist_level){
+		if (weechat::config_get_plugin("color.".$level) eq ""){
+			weechat::config_set_plugin("color.".$level,
+					$default_color_buddylist{$level});
+		}
+	}
 }
+# hide bar when buddylist was closed
+sub shutdown{
+	weechat::command("", "/bar hide " . $prgname);
+}
+sub DEBUG {weechat::print('', "***\t" . $_[0]);}
