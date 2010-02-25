@@ -284,7 +284,11 @@ class linesList(list):
 
 ### Misc functions ###
 now = time.time
-get_size = lambda x: stat(x).st_size
+def get_size(f):
+    try:
+        return stat(f).st_size
+    except OSError:
+        return 0
 
 sizeDict = {0:'b', 1:'KiB', 2:'MiB', 3:'GiB', 4:'TiB'}
 def human_readable_size(size):
@@ -631,7 +635,11 @@ def grep_file(file, head, tail, after_context, before_context, count, regexp, hi
     else:
         check = lambda s: check_string(s, regexp, hilight, exact)
     
-    file_object = open(file, 'r')
+    try:
+        file_object = open(file, 'r')
+    except IOError:
+        # file doesn't exist
+        return lines
     if tail or before_context:
         # for these options, I need to seek in the file, but is slower and uses a good deal of
         # memory if the log is too big, so we do this *only* for these options.
