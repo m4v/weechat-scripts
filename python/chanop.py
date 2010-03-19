@@ -1248,6 +1248,8 @@ def chanop_init():
             # get server data
             weechat.command(buffer, '/quote version')
             # FIXME should add some code that hides 005 messages
+            return # XXX Fetching bans on script load can fail if we didn't connect yet, so disable
+                   # it for now
             config = 'channels.%s' %server
             channels = get_config_list(config)
             for channel in channels:
@@ -1327,7 +1329,6 @@ def banlist_367_cb(data, modifier, modifier_data, string):
     mode = hook_banlist_queue[0][2]
     modemaskDict[mode].add(server, channel, banmask, hostmask=None, operator=op, date=date)
     return ''
-
 
 def banlist_368_cb(buffer, modifier, modifier_data, string):
     """Ban listing over."""
