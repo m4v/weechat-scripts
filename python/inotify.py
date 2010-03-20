@@ -85,12 +85,16 @@
 #
 #
 #   TODO
-#   replace fnmatch by re (?)
 #   add commands for configure ignores
 #   add more notifications methods (?)
 #
 #
 #   History:
+#   2010-03-10:
+#   version 0.1.1: fixes
+#   * improved shell escapes when using hook_process
+#   * fix ACTION messages
+#
 #   2010-02-24
 #   version 0.1: release!
 #
@@ -98,7 +102,7 @@
 
 SCRIPT_NAME    = "inotify"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.1"
+SCRIPT_VERSION = "0.1.1"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Notifications for WeeChat."
 SCRIPT_COMMAND = "inotify"
