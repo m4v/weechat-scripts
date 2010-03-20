@@ -1288,7 +1288,7 @@ def fetch_ban_list(buffer, channel=None, modes='bq'):
     """Fetches hostmasks for a given channel mode and channel."""
 
     global hook_banlist
-    debug('fetch bans called %s %s' %(buffer, channel))
+    debug('fetch bans called b:%s c:%s m:%s' %(buffer, channel, modes))
     if not channel:
         channel = weechat.buffer_get_string(buffer, 'localvar_channel')
     server = weechat.buffer_get_string(buffer, 'localvar_server')
@@ -1348,11 +1348,21 @@ def banlist_368_cb(buffer, modifier, modifier_data, string):
         buffer, completion  = waiting_for_completion
         list = masklist.list(buffer)
         input = weechat.buffer_get_string(buffer, 'input')
-        input = input[:input.find(' fetching banmask')] # remove this bit
+        input = input[:input.find(' fetching banmasks')] # remove this bit
         if list:
-            weechat.buffer_set(buffer, 'input', '%s %s' %(input, list.next()))
-            for ban in list:
-                weechat.hook_completion_list_add(completion, ban, 0, weechat.WEECHAT_LIST_POS_SORT)
+            global banlist_args
+            if banlist_args:
+                matched_masks = []
+                for mask in list:
+                    if hostmask_pattern_match(banlist_args, mask):
+                        matched_masks.append(mask)
+                if len(matched_masks):
+                    weechat.buffer_set(buffer, 'input', '%s %s ' %(input, ' '.join(matched_masks)))
+                banlist_args = ''
+            else:
+                weechat.buffer_set(buffer, 'input', '%s ' %input)
+                for mask in list:
+                    weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_SORT)
         else:
             weechat.buffer_set(buffer, 'input', '%s nothing.' %input)
         waiting_for_completion = None
@@ -1382,15 +1392,19 @@ def invert_kickban_order_conf_cb(data, config, value):
 
 
 ### completion ###
-global waiting_for_completion
+global waiting_for_completion, banlist_args
 waiting_for_completion = None
+banlist_args = ''
 def banmask_completion(data, completion_item, buffer, completion):
     mode = data
     masklist = modemaskDict[mode]
     masks = masklist.list(buffer)
     if not masks:
-        global waiting_for_completion, hook_banlist
-        input = weechat.buffer_get_string(buffer, 'input').strip()
+        global waiting_for_completion, hook_banlist, banlist_args
+        input = weechat.buffer_get_string(buffer, 'input')
+        if input[-1] != ' ':
+            input, _, banlist_args = input.rpartition(' ')
+        input = input.strip()
         fetch_ban_list(buffer, modes=mode)
         # check if it's fetching a banlist or nothing (due to fetching too soon)
         if hook_banlist:
@@ -1405,14 +1419,15 @@ def banmask_completion(data, completion_item, buffer, completion):
             # find banmasks that matches pattern and put it in the input
             input, _, pattern = input.rpartition(' ')
             matched_masks = []
+            masks = list(masks) # since is a iterator and I need to loop it more than once
             for mask in masks:
                 if hostmask_pattern_match(pattern, mask):
                     matched_masks.append(mask)
             if len(matched_masks):
-                weechat.buffer_set(buffer, 'input', '%s %s' %(input, ' '.join(matched_masks)))
+                weechat.buffer_set(buffer, 'input', '%s %s ' %(input, ' '.join(matched_masks)))
         for mask in masks:
             weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_SORT)
-    fetch_ban_list(buffer)
+        fetch_ban_list(buffer, modes=mode)
     return WEECHAT_RC_OK
 
 
