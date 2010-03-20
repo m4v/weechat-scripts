@@ -1400,9 +1400,19 @@ def banmask_completion(data, completion_item, buffer, completion):
             weechat.buffer_set(buffer, 'input', '%s nothing.' %input)
     else:
         debug('banmask completion: %s' %(masks, ))
+        input = weechat.buffer_get_string(buffer, 'input')
+        if input[-1] != ' ':
+            # find banmasks that matches pattern and put it in the input
+            input, _, pattern = input.rpartition(' ')
+            matched_masks = []
+            for mask in masks:
+                if hostmask_pattern_match(pattern, mask):
+                    matched_masks.append(mask)
+            if len(matched_masks):
+                weechat.buffer_set(buffer, 'input', '%s %s' %(input, ' '.join(matched_masks)))
         for mask in masks:
             weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_SORT)
-#    fetch_ban_list(buffer)
+    fetch_ban_list(buffer)
     return WEECHAT_RC_OK
 
 
