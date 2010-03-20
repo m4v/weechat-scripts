@@ -20,7 +20,7 @@
 #
 # History:
 # 2010-02-25, m4v <lambdae2@gmail.com>:
-#     v1.6: add option for hide empty prefixes
+#     v1.6: add option to hide empty prefixes
 # 2010-02-12, FlashCode <flashcode@flashtux.org>:
 #     v1.5: add optional nick prefix for buffers like IRC channels
 # 2009-09-30, FlashCode <flashcode@flashtux.org>:
@@ -253,7 +253,7 @@ sub build_buffers
                             && (weechat::infolist_string($infolist_nick, "name") eq $nickname))
                         {
                             my $prefix = weechat::infolist_string($infolist_nick, "prefix");
-                            if ($prefix ne " " or $options{"show_prefix_empty"} eq "on")
+                            if (($prefix ne " ") or ($options{"show_prefix_empty"} eq "on"))
                             {
                                 $str .= weechat::color(weechat::config_color(
                                                            weechat::config_get(
