@@ -1240,6 +1240,9 @@ class Mode(CommandNeedsOp):
 
 
 def chanop_init():
+    # XXX 005 messages annoys me, hardcode it for now
+    isupport['freenode'] = { 'CHANMODES': 'eIbq,k,flj,CFLMPQScgimnprstz', 'MODES':'4' }
+    return
     servers = Infolist('irc_server')
     while servers.next():
         server = servers['name']
