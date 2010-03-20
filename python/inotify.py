@@ -341,8 +341,18 @@ class Server(object):
 
     def _send_rpc_process(self, *args):
         def quoted(s):
+            """
+            Is important to escape quotes properly so hook_process doesn't break or sends stuff
+            outside single quotes."""
+            if '\\' in s:
+                # escape any backslashes
+                s = s.replace('\\', '\\\\')
             if '"' in s:
                 s = s.replace('"', '\\"')
+            if "'" in s:
+                # I must escape single quotes with \'\\\'\' because they will be within single
+                # quotes in the command string. Awesome.
+                s = s.replace("'", "'\\''")
             return  '"""%s"""' %s
 
         args = ', '.join(map(quoted, args))
@@ -372,6 +382,8 @@ def msg_flush(*args):
     server.flush()
     return WEECHAT_RC_OK
 
+# command MUST be within single quotes, otherwise the shell would try to expand stuff and it might
+# be real nasty, somebody could run arbitrary code with a highlight.
 rpc_process_cmd = """
 python -c '
 import xmlrpclib
