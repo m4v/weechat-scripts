@@ -417,7 +417,7 @@ def color_tag(nick):
     #generic_nick = nick.strip('_`').lower()
     id = (sum(map(ord, nick))%n)
     #debug('%s:%s' %(nick, id))
-    return '<font color=%s>%s</font>' %(color_table[id], nick)
+    return '<font color=%s>&lt;%s&gt;</font>' %(color_table[id], nick)
 
 def format(s, nick=''):
     if '<' in s:
@@ -430,8 +430,7 @@ def format(s, nick=''):
         s = s.replace('\n', '<br/>')
     if nick:
         if get_config_boolean('color_nick'):
-            nick_color = color_tag(nick)
-            nick = nick_color.replace(nick, '&lt;%s&gt;' %nick) #put the <> inside the color tag
+            nick = color_tag(nick)
         else:
             nick = '&lt;%s&gt;' %nick
         s = '<b>%s</b> %s' %(nick, s)
