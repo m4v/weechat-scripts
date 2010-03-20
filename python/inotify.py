@@ -86,7 +86,6 @@
 #
 #   TODO
 #   replace fnmatch by re (?)
-#   fix notify actions
 #   add commands for configure ignores
 #   add more notifications methods (?)
 #
@@ -480,10 +479,13 @@ def notify_msg(workaround, buffer, time, tags, display, hilight, prefix, msg):
     if workaround and 'notify_message' not in tags:
         # weechat 0.3.0 bug
         return WEECHAT_RC_OK
-    #debug('  '.join((data, buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
+    #debug('  '.join((buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
     #        prefix='MESSAGE')
     if hilight == '1' and display == '1':
         channel = weechat.buffer_get_string(buffer, 'short_name')
+        if 'irc_action' in tags:
+            prefix, _, msg = msg.partition(' ')
+            msg = '%s %s' %(config_string('weechat.look.prefix_action'), msg)
         prefix = get_nick(prefix)
         if prefix not in ignore_nick \
                 and channel not in ignore_channel \
@@ -497,8 +499,11 @@ def notify_priv(workaround, buffer, time, tags, display, hilight, prefix, msg):
     if workaround and 'notify_private' not in tags:
         # weechat 0.3.0 bug
         return WEECHAT_RC_OK
-    #debug('  '.join((data, buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
+    #debug('  '.join((buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
     #        prefix='PRIVATE')
+    if 'irc_action' in tags:
+        prefix, _, msg = msg.partition(' ')
+        msg = '%s %s' %(config_string('weechat.look.prefix_action'), msg)
     prefix = get_nick(prefix)
     if display == '1' \
             and prefix not in ignore_nick \
