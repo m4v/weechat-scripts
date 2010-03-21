@@ -1101,10 +1101,13 @@ class UnBan(Ban):
                 banmasks.append(arg)
             else:
                 hostmask = self.get_host(arg)
-                bans = self.search_bans(hostmask)
-                if bans:
-                    #debug('found %s' %(bans, ))
-                    banmasks.extend([ban.banmask for ban in bans])
+                if hostmask:
+                    bans = self.search_bans(hostmask)
+                    if bans:
+                        #debug('found %s' %(bans, ))
+                        banmasks.extend([ban.banmask for ban in bans])
+                else:
+                    banmasks.append(arg)
         if banmasks:
             self.remove_ban(*banmasks)
             self.unban(*banmasks)
