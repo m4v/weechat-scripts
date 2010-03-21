@@ -1104,7 +1104,7 @@ class UnBan(Ban):
                   script (bans that were applied with this script) will be removed and only *if*
                   <nick> is present in the channel.""")
 
-    completion = '%(chanop_banmask)|%*'
+    completion = '%(chanop_unban_mask)|%*'
 
     _prefix = '-'
     def search_bans(self, hostmask):
@@ -1150,6 +1150,8 @@ class Mute(Ban):
                   support "/mode +q hostmask", use:
                   /set plugins.var.python.%s.enable_mute.your_server_name on""" %SCRIPT_NAME)
 
+    completion = '%(nicks)|%(chanop_ban_mask)|%*'
+
     _mode = 'q'
     masklist = quietlist
 
@@ -1159,7 +1161,7 @@ class UnMute(UnBan):
     callback = 'cmd_unmute'
     _mode = 'q'
     masklist = quietlist
-    completion = '%(chanop_quietmask)|%*'
+    completion = '%(chanop_unmute_mask)|%*'
 
 
 class KickBan(Ban, Kick):
@@ -1428,7 +1430,7 @@ def invert_kickban_order_conf_cb(data, config, value):
 global waiting_for_completion, banlist_args
 waiting_for_completion = None
 banlist_args = ''
-def banmask_completion(data, completion_item, buffer, completion):
+def unban_mask_cmpl(data, completion_item, buffer, completion):
     mode = data
     masklist = modemaskDict[mode]
     masks = masklist.list(buffer)
@@ -1446,7 +1448,7 @@ def banmask_completion(data, completion_item, buffer, completion):
         else:
             weechat.buffer_set(buffer, 'input', '%s nothing.' %input)
     else:
-        debug('banmask completion: %s' %(masks, ))
+        #debug('unban mask completion: %s' %(masks, ))
         input = weechat.buffer_get_string(buffer, 'input')
         if input[-1] != ' ':
             # find banmasks that matches pattern and put it in the input
@@ -1461,7 +1463,7 @@ def banmask_completion(data, completion_item, buffer, completion):
     return WEECHAT_RC_OK
 
 _users_cache = {}
-def ban_mask_completion(data, completion_item, buffer, completion):
+def ban_mask_cmpl(data, completion_item, buffer, completion):
     input = weechat.buffer_get_string(buffer, 'input')
     if input[-1] != ' ':
         try:
@@ -1555,9 +1557,9 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_config('plugins.var.python.%s.invert_kickban_order' %SCRIPT_NAME,
             'invert_kickban_order_conf_cb', '')
 
-    weechat.hook_completion('chanop_banmask', '', 'banmask_completion', 'b')
-    weechat.hook_completion('chanop_quietmask', '', 'banmask_completion', 'q')
-    weechat.hook_completion('chanop_ban_mask', '', 'ban_mask_completion', '')
+    weechat.hook_completion('chanop_unban_mask', '', 'unban_mask_cmpl', 'b')
+    weechat.hook_completion('chanop_unmute_mask', '', 'unban_mask_cmpl', 'q')
+    weechat.hook_completion('chanop_ban_mask', '', 'ban_mask_cmpl', '')
 
     # colors
     color_delimiter   = weechat.color('chat_delimiters')
