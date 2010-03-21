@@ -313,6 +313,7 @@ class Infolist(object):
             'name':'string',
             'host':'string',
             'flags':'integer',
+            'is_connected':'integer',
             }
 
     def __init__(self, name, args=''):
@@ -1245,17 +1246,19 @@ class Mode(CommandNeedsOp):
 def chanop_init():
     servers = Infolist('irc_server')
     while servers.next():
-        server = servers['name']
-        buffer = weechat.buffer_search('irc', 'server.%s' %server)
-        if buffer:
-            return # XXX Fetching bans on script load can fail if we didn't connect yet, so disable
-                   # it for now
-            config = 'channels.%s' %server
-            channels = get_config_list(config)
-            for channel in channels:
-                # at this point 005 messages have not reached yet, so we can only fetch chanmode 'b'
-                # list and not 'q' because we don't know if it's supported
-                fetch_ban_list(buffer, channel, modes='b')
+        if servers['is_connected']:
+            server = servers['name']
+            update_bans(server)
+
+def update_bans(server):
+    buffer = weechat.buffer_search('irc', 'server.%s' %server)
+    if buffer:
+        channels = get_config_list('channels.%s' %server)
+        modes = weechat.config_get_plugin('chanmodes.%s' %server)
+        if not modes:
+            modes = weechat.config_get_plugin('chanmodes')
+        for channel in channels:
+            fetch_ban_list(buffer, channel, modes=modes)
 
 
 ### signal callbacks ###
@@ -1281,7 +1284,7 @@ def isupport_cb(data, signal, signal_data):
 hook_banlist = ()
 hook_banlist_time = {}
 hook_banlist_queue = []
-def fetch_ban_list(buffer, channel=None, modes='bq'):
+def fetch_ban_list(buffer, channel=None, modes=None):
     """Fetches hostmasks for a given channel mode and channel."""
 
     global hook_banlist
@@ -1289,6 +1292,17 @@ def fetch_ban_list(buffer, channel=None, modes='bq'):
     if not channel:
         channel = weechat.buffer_get_string(buffer, 'localvar_channel')
     server = weechat.buffer_get_string(buffer, 'localvar_server')
+    # check modes
+    if not modes:
+        modes = supported_modes(server)
+    else:
+        _modes = []
+        for mode in modes:
+            if supported_modes(server, mode):
+                _modes.append(mode)
+            else:
+                debug('Not supported %s %s' %(mode, server))
+        modes = ''.join(_modes)
     # check the last time we did this
     _modes = []
     for mode in modes:
@@ -1309,16 +1323,13 @@ def fetch_ban_list(buffer, channel=None, modes='bq'):
     # The server will send all messages together sequentially, so is easy to tell for which channel
     # and mode the banmask is if we keep a queue list in hook_banlist_queue
     for mode in modes:
-        if supported_modes(server, mode):
-            key = (server, channel, mode)
-            cmd = '/mode %s %s' %(channel, mode)
-            #weechat_queue.queue(cmd, buffer=buffer)
-            debug('fetching bans %r' %cmd)
-            weechat.command(buffer, cmd)
-            hook_banlist_queue.append(key)
-            hook_banlist_time[key] = now()
-        else:
-            debug('Not supported %s %s' %(mode, server))
+        key = (server, channel, mode)
+        cmd = '/mode %s %s' %(channel, mode)
+        #weechat_queue.queue(cmd, buffer=buffer)
+        debug('fetching bans %r' %cmd)
+        weechat.command(buffer, cmd)
+        hook_banlist_queue.append(key)
+        hook_banlist_time[key] = now()
 
 def banlist_367_cb(data, modifier, modifier_data, string):
     """Adds ban to the list."""
