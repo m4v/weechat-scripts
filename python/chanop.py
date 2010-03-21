@@ -1296,15 +1296,15 @@ def fetch_ban_list(buffer, channel=None, modes=None):
     if not modes:
         modes = supported_modes(server)
     else:
-        _modes = []
+        _modes = ''
         for mode in modes:
             if supported_modes(server, mode):
-                _modes.append(mode)
+                _modes += mode
             else:
                 debug('Not supported %s %s' %(mode, server))
-        modes = ''.join(_modes)
+        modes = _modes
     # check the last time we did this
-    _modes = []
+    _modes = ''
     for mode in modes:
         key = (server, channel, mode)
         if key in hook_banlist_time:
@@ -1312,8 +1312,8 @@ def fetch_ban_list(buffer, channel=None, modes=None):
             if now() - last_time < 60:
                 # don't fetch it again too quickly
                 continue
-        _modes.append(mode)
-    modes = ''.join(_modes)
+        _modes += mode
+    modes = _modes
     if not hook_banlist and modes:
         # only hook once
         hook_banlist = (
