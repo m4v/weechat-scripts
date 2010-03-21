@@ -959,6 +959,8 @@ class Ban(CommandNeedsOp):
             Example:
             /oban somebody --user --host : will use a *!user@hostname banmask.""")
 
+    completion = '%(nicks)|%(chanop_ban_mask)|%*'
+
     masklist = banlist
     banmask = []
     _mode = 'b'
@@ -1443,6 +1445,42 @@ def banmask_completion(data, completion_item, buffer, completion):
         fetch_ban_list(buffer, modes=mode)
     return WEECHAT_RC_OK
 
+_users_cache = {}
+def ban_mask_completion(data, completion_item, buffer, completion):
+    input = weechat.buffer_get_string(buffer, 'input')
+    if input[-1] != ' ':
+        try:
+            users = _users_cache[buffer]
+        except KeyError:
+            server = weechat.buffer_get_string(buffer, 'localvar_server')
+            channel = weechat.buffer_get_string(buffer, 'localvar_channel')
+            infolist = Infolist('irc_nick', '%s,%s' %(server, channel))
+            users = {}
+            _now = now()
+            while infolist.next():
+                name = infolist['name']
+                users[name] = ('%s!%s' %(name, infolist['host']), _now)
+            _users_cache[buffer] = users
+
+        #debug('ban_mask_completion: %s' %input)
+        input, _, pattern = input.rpartition(' ')
+        masks = hostmask_pattern_match(pattern + '*', [ t[0] for t in users.itervalues() ])
+        if '@' in pattern:
+            # complete hostname
+            pattern = pattern[:pattern.find('@')]
+            for mask in masks:
+                mask = '%s@%s' %(pattern, mask[mask.find('@')+1:])
+                #debug('ban_mask_completion: mask: %s' %mask)
+                weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_SORT)
+        elif '!' in pattern:
+            # complete username
+            pattern = pattern[:pattern.find('!')]
+            for mask in masks:
+                mask = '%s!%s@*' %(pattern, mask[mask.find('!')+1:mask.find('@')])
+                #debug('ban_mask_completion: mask: %s' %mask)
+                weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_SORT)
+    return WEECHAT_RC_OK
+
 
 # default settings
 settings = {
@@ -1505,6 +1543,7 @@ if __name__ == '__main__' and import_ok and \
 
     weechat.hook_completion('chanop_banmask', '', 'banmask_completion', 'b')
     weechat.hook_completion('chanop_quietmask', '', 'banmask_completion', 'q')
+    weechat.hook_completion('chanop_ban_mask', '', 'ban_mask_completion', '')
 
     # colors
     color_delimiter   = weechat.color('chat_delimiters')
