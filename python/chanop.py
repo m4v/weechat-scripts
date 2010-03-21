@@ -163,7 +163,7 @@ except ImportError:
     print "Get WeeChat now at: http://www.weechat.org/"
     import_ok = False
 
-import getopt, time
+import getopt, time, re
 from fnmatch import fnmatch
 
 now = lambda : int(time.time())
@@ -261,13 +261,28 @@ def is_hostmask(s):
     else:
         return False
 
+_hostmask_regexp_cache = {}
 def hostmask_pattern_match(pattern, hostmask):
-    # FIXME fnmatch is not a good option for hostmaks matching
-    # I should replace it with a regexp, but I'm lazy now
-    if isinstance(hostmask, str):
-        return fnmatch(hostmask, pattern)
+    # we will take the trouble of using regexps, since they match faster than fnmatch once compiled
+    if pattern in _hostmask_regexp_cache:
+        regexp = _hostmask_regexp_cache[pattern]
     else:
-        return [ mask for mask in hostmask if fnmatch(mask, pattern) ]
+        s = '^'
+        for c in pattern:
+            if c == '*':
+                s += '.*'
+            elif c == '?':
+                s += '.'
+            else:
+                s += re.escape(c)
+        s += '$'
+        regexp = re.compile(s, re.I)
+        _hostmask_regexp_cache[pattern] = regexp
+
+    if isinstance(hostmask, str):
+        return regexp.search(hostmask)
+    else:
+        return [ mask for mask in hostmask if regexp.search(mask) ]
 
 def is_ip(s):
     """Returns whether or not a given string is an IPV4 address."""
