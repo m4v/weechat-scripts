@@ -1471,15 +1471,14 @@ def ban_mask_completion(data, completion_item, buffer, completion):
             channel = weechat.buffer_get_string(buffer, 'localvar_channel')
             infolist = Infolist('irc_nick', '%s,%s' %(server, channel))
             users = {}
-            _now = now()
             while infolist.next():
                 name = infolist['name']
-                users[name] = ('%s!%s' %(name, infolist['host']), _now)
+                users[name] = '%s!%s' %(name, infolist['host'])
             _users_cache[buffer] = users
 
         #debug('ban_mask_completion: %s' %input)
         input, _, pattern = input.rpartition(' ')
-        masks = hostmask_pattern_match(pattern + '*', [ t[0] for t in users.itervalues() ])
+        masks = hostmask_pattern_match(pattern + '*', users.itervalues())
         if '@' in pattern:
             # complete hostname
             pattern = pattern[:pattern.find('@')]
