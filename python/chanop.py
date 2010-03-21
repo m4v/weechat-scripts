@@ -841,7 +841,6 @@ class BanList(object):
 
     def show_ban_list(self):
         buffer = self.get_buffer()
-        weechat.buffer_clear(buffer)
         weechat.buffer_set(buffer, 'display', '1')
         if not banlist:
             say("No bans known.", buffer=buffer)
@@ -1068,7 +1067,12 @@ class BanWithList(Ban):
     callback = 'cmd_ban_list'
     def parse_args(self, *args):
         CommandChanop.parse_args(self, *args)
+        buffer = banlist.get_buffer()
+        weechat.buffer_clear(buffer)
+        weechat.prnt(buffer, 'List of known bans')
         banlist.show_ban_list()
+        weechat.prnt(buffer, 'List of known mutes')
+        quietlist.show_ban_list()
 
 
 class UnBan(Ban):
