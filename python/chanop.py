@@ -163,7 +163,8 @@ except ImportError:
     print "Get WeeChat now at: http://www.weechat.org/"
     import_ok = False
 
-import getopt, time, fnmatch
+import getopt, time
+from fnmatch import fnmatch
 
 now = lambda : int(time.time())
 
@@ -263,7 +264,10 @@ def is_hostmask(s):
 def hostmask_pattern_match(pattern, hostmask):
     # FIXME fnmatch is not a good option for hostmaks matching
     # I should replace it with a regexp, but I'm lazy now
-    return fnmatch.fnmatch(hostmask, pattern)
+    if isinstance(hostmask, str):
+        return fnmatch(hostmask, pattern)
+    else:
+        return [ mask for mask in hostmask if fnmatch(mask, pattern) ]
 
 def is_ip(s):
     """Returns whether or not a given string is an IPV4 address."""
@@ -1367,10 +1371,7 @@ def banlist_368_cb(buffer, modifier, modifier_data, string):
         if list:
             global banlist_args
             if banlist_args:
-                matched_masks = []
-                for mask in list:
-                    if hostmask_pattern_match(banlist_args, mask):
-                        matched_masks.append(mask)
+                matched_masks = hostmask_pattern_match(banlist_args, list)
                 if len(matched_masks):
                     weechat.buffer_set(buffer, 'input', '%s %s ' %(input, ' '.join(matched_masks)))
                 banlist_args = ''
@@ -1433,11 +1434,8 @@ def banmask_completion(data, completion_item, buffer, completion):
         if input[-1] != ' ':
             # find banmasks that matches pattern and put it in the input
             input, _, pattern = input.rpartition(' ')
-            matched_masks = []
             masks = list(masks) # since is a iterator and I need to loop it more than once
-            for mask in masks:
-                if hostmask_pattern_match(pattern, mask):
-                    matched_masks.append(mask)
+            matched_masks = hostmask_pattern_match(pattern, masks)
             if len(matched_masks):
                 weechat.buffer_set(buffer, 'input', '%s %s ' %(input, ' '.join(matched_masks)))
         for mask in masks:
