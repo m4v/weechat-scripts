@@ -284,14 +284,20 @@ _supported_modes_cache = {}
 def supported_modes(server, mode=None):
     """Checks if server supports a specific chanmode. If <mode> is None returns all supported
     modes."""
-    try:
-        modes = _supported_modes_cache[server]
-    except KeyError:
-        try:
-            modes = isupport[server]['CHANMODES'].partition(',')[0]
-            _supported_modes_cache[server] = modes
-        except KeyError:
-            modes = 'b'
+    modes = weechat.config_get_plugin('chanmodes.%s' %server)
+    if not modes:
+        modes = weechat.config_get_plugin('chanmodes')
+    if not modes:
+        modes = 'b'
+    # XXX I might need the following later.
+    #try:
+    #    modes = _supported_modes_cache[server]
+    #except KeyError:
+    #    try:
+    #        modes = isupport[server]['CHANMODES'].partition(',')[0]
+    #        _supported_modes_cache[server] = modes
+    #    except KeyError:
+    #        modes = 'b'
 
     if mode:
         return mode in modes
@@ -1048,10 +1054,7 @@ class Ban(CommandNeedsOp):
             mode = 'b'
         else:
             mode = self._mode
-        try:
-            max_modes = int(isupport[self.server]['MODES'])
-        except:
-            max_modes = 3
+        max_modes = self.get_config_int('MODES')
         for n in range(0, len(banmasks), max_modes):
             slice = banmasks[n:n+max_modes]
             bans = ' '.join(slice)
@@ -1240,17 +1243,11 @@ class Mode(CommandNeedsOp):
 
 
 def chanop_init():
-    # XXX 005 messages annoys me, hardcode it for now
-    isupport['freenode'] = { 'CHANMODES': 'eIbq,k,flj,CFLMPQScgimnprstz', 'MODES':'4' }
-    return
     servers = Infolist('irc_server')
     while servers.next():
         server = servers['name']
         buffer = weechat.buffer_search('irc', 'server.%s' %server)
         if buffer:
-            # get server data
-            weechat.command(buffer, '/quote version')
-            # FIXME should add some code that hides 005 messages
             return # XXX Fetching bans on script load can fail if we didn't connect yet, so disable
                    # it for now
             config = 'channels.%s' %server
@@ -1442,6 +1439,8 @@ settings = {
         'kick_reason'      :'kthxbye!',
         'enable_multi_kick':'off',
         'invert_kickban_order':'off',
+        'chanmodes'        :'bq',
+        'modes'            :'4',
         }
 
 
@@ -1490,8 +1489,6 @@ if __name__ == '__main__' and import_ok and \
 
     weechat.hook_completion('chanop_banmask', '', 'banmask_completion', 'b')
     weechat.hook_completion('chanop_quietmask', '', 'banmask_completion', 'q')
-
-    weechat.hook_signal('*,irc_in_005', 'isupport_cb', '')
 
     # colors
     color_delimiter   = weechat.color('chat_delimiters')
