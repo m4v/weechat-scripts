@@ -289,6 +289,8 @@ def is_hostmask(s):
 _hostmask_regexp_cache = {}
 def hostmask_pattern_match(pattern, hostmask):
     # we will take the trouble of using regexps, since they match faster than fnmatch once compiled
+    #pattern = '*'.join([ s for s in pattern.split('*') if s ]) # remove double *
+    #pattern = '?'.join([ s for s in pattern.split('?') if s ]) # ditto
     if pattern in _hostmask_regexp_cache:
         regexp = _hostmask_regexp_cache[pattern]
     else:
@@ -1362,13 +1364,16 @@ class Mode(CommandNeedsOp):
         cmd = '/mode %s' %modes
         self.queue(cmd)
 
-
+global chanop_channels
+chanop_channels = {}
 def chanop_init():
+    global chanop_channels
     servers = Infolist('irc_server')
     while servers.next():
         if servers['is_connected']:
             server = servers['name']
             channels = get_config_list('channels.%s' %server)
+            chanop_channels[server] = channels
             for chan in channels:
                 generate_user_cache(server, chan)
             #update_bans(server)
@@ -1497,14 +1502,15 @@ def banlist_368_cb(buffer, modifier, modifier_data, string):
     return ''
 
 
+### user cache ###
 _user_cache = {}
 def generate_user_cache(server, channel):
+    users = {}
     try:
         infolist = Infolist('irc_nick', '%s,%s' %(server, channel))
     except:
         error('Not in a IRC channel.')
-        return {}
-    users = {}
+        return users
     while infolist.next():
         name = infolist['name']
         users[name] = '%s!%s' %(name, infolist['host'])
@@ -1572,7 +1578,23 @@ def nick_cb(data, signal, signal_data):
 
 ### garbage collector ###
 @timeit
-def garbage_collector(data, counter):
+def garbage_collector_cb(data, counter):
+    # purge anything collected from channels that aren't in our list
+    global chanop_channels
+    for key in _user_cache.keys():
+        if key[0] not in chanop_channels:
+            del _user_cache[key]
+        elif key[1] not in chanop_channels[key[0]]:
+            del _user_cache[key]
+
+    for key in _user_temp_cache.keys():
+        _key = key[0]
+        if _key[0] not in chanop_channels:
+            del _user_temp_cache[key]
+        elif _key[1] not in chanop_channels:
+            del _user_temp_cache[key]
+
+    # purge nicks that left the channel for 20min
     _now = now()
     for key, when in _user_temp_cache.items():
         if (_now - when) > 1200:
@@ -1760,7 +1782,7 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_signal('*,irc_in_quit', 'quit_cb', '')
     weechat.hook_signal('*,irc_in_nick', 'nick_cb', '')
 
-    weechat.hook_timer(60*1000, 0, 0, 'garbage_collector', '')
+    weechat.hook_timer(60*1000, 0, 0, 'garbage_collector_cb', '')
 
     # debug commands
     weechat.hook_command('ocaches', '', '', '', '', 'debug_print_cache', '')
