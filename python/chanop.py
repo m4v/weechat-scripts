@@ -1620,6 +1620,18 @@ def invert_kickban_order_conf_cb(data, config, value):
         cmd_kban.invert = False
     return WEECHAT_RC_OK
 
+def update_chanop_channels_cb(data, config, value):
+    debug('CONFIG: %s' %(' '.join((data, config, value))))
+    global chanop_channels
+    server = config[config.rfind('.')+1:]
+    if value:
+        L = value.split(',')
+    else:
+        L = []
+    chanop_channels[server] = L
+    return WEECHAT_RC_OK
+
+
 
 ### completion ###
 global waiting_for_completion, banlist_args
@@ -1760,6 +1772,8 @@ if __name__ == '__main__' and import_ok and \
             'enable_multi_kick_conf_cb', '')
     weechat.hook_config('plugins.var.python.%s.invert_kickban_order' %SCRIPT_NAME,
             'invert_kickban_order_conf_cb', '')
+    weechat.hook_config('plugins.var.python.%s.channels.*' %SCRIPT_NAME,
+            'update_chanop_channels_cb', '')
 
     weechat.hook_completion('chanop_unban_mask', '', 'unban_mask_cmpl', 'b')
     weechat.hook_completion('chanop_unmute_mask', '', 'unban_mask_cmpl', 'q')
@@ -1771,7 +1785,7 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_signal('*,irc_in_quit', 'quit_cb', '')
     weechat.hook_signal('*,irc_in_nick', 'nick_cb', '')
 
-    weechat.hook_timer(60*1000, 0, 0, 'garbage_collector_cb', '')
+    weechat.hook_timer(1*60*1000, 0, 0, 'garbage_collector_cb', '')
 
     # debug commands
     weechat.hook_command('ocaches', '', '', '', '', 'debug_print_cache', '')
