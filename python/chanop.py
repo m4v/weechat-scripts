@@ -1569,15 +1569,19 @@ def garbage_collector_cb(data, counter):
     for key in _user_cache.keys():
         if key[0] not in chanop_channels:
             del _user_cache[key]
+            debug('garbage_collector: purging %s' %(key, ))
         elif key[1] not in chanop_channels[key[0]]:
             del _user_cache[key]
+            debug('garbage_collector: purging %s' %(key, ))
 
     for key in _user_temp_cache.keys():
         _key = key[0]
         if _key[0] not in chanop_channels:
             del _user_temp_cache[key]
+            debug('garbage_collector: purging %s' %(key, ))
         elif _key[1] not in chanop_channels:
             del _user_temp_cache[key]
+            debug('garbage_collector: purging %s' %(key, ))
 
     # purge nicks that left the channel for 20min
     _now = now()
