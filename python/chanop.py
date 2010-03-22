@@ -538,6 +538,8 @@ class CommandQueue(object):
             hook_timeout = weechat.hook_timer(5000, 0, 1, 'queue_timeout_cb', data)
 
             Message.__call__(self)
+            if weechat.config_get_plugin('debug') == '2':
+                return True
             return False # returning false interrupts the queue execution
 
         def __str__(self):
