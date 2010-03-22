@@ -364,6 +364,11 @@ def supported_modes(server, mode=None):
     else:
         return modes
 
+def make_key(buffer):
+    server = weechat.buffer_get_string(buffer, 'localvar_server')
+    channel = weechat.buffer_get_string(buffer, 'localvar_channel')
+    return (server, channel)
+
 
 ### Classes definitions ###
 class Infolist(object):
@@ -1578,21 +1583,15 @@ def garbage_collector_cb(data, counter):
     # purge anything collected from channels that aren't in our list
     global chanop_channels
     for key in _user_cache.keys():
-        if key[0] not in chanop_channels:
-            del _user_cache[key]
+        if key[0] not in chanop_channels or key[1] not in chanop_channels[key[0]]:
             debug('garbage_collector: purging %s' %(key, ))
-        elif key[1] not in chanop_channels[key[0]]:
             del _user_cache[key]
-            debug('garbage_collector: purging %s' %(key, ))
 
     for key in _user_temp_cache.keys():
         _key = key[0]
-        if _key[0] not in chanop_channels:
-            del _user_temp_cache[key]
+        if _key[0] not in chanop_channels or _key[1] not in chanop_channels[_key[0]]:
             debug('garbage_collector: purging %s' %(key, ))
-        elif _key[1] not in chanop_channels[_key[0]]:
             del _user_temp_cache[key]
-            debug('garbage_collector: purging %s' %(key, ))
 
     # purge nicks that left the channel for 20min
     _now = now()
@@ -1634,7 +1633,7 @@ def invert_kickban_order_conf_cb(data, config, value):
     return WEECHAT_RC_OK
 
 def update_chanop_channels_cb(data, config, value):
-    debug('CONFIG: %s' %(' '.join((data, config, value))))
+    #debug('CONFIG: %s' %(' '.join((data, config, value))))
     global chanop_channels
     server = config[config.rfind('.')+1:]
     if value:
@@ -1685,9 +1684,7 @@ def unban_mask_cmpl(data, completion_item, buffer, completion):
 def ban_mask_cmpl(data, completion_item, buffer, completion):
     input = weechat.buffer_get_string(buffer, 'input')
     if input[-1] != ' ':
-        server = weechat.buffer_get_string(buffer, 'localvar_server')
-        channel = weechat.buffer_get_string(buffer, 'localvar_channel')
-        key = (server, channel)
+        key = make_key(buffer)
         try:
             users = _user_cache[key]
         except KeyError:
@@ -1713,9 +1710,7 @@ def ban_mask_cmpl(data, completion_item, buffer, completion):
     return WEECHAT_RC_OK
 
 def nicks_cmpl(data, completion_item, buffer, completion):
-    server = weechat.buffer_get_string(buffer, 'localvar_server')
-    channel = weechat.buffer_get_string(buffer, 'localvar_channel')
-    key = (server, channel)
+    key = make_key(buffer)
     try:
         users = _user_cache[key]
     except KeyError:
@@ -1781,7 +1776,7 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_signal('*,irc_in_quit', 'quit_cb', '')
     weechat.hook_signal('*,irc_in_nick', 'nick_cb', '')
 
-    weechat.hook_timer(1*60*1000, 0, 0, 'garbage_collector_cb', '')
+    weechat.hook_timer(10*60*1000, 0, 0, 'garbage_collector_cb', '')
 
     # debug commands
     weechat.hook_command('ocaches', '', '', '', '', 'debug_print_cache', '')
