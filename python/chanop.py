@@ -153,6 +153,22 @@ SCRIPT_VERSION = "0.2-dev"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Helper script for IRC operators"
 
+### default settings ###
+settings = {
+'op_command'            :'/msg chanserv op $channel $nick',
+'deop_command'          :'/deop',
+'autodeop'              :'on',
+'autodeop_delay'        :'180',
+'default_banmask'       :'host',
+'enable_remove'         :'off',
+'kick_reason'           :'kthxbye!',
+'enable_multi_kick'     :'off',
+'invert_kickban_order'  :'off',
+'chanmodes'             :'bq',
+'modes'                 :'4',
+}
+
+
 try:
     import weechat
     WEECHAT_RC_OK = weechat.WEECHAT_RC_OK
@@ -165,7 +181,6 @@ except ImportError:
 
 import getopt, re
 from time import time
-from fnmatch import fnmatch
 
 now = lambda : int(time())
 
@@ -326,7 +341,6 @@ def get_nick(hostmask):
     else:
         return hostmask
 
-_supported_modes_cache = {}
 def supported_modes(server, mode=None):
     """Checks if server supports a specific chanmode. If <mode> is None returns all supported
     modes."""
@@ -826,14 +840,6 @@ class CommandNeedsOp(CommandChanop):
         """Commands in this method will be run with op privileges."""
         pass
 
-    def voice(self, args):
-        cmd = '/voice %s' %args
-        self.queue(cmd)
-
-    def devoice(self, args):
-        cmd = '/devoice %s' %args
-        self.queue(cmd)
-
 
 deop_hook = {}
 def deop_callback(buffer, count):
@@ -953,7 +959,7 @@ quietlist = BanList()
 modemaskDict = { 'b':banlist, 'q': quietlist }
 
 
-################################
+##############################
 ### Chanop Command Classes ###
 
 class Op(CommandChanop):
@@ -964,12 +970,18 @@ class Op(CommandChanop):
               plugins.var.python.%(name)s.op_command.server_name
               plugins.var.python.%(name)s.op_command.server_name.#channel_name""" %{'name':SCRIPT_NAME})
 
+    command = 'oop'
+    callback = 'cmd_op'
+
     def execute(self):
         self.get_op()
 
 
 class Deop(CommandChanop):
     help = ("Drops operator privileges.", "", "")
+    
+    command = 'odeop'
+    callback = 'cmd_deop'
 
     def execute(self):
         self.drop_op()
@@ -978,6 +990,8 @@ class Deop(CommandChanop):
 class Kick(CommandNeedsOp):
     help = ("Kick nick.", "<nick> [<reason>]", "")
 
+    command = 'okick'
+    callback = 'cmd_kick'
     completion = '%(nicks)'
 
     def execute_op(self, args=None):
@@ -1045,6 +1059,8 @@ class Ban(CommandNeedsOp):
             Example:
             /oban somebody --user --host : will use a *!user@hostname banmask.""")
 
+    command = 'oban'
+    callback = 'cmd_ban'
     completion = '%(chanop_nicks)|%(chanop_ban_mask)|%*'
 
     masklist = banlist
@@ -1175,6 +1191,8 @@ class UnBan(Ban):
                   script (bans that were applied with this script) will be removed and only *if*
                   <nick> is present in the channel.""")
 
+    command = 'ounban'
+    callback = 'cmd_unban'
     completion = '%(chanop_nicks)|%(chanop_unban_mask)|%*'
 
     _prefix = '-'
@@ -1221,6 +1239,8 @@ class Mute(Ban):
                   support "/mode +q hostmask", use:
                   /set plugins.var.python.%s.enable_mute.your_server_name on""" %SCRIPT_NAME)
 
+    command = 'omute'
+    callback = 'cmd_mute'
     completion = '%(chanop_nicks)|%(chanop_ban_mask)|%*'
 
     _mode = 'q'
@@ -1230,9 +1250,10 @@ class Mute(Ban):
 class UnMute(UnBan):
     command = 'ounmute'
     callback = 'cmd_unmute'
+    completion = '%(chanop_nicks)|%(chanop_unmute_mask)|%*'
+
     _mode = 'q'
     masklist = quietlist
-    completion = '%(chanop_nicks)|%(chanop_unmute_mask)|%*'
 
 
 class KickBan(Ban, Kick):
@@ -1240,6 +1261,8 @@ class KickBan(Ban, Kick):
             "<nick> [<reason>] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]",
             "Combines /okick and /oban commands.")
 
+    command = 'okban'
+    callback = 'cmd_kban'
     completion = '%(chanop_nicks)'
 
     invert = False
@@ -1322,6 +1345,15 @@ class Voice(CommandNeedsOp):
 
     def execute_op(self):
         self.voice(self.args)
+    
+    def voice(self, args):
+        cmd = '/voice %s' %args
+        self.queue(cmd)
+
+    def devoice(self, args):
+        cmd = '/devoice %s' %args
+        self.queue(cmd)
+
 
 
 class DeVoice(Voice):
@@ -1373,26 +1405,10 @@ def update_bans(server):
             fetch_ban_list(buffer, channel, modes=modes)
 
 
-### signal callbacks ###
-isupport = {}
-def isupport_cb(data, signal, signal_data):
-    data = signal_data.split(' ', 3)[-1]
-    data, s, s = data.rpartition(' :')
-    data = data.split()
-    server = signal.partition(',')[0]
-    d = {}
-    for s in data:
-        if '=' in s:
-            k, v = s.split('=')
-        else:
-            k, v = s, True
-        d[k] = v
-    if server in isupport:
-        isupport[server].update(d)
-    else:
-        isupport[server] = d
-    return WEECHAT_RC_OK
+#########################
+### WeeChat callbacks ###
 
+### ban list ###
 hook_banlist = ()
 hook_banlist_time = {}
 hook_banlist_queue = []
@@ -1604,11 +1620,11 @@ def enable_multi_kick_conf_cb(data, config, value):
     cmd_kick.unhook()
     cmd_kban.unhook()
     if boolDict[value]:
-        cmd_kick = MultiKick('okick', 'cmd_kick')
-        cmd_kban = MultiKickBan('okban', 'cmd_kban')
+        cmd_kick = MultiKick()
+        cmd_kban = MultiKickBan()
     else:
-        cmd_kick = Kick('okick', 'cmd_kick')
-        cmd_kban = KickBan('okban', 'cmd_kban')
+        cmd_kick = Kick()
+        cmd_kban = KickBan()
     return WEECHAT_RC_OK
 
 def invert_kickban_order_conf_cb(data, config, value):
@@ -1631,8 +1647,8 @@ def update_chanop_channels_cb(data, config, value):
     return WEECHAT_RC_OK
 
 
-
-### completion ###
+###########################
+### WeeChat completions ###
 global waiting_for_completion, banlist_args
 waiting_for_completion = None
 banlist_args = ''
@@ -1713,22 +1729,6 @@ def nicks_cmpl(data, completion_item, buffer, completion):
 
 
 
-# default settings
-settings = {
-        'op_command'       :'/msg chanserv op $channel $nick',
-        'deop_command'     :'/deop',
-        'autodeop'         :'on',
-        'autodeop_delay'   :'180',
-        'default_banmask'  :'host',
-        'enable_remove'    :'off',
-        'kick_reason'      :'kthxbye!',
-        'enable_multi_kick':'off',
-        'invert_kickban_order':'off',
-        'chanmodes'        :'bq',
-        'modes'            :'4',
-        }
-
-
 ### Register Script and set configs ###
 if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
@@ -1741,20 +1741,20 @@ if __name__ == '__main__' and import_ok and \
                 weechat.config_set_plugin(opt, val)
 
     # hook /oop /odeop
-    cmd_op         = Op('oop', 'cmd_op')
-    cmd_deop       = Deop('odeop', 'cmd_deop')
+    cmd_op         = Op()
+    cmd_deop       = Deop()
     # hook /okick /okban
     if get_config_boolean('enable_multi_kick'):
-        cmd_kick   = MultiKick('okick', 'cmd_kick')
-        cmd_kban   = MultiKickBan('okban', 'cmd_kban')
+        cmd_kick   = MultiKick()
+        cmd_kban   = MultiKickBan()
     else:
-        cmd_kick   = Kick('okick', 'cmd_kick')
-        cmd_kban   = KickBan('okban', 'cmd_kban')
+        cmd_kick   = Kick()
+        cmd_kban   = KickBan()
     # hook /oban /ounban
-    cmd_ban    = Ban('oban', 'cmd_ban')
-    cmd_unban  = UnBan('ounban', 'cmd_unban')
+    cmd_ban    = Ban()
+    cmd_unban  = UnBan()
     # hook /omute /ounmute
-    cmd_mute = Mute('omute', 'cmd_mute')
+    cmd_mute = Mute()
     cmd_unmute = UnMute()
 
     cmd_topic = Topic()
