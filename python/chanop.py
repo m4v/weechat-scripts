@@ -584,16 +584,15 @@ class CommandQueue(object):
             debug('disabling antiflood')
             wait = self.commandQueueInstance.wait + 1
             if value_low:
-                weechat.config_option_set(opt_low, '0', 1)
+                weechat.config_option_set(opt_low, '0', 0)
                 # set hook for re-enable antiflood
                 weechat.hook_timer(wait*1000, 0, 1, 'enable_anti_flood_cb', '%s,%s' %(opt_low,
                     value_low))
             if value_high:
-                weechat.config_option_set(opt_high, '0', 1)
+                weechat.config_option_set(opt_high, '0', 0)
                 # set hook for re-enable antiflood
-                weechat.hook_timer(wait*1000, 0, 1, 'enable_anti_flood_cb', '%s,%s' %(opt_high,
+                weechat.hook_timer((wait+1)*1000, 0, 1, 'enable_anti_flood_cb', '%s,%s' %(opt_high,
                     value_high))
-                weechat.config_option_set(opt_high, '0', 1)
             return True
 
 
@@ -654,9 +653,9 @@ def queue_timeout_cb(channel, count):
     return WEECHAT_RC_OK
 
 def enable_anti_flood_cb(data, count):
-    debug('enabling antiflood')
+    debug('enabling antiflood: %s' %data)
     option, value = data.split(',')
-    weechat.config_option_set(option, value, 1)
+    weechat.config_option_set(option, value, 0)
     return WEECHAT_RC_OK
 
 
