@@ -1579,7 +1579,7 @@ def garbage_collector_cb(data, counter):
         if _key[0] not in chanop_channels:
             del _user_temp_cache[key]
             debug('garbage_collector: purging %s' %(key, ))
-        elif _key[1] not in chanop_channels:
+        elif _key[1] not in chanop_channels[_key[0]]:
             del _user_temp_cache[key]
             debug('garbage_collector: purging %s' %(key, ))
 
