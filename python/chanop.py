@@ -680,6 +680,10 @@ class CommandChanop(Command):
         self.server = weechat.buffer_get_string(self.buffer, 'localvar_server')
         self.channel = weechat.buffer_get_string(self.buffer, 'localvar_channel')
         self.nick = weechat.info_get('irc_nick', self.server)
+        try:
+            self.users = _user_cache[(self.server, self.channel)]
+        except KeyError:
+            self.users = None
 
     def replace_vars(self, s): # XXX maybe can use WeeChat api?
         if '$channel' in s:
@@ -746,17 +750,29 @@ class CommandChanop(Command):
             error('Not in a IRC channel.')
 
     def is_nick(self, nick):
-        nicks = self._nick_infolist()
-        while nicks.next():
-            if nicks['name'] == nick:
-                return True
-        return False
+        if self.users is not None:
+            return nick in self.users
+        else:
+            nicks = self._nick_infolist()
+            while nicks.next():
+                if nicks['name'] == nick:
+                    return True
+            return False
 
     def get_host(self, name):
-        nicks = self._nick_infolist()
-        while nicks.next():
-            if nicks['name'] == name:
-                return '%s!%s' % (name, nicks['host'])
+        if self.users is not None:
+            # use cache
+            try:
+                host = self.users[name]
+                return host
+            except KeyError:
+                pass
+        else:
+            # use infolist
+            nicks = self._nick_infolist()
+            while nicks.next():
+                if nicks['name'] == name:
+                    return '%s!%s' % (name, nicks['host'])
 
     def queue(self, cmd, **kwargs):
         weechat_queue.queue(cmd, buffer=self.buffer, **kwargs)
@@ -1122,8 +1138,8 @@ class Ban(CommandNeedsOp):
         for arg in args:
             mask = arg
             hostmask = None
-            if not is_hostmask(arg):
-                hostmask = self.get_host(arg)
+            if not is_hostmask(mask):
+                hostmask = self.get_host(mask)
                 if hostmask:
                     mask = self.make_banmask(hostmask)
             self.add_ban(mask, hostmask)
@@ -1144,7 +1160,7 @@ class Ban(CommandNeedsOp):
             mode = 'b'
         else:
             mode = self._mode
-        max_modes = self.get_config_int('MODES')
+        max_modes = self.get_config_int('modes')
         for n in range(0, len(banmasks), max_modes):
             slice = banmasks[n:n+max_modes]
             bans = ' '.join(slice)
@@ -1173,7 +1189,7 @@ class UnBan(Ban):
                   script (bans that were applied with this script) will be removed and only *if*
                   <nick> is present in the channel.""")
 
-    completion = '%(chanop_unban_mask)|%*'
+    completion = '%(chanop_nicks)|%(chanop_unban_mask)|%*'
 
     _prefix = '-'
     def search_bans(self, hostmask):
@@ -1230,13 +1246,15 @@ class UnMute(UnBan):
     callback = 'cmd_unmute'
     _mode = 'q'
     masklist = quietlist
-    completion = '%(chanop_unmute_mask)|%*'
+    completion = '%(chanop_nicks)|%(chanop_unmute_mask)|%*'
 
 
 class KickBan(Ban, Kick):
     help = ("Kickban nick.",
             "<nick> [<reason>] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]",
             "Combines /okick and /oban commands.")
+
+    completion = '%(chanop_nicks)'
 
     invert = False
     def execute_op(self):
@@ -1262,6 +1280,8 @@ class MultiKickBan(KickBan):
     help = ("Kickban one or more nicks.",
             "<nick> [<nick> ..] [:] [<reason>] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]",
             KickBan.help[2])
+    
+    completion = '%(chanop_nicks)|%*'
 
     def execute_op(self):
         args = self.args.split()
@@ -1479,7 +1499,11 @@ def banlist_368_cb(buffer, modifier, modifier_data, string):
 
 _user_cache = {}
 def generate_user_cache(server, channel):
-    infolist = Infolist('irc_nick', '%s,%s' %(server, channel))
+    try:
+        infolist = Infolist('irc_nick', '%s,%s' %(server, channel))
+    except:
+        error('Not in a IRC channel.')
+        return {}
     users = {}
     while infolist.next():
         name = infolist['name']
