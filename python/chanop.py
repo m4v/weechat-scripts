@@ -163,17 +163,19 @@ except ImportError:
     print "Get WeeChat now at: http://www.weechat.org/"
     import_ok = False
 
-import getopt, time, re
+import getopt, re
+from time import time
 from fnmatch import fnmatch
 
-now = lambda : int(time.time())
+now = lambda : int(time())
 
 
 ### Messages ###
-def debug(s, prefix='debug'):
+def debug(s, prefix='debug', buffer_name=None):
     """Debug msg"""
     if not weechat.config_get_plugin('debug'): return
-    buffer_name = 'DEBUG_' + SCRIPT_NAME
+    if not buffer_name:
+        buffer_name = 'DEBUG_' + SCRIPT_NAME
     buffer = weechat.buffer_search('python', buffer_name)
     if not buffer:
         buffer = weechat.buffer_new(buffer_name, '', '', '', '')
