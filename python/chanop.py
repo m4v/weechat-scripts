@@ -180,7 +180,7 @@ def debug(s, prefix='debug'):
         weechat.buffer_set(buffer, 'nicklist', '0')
         weechat.buffer_set(buffer, 'time_for_each_line', '0')
         weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
-    weechat.prnt(buffer, '%s\t%s' %(prefix, s))
+    weechat.prnt(buffer, '%s\t%s' %(now(), s))
 
 def error(s, prefix=None, buffer='', trace=''):
     """Error msg"""
@@ -469,7 +469,7 @@ class Message(object):
                command = '/wait %s %s' %(self.wait, self.command)
         else:
             command = self.command
-        debug('%s %s' %(now(), command))
+        debug(command)
         if weechat.config_get_plugin('debug') == '2':
             # don't run commands
             return True
@@ -1564,7 +1564,7 @@ if __name__ == '__main__' and import_ok and \
     # colors
     color_delimiter   = weechat.color('chat_delimiters')
     color_script_nick = weechat.color('chat_nick')
-    color_reset   = weechat.color('reset')
+    color_reset       = weechat.color('reset')
     
     # pretty [chanop]
     script_nick = '%s[%s%s%s]%s' %(color_delimiter, color_script_nick, SCRIPT_NAME, color_delimiter,
