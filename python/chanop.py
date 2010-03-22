@@ -430,17 +430,18 @@ class Command(object):
     help = ("WeeChat command.", "[define usage template]", "detailed help here")
 
     command = ''
-    callback = ''
     completion = ''
+    callback = ''
     def __init__(self, command='', callback='', completion=''):
         if command:
             self.command = command
         if callback:
             self.callback = callback
+        elif not self.callback:
+            self.callback = 'chanop_%s' %self.command
         if completion:
             self.completion = completion
         self.pointer = ''
-        self.hook()
 
     def __call__(self, *args):
         """Called by WeeChat when /command is used."""
@@ -479,15 +480,22 @@ class Command(object):
         pass
 
     def hook(self):
-        assert self.command and self.callback
-        assert not self.pointer, "There's already a hook pointer, unhook first"
+        import __main__
+        assert self.command and self.callback, "command: '%s' callback: '%s'" %(self.command,
+                self.callback)
+        assert not self.pointer, "There's already a hook pointer, unhook first (%s)" %self.command
+        assert not hasattr(__main__, self.callback), "Callback already in __main__ (%s)" %self.callback
         desc, usage, help = self._parse_doc()
         self.pointer = weechat.hook_command(self.command, desc, usage, help, self.completion,
                 self.callback, '')
         if self.pointer == '':
             raise Exception, "hook_command failed"
+        # add self to the global namespace
+        setattr(__main__, self.callback, self)
 
     def unhook(self):
+        import __main__
+        delattr(__main__, self.callback)
         if self.pointer:
             weechat.unhook(self.pointer)
             self.pointer = ''
@@ -971,7 +979,6 @@ class Op(CommandChanop):
               plugins.var.python.%(name)s.op_command.server_name.#channel_name""" %{'name':SCRIPT_NAME})
 
     command = 'oop'
-    callback = 'cmd_op'
 
     def execute(self):
         self.get_op()
@@ -981,7 +988,6 @@ class Deop(CommandChanop):
     help = ("Drops operator privileges.", "", "")
     
     command = 'odeop'
-    callback = 'cmd_deop'
 
     def execute(self):
         self.drop_op()
@@ -991,7 +997,6 @@ class Kick(CommandNeedsOp):
     help = ("Kick nick.", "<nick> [<reason>]", "")
 
     command = 'okick'
-    callback = 'cmd_kick'
     completion = '%(nicks)'
 
     def execute_op(self, args=None):
@@ -1060,7 +1065,6 @@ class Ban(CommandNeedsOp):
             /oban somebody --user --host : will use a *!user@hostname banmask.""")
 
     command = 'oban'
-    callback = 'cmd_ban'
     completion = '%(chanop_nicks)|%(chanop_ban_mask)|%*'
 
     masklist = banlist
@@ -1172,7 +1176,6 @@ class Ban(CommandNeedsOp):
 
 class BanWithList(Ban):
     command = 'obanlist'
-    callback = 'cmd_ban_list'
     def parse_args(self, *args):
         CommandChanop.parse_args(self, *args)
         buffer = banlist.get_buffer()
@@ -1192,7 +1195,6 @@ class UnBan(Ban):
                   <nick> is present in the channel.""")
 
     command = 'ounban'
-    callback = 'cmd_unban'
     completion = '%(chanop_nicks)|%(chanop_unban_mask)|%*'
 
     _prefix = '-'
@@ -1240,7 +1242,6 @@ class Mute(Ban):
                   /set plugins.var.python.%s.enable_mute.your_server_name on""" %SCRIPT_NAME)
 
     command = 'omute'
-    callback = 'cmd_mute'
     completion = '%(chanop_nicks)|%(chanop_ban_mask)|%*'
 
     _mode = 'q'
@@ -1249,7 +1250,6 @@ class Mute(Ban):
 
 class UnMute(UnBan):
     command = 'ounmute'
-    callback = 'cmd_unmute'
     completion = '%(chanop_nicks)|%(chanop_unmute_mask)|%*'
 
     _mode = 'q'
@@ -1262,7 +1262,6 @@ class KickBan(Ban, Kick):
             "Combines /okick and /oban commands.")
 
     command = 'okban'
-    callback = 'cmd_kban'
     completion = '%(chanop_nicks)'
 
     invert = False
@@ -1325,7 +1324,6 @@ class Topic(CommandNeedsOp):
             "Clear topic if '-delete' is the new topic.")
 
     command = 'otopic'
-    callback = 'cmd_topic'
     completion = '%(irc_channel_topic)||-delete'
 
     def execute_op(self):
@@ -1340,7 +1338,6 @@ class Voice(CommandNeedsOp):
     help = ("Gives voice to somebody.", "nick", "")
 
     command = 'ovoice'
-    callback = 'cmd_voice'
     completion = '%(nicks)'
 
     def execute_op(self):
@@ -1355,12 +1352,10 @@ class Voice(CommandNeedsOp):
         self.queue(cmd)
 
 
-
 class DeVoice(Voice):
     help = ("Removes voice from somebody.", "nick", "")
 
     command = 'odevoice'
-    callback = 'cmd_devoice'
 
     def execute_op(self):
         self.devoice(self.args)
@@ -1371,7 +1366,6 @@ class Mode(CommandNeedsOp):
             "")
 
     command = 'omode'
-    callback = 'cmd_mode'
 
     def execute_op(self):
         self.mode(self.args)
@@ -1380,6 +1374,11 @@ class Mode(CommandNeedsOp):
         cmd = '/mode %s' %modes
         self.queue(cmd)
 
+
+#########################
+### WeeChat callbacks ###
+
+### init stuff ###
 global chanop_channels
 chanop_channels = {}
 def chanop_init():
@@ -1404,9 +1403,6 @@ def update_bans(server):
         for channel in channels:
             fetch_ban_list(buffer, channel, modes=modes)
 
-
-#########################
-### WeeChat callbacks ###
 
 ### ban list ###
 hook_banlist = ()
@@ -1625,6 +1621,8 @@ def enable_multi_kick_conf_cb(data, config, value):
     else:
         cmd_kick = Kick()
         cmd_kban = KickBan()
+    cmd_kick.hook()
+    cmd_kban.hook()
     return WEECHAT_RC_OK
 
 def invert_kickban_order_conf_cb(data, config, value):
@@ -1728,7 +1726,6 @@ def nicks_cmpl(data, completion_item, buffer, completion):
     return WEECHAT_RC_OK
 
 
-
 ### Register Script and set configs ###
 if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
@@ -1741,31 +1738,31 @@ if __name__ == '__main__' and import_ok and \
                 weechat.config_set_plugin(opt, val)
 
     # hook /oop /odeop
-    cmd_op         = Op()
-    cmd_deop       = Deop()
+    Op().hook()
+    Deop().hook()
     # hook /okick /okban
     if get_config_boolean('enable_multi_kick'):
-        cmd_kick   = MultiKick()
-        cmd_kban   = MultiKickBan()
+        cmd_kick = MultiKick()
+        cmd_kban = MultiKickBan()
     else:
-        cmd_kick   = Kick()
-        cmd_kban   = KickBan()
-    # hook /oban /ounban
-    cmd_ban    = Ban()
-    cmd_unban  = UnBan()
-    # hook /omute /ounmute
-    cmd_mute = Mute()
-    cmd_unmute = UnMute()
-
-    cmd_topic = Topic()
-    cmd_mode  = Mode()
-    cmd_ban_list = BanWithList()
-
-    cmd_voice = Voice()
-    cmd_devoice = DeVoice()
-
+        cmd_kick = Kick()
+        cmd_kban = KickBan()
+    cmd_kick.hook()
+    cmd_kban.hook()
     if get_config_boolean('invert_kickban_order'):
         cmd_kban.invert = True
+    # hook /oban /ounban /obanlist
+    Ban().hook()
+    UnBan().hook()
+    BanWithList().hook()
+    # hook /omute /ounmute
+    Mute().hook()
+    UnMute().hook()
+    # hook /otopic /omode /ovoive /odevoice
+    Topic().hook()
+    Mode().hook()
+    Voice().hook()
+    DeVoice().hook()
 
     weechat.hook_config('plugins.var.python.%s.enable_multi_kick' %SCRIPT_NAME,
             'enable_multi_kick_conf_cb', '')
