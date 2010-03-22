@@ -976,6 +976,8 @@ class Deop(CommandChanop):
 class Kick(CommandNeedsOp):
     help = ("Kick nick.", "<nick> [<reason>]", "")
 
+    completion = '%(nicks)'
+
     def execute_op(self, args=None):
         if not args:
             args = self.args
@@ -999,6 +1001,8 @@ class MultiKick(Kick):
             Note: Is not needed, but use ':' as a separator between nicks and the reason.
                   Otherwise, if there's a nick in the channel matching the first word in
                   reason it will be kicked.""")
+    
+    completion = '%(nicks)|%*'
 
     def execute_op(self, args=None):
         if not args:
@@ -1039,7 +1043,7 @@ class Ban(CommandNeedsOp):
             Example:
             /oban somebody --user --host : will use a *!user@hostname banmask.""")
 
-    completion = '%(nicks)|%(chanop_ban_mask)|%*'
+    completion = '%(chanop_nicks)|%(chanop_ban_mask)|%*'
 
     masklist = banlist
     banmask = []
@@ -1215,7 +1219,7 @@ class Mute(Ban):
                   support "/mode +q hostmask", use:
                   /set plugins.var.python.%s.enable_mute.your_server_name on""" %SCRIPT_NAME)
 
-    completion = '%(nicks)|%(chanop_ban_mask)|%*'
+    completion = '%(chanop_nicks)|%(chanop_ban_mask)|%*'
 
     _mode = 'q'
     masklist = quietlist
@@ -1308,6 +1312,7 @@ class Voice(CommandNeedsOp):
 
     command = 'ovoice'
     callback = 'cmd_voice'
+    completion = '%(nicks)'
 
     def execute_op(self):
         self.voice(self.args)
@@ -1647,6 +1652,20 @@ def ban_mask_cmpl(data, completion_item, buffer, completion):
                 weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_SORT)
     return WEECHAT_RC_OK
 
+def nicks_cmpl(data, completion_item, buffer, completion):
+    server = weechat.buffer_get_string(buffer, 'localvar_server')
+    channel = weechat.buffer_get_string(buffer, 'localvar_channel')
+    key = (server, channel)
+    try:
+        users = _user_cache[key]
+    except KeyError:
+        users = generate_user_cache(server, channel)
+
+    for nick in users:
+        weechat.hook_completion_list_add(completion, nick, 0, weechat.WEECHAT_LIST_POS_SORT)
+    return WEECHAT_RC_OK
+
+
 
 # default settings
 settings = {
@@ -1710,6 +1729,7 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_completion('chanop_unban_mask', '', 'unban_mask_cmpl', 'b')
     weechat.hook_completion('chanop_unmute_mask', '', 'unban_mask_cmpl', 'q')
     weechat.hook_completion('chanop_ban_mask', '', 'ban_mask_cmpl', '')
+    weechat.hook_completion('chanop_nicks', '', 'nicks_cmpl', '')
 
     weechat.hook_signal('*,irc_in_join', 'join_cb', '')
     weechat.hook_signal('*,irc_in_part', 'part_cb', '')
