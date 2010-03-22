@@ -685,7 +685,7 @@ class CommandChanop(Command):
         try:
             self.users = _user_cache[(self.server, self.channel)]
         except KeyError:
-            self.users = None
+            self.users = generate_user_cache(self.server, self.channel)
 
     def replace_vars(self, s): # XXX maybe can use WeeChat api?
         if '$channel' in s:
@@ -752,29 +752,14 @@ class CommandChanop(Command):
             error('Not in a IRC channel.')
 
     def is_nick(self, nick):
-        if self.users is not None:
-            return nick in self.users
-        else:
-            nicks = self._nick_infolist()
-            while nicks.next():
-                if nicks['name'] == nick:
-                    return True
-            return False
+        return nick in self.users
 
     def get_host(self, name):
-        if self.users is not None:
-            # use cache
-            try:
-                host = self.users[name]
-                return host
-            except KeyError:
-                pass
-        else:
-            # use infolist
-            nicks = self._nick_infolist()
-            while nicks.next():
-                if nicks['name'] == name:
-                    return '%s!%s' % (name, nicks['host'])
+        try:
+            host = self.users[name]
+            return host
+        except KeyError:
+            pass
 
     def queue(self, cmd, **kwargs):
         weechat_queue.queue(cmd, buffer=self.buffer, **kwargs)
