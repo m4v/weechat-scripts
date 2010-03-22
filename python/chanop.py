@@ -856,7 +856,7 @@ class CommandNeedsOp(CommandChanop):
 
 deop_hook = {}
 def deop_callback(buffer, count):
-    global deop_hook
+    global deop_hook, cmd_deop
     cmd_deop('', buffer, '')
     del deop_hook[buffer]
     return WEECHAT_RC_OK
@@ -1734,7 +1734,8 @@ if __name__ == '__main__' and import_ok and \
 
     # hook /oop /odeop
     Op().hook()
-    Deop().hook()
+    cmd_deop = Deop()
+    cmd_deop.hook()
     # hook /okick /okban
     if get_config_boolean('enable_multi_kick'):
         cmd_kick = MultiKick()
