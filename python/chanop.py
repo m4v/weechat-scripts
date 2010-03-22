@@ -171,7 +171,7 @@ now = lambda : int(time())
 
 
 ### Messages ###
-def debug(s, prefix='debug', buffer_name=None):
+def debug(s, prefix='', buffer_name=None):
     """Debug msg"""
     if not weechat.config_get_plugin('debug'): return
     if not buffer_name:
@@ -182,7 +182,7 @@ def debug(s, prefix='debug', buffer_name=None):
         weechat.buffer_set(buffer, 'nicklist', '0')
         weechat.buffer_set(buffer, 'time_for_each_line', '0')
         weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
-    weechat.prnt(buffer, '%s\t%s' %(now(), s))
+    weechat.prnt(buffer, '%s\t%s' %(prefix, s))
 
 def error(s, prefix=None, buffer='', trace=''):
     """Error msg"""
@@ -199,6 +199,29 @@ def say(s, prefix=None, buffer=''):
     """normal msg"""
     prefix = prefix or script_nick
     weechat.prnt(buffer, '%s\t%s' %(prefix, s))
+
+### More debug stuff ###
+def debug_print_cache(data, buffer, args):
+    """Prints stored caches"""
+    _debug = lambda s: debug(s, buffer_name = 'Chanop_caches')
+    for key, users in _user_cache.iteritems():
+        for nick, host in users.iteritems():
+            _debug('%s => %s %s' %(key, nick, host))
+    _debug('')
+    for key, time in _user_temp_cache.iteritems():
+        _debug('%s left %s at %s' %(key[1], key[0], time))
+    _debug('')
+    for pattern in _hostmask_regexp_cache:
+        _debug('regexp for %s' %pattern)
+    return WEECHAT_RC_OK
+
+def timeit(f):
+    def timed_function(*args, **kwargs):
+        t = time()
+        rt = f(*args, **kwargs)
+        debug('%s time: %f' %(f.func_name, time() - t), buffer_name='Chanop_timeit')
+        return rt
+    return timed_function
 
 
 ### config and value validation
@@ -1318,7 +1341,10 @@ def chanop_init():
     while servers.next():
         if servers['is_connected']:
             server = servers['name']
-            update_bans(server)
+            channels = get_config_list('channels.%s' %server)
+            for chan in channels:
+                generate_user_cache(server, chan)
+            #update_bans(server)
 
 def update_bans(server):
     buffer = weechat.buffer_search('irc', 'server.%s' %server)
@@ -1444,6 +1470,93 @@ def banlist_368_cb(buffer, modifier, modifier_data, string):
     return ''
 
 
+_user_cache = {}
+def generate_user_cache(server, channel):
+    infolist = Infolist('irc_nick', '%s,%s' %(server, channel))
+    users = {}
+    while infolist.next():
+        name = infolist['name']
+        users[name] = '%s!%s' %(name, infolist['host'])
+    _user_cache[(server, channel)] = users
+    return users
+
+@timeit
+def join_cb(data, signal, signal_data):
+    #debug('JOIN: %s' %' '.join((data, signal, signal_data)))
+    server = signal[:signal.find(',')]
+    channel = signal_data[signal_data.rfind(' ')+2:]
+    key = (server, channel)
+    #debug('JOIN: %s' %(key, ))
+    if key in _user_cache:
+        hostname = signal_data[1:signal_data.find(' ')]
+        users = _user_cache[key]
+        nick = get_nick(hostname)
+        users[nick] = hostname
+        # did the user do a cycle?
+        if (key, nick) in _user_temp_cache:
+            del _user_temp_cache[(key, nick)]
+    return WEECHAT_RC_OK
+
+_user_temp_cache = {}
+@timeit
+def part_cb(data, signal, signal_data):
+    #debug('PART: %s' %' '.join((data, signal, signal_data)))
+    server = signal[:signal.find(',')]
+    channel = signal_data.split()[2]
+    key = (server, channel)
+    if key in _user_cache:
+        nick = signal_data[1:signal_data.find('!')]
+        _user_temp_cache[(key, nick)] = now()
+    return WEECHAT_RC_OK
+
+@timeit
+def quit_cb(data, signal, signal_data):
+    server = signal[:signal.find(',')]
+    keys = [ key for key in _user_cache if key[0] == server ]
+    if keys:
+        nick = signal_data[1:signal_data.find('!')]
+        _now = now()
+        for key in keys:
+            if nick in _user_cache[key]:
+                _user_temp_cache[(key, nick)] = _now
+    return WEECHAT_RC_OK
+
+@timeit
+def nick_cb(data, signal, signal_data):
+    #debug('NICK: %s' %' '.join((data, signal, signal_data)))
+    server = signal[:signal.find(',')]
+    keys = [ key for key in _user_cache if key[0] == server ]
+    if keys:
+        hostname = signal_data[1:signal_data.find(' ')]
+        nick = get_nick(hostname)
+        newnick = signal_data[signal_data.rfind(' ')+2:]
+        newhostname = '%s!%s' %(newnick, hostname[hostname.find('!')+1:])
+        _now = now()
+        for key in keys:
+            if nick in _user_cache[key]:
+                _user_temp_cache[(key, nick)] = _now
+                _user_cache[key][newnick] = newhostname
+    return WEECHAT_RC_OK
+
+
+### garbage collector ###
+@timeit
+def garbage_collector(data, counter):
+    _now = now()
+    for key, when in _user_temp_cache.items():
+        if (_now - when) > 1200:
+            key2, nick = key
+            del _user_cache[key2][nick]
+            del _user_temp_cache[key]
+
+    if weechat.config_get_plugin('debug'):
+        user_count = sum(map(len, _user_cache.itervalues()))
+        debug('garbage_collector: %s cached users in %s channels' %(user_count, len(_user_cache)))
+        debug('garbage_collector: %s users about to be purged' %len(_user_temp_cache))
+        debug('garbage_collector: %s cached regexps' %len(_hostmask_regexp_cache))
+    return WEECHAT_RC_OK
+
+
 ### config callbacks ###
 def enable_multi_kick_conf_cb(data, config, value):
     global cmd_kick, cmd_kban
@@ -1502,38 +1615,33 @@ def unban_mask_cmpl(data, completion_item, buffer, completion):
         fetch_ban_list(buffer, modes=mode)
     return WEECHAT_RC_OK
 
-_users_cache = {}
 def ban_mask_cmpl(data, completion_item, buffer, completion):
     input = weechat.buffer_get_string(buffer, 'input')
     if input[-1] != ' ':
+        server = weechat.buffer_get_string(buffer, 'localvar_server')
+        channel = weechat.buffer_get_string(buffer, 'localvar_channel')
+        key = (server, channel)
         try:
-            users = _users_cache[buffer]
+            users = _user_cache[key]
         except KeyError:
-            server = weechat.buffer_get_string(buffer, 'localvar_server')
-            channel = weechat.buffer_get_string(buffer, 'localvar_channel')
-            infolist = Infolist('irc_nick', '%s,%s' %(server, channel))
-            users = {}
-            while infolist.next():
-                name = infolist['name']
-                users[name] = '%s!%s' %(name, infolist['host'])
-            _users_cache[buffer] = users
+            users = generate_user_cache(server, channel)
 
-        #debug('ban_mask_completion: %s' %input)
         input, _, pattern = input.rpartition(' ')
+        debug('ban_mask_completion: %s' %pattern)
         masks = hostmask_pattern_match(pattern + '*', users.itervalues())
         if '@' in pattern:
             # complete hostname
             pattern = pattern[:pattern.find('@')]
             for mask in masks:
                 mask = '%s@%s' %(pattern, mask[mask.find('@')+1:])
-                #debug('ban_mask_completion: mask: %s' %mask)
+                debug('ban_mask_completion: mask: %s' %mask)
                 weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_SORT)
         elif '!' in pattern:
             # complete username
             pattern = pattern[:pattern.find('!')]
             for mask in masks:
                 mask = '%s!%s@*' %(pattern, mask[mask.find('!')+1:mask.find('@')])
-                #debug('ban_mask_completion: mask: %s' %mask)
+                debug('ban_mask_completion: mask: %s' %mask)
                 weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_SORT)
     return WEECHAT_RC_OK
 
@@ -1600,6 +1708,16 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_completion('chanop_unban_mask', '', 'unban_mask_cmpl', 'b')
     weechat.hook_completion('chanop_unmute_mask', '', 'unban_mask_cmpl', 'q')
     weechat.hook_completion('chanop_ban_mask', '', 'ban_mask_cmpl', '')
+
+    weechat.hook_signal('*,irc_in_join', 'join_cb', '')
+    weechat.hook_signal('*,irc_in_part', 'part_cb', '')
+    weechat.hook_signal('*,irc_in_quit', 'quit_cb', '')
+    weechat.hook_signal('*,irc_in_nick', 'nick_cb', '')
+
+    weechat.hook_timer(60*1000, 0, 0, 'garbage_collector', '')
+
+    # debug commands
+    weechat.hook_command('ocaches', '', '', '', '', 'debug_print_cache', '')
 
     # colors
     color_delimiter   = weechat.color('chat_delimiters')
