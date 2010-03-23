@@ -896,23 +896,49 @@ class BanObject(object):
         return "<BanObject %s %s >" %(self.banmask, self.date)
 
 
+class CaseinsensibleDict(dict):
+    def __setitem__(self, k, v):
+        dict.__setitem__(self, self.key(k), v)
+
+    def __getitem__(self, k):
+        return dict.__getitem__(self, self.key(k))
+
+    def __delitem__(self, k):
+        dict.__delitem__(self, self.key(k))
+
+    def __contains__(self, k):
+        return dict.__contains__(self, self.key(k))
+
+    def key(self, k):
+        if isinstance(k, str):
+            return k.lower()
+        elif isinstance(k, tuple):
+            return tuple([ s.lower() for s in k ])
+        return k
+
+
 class BanList(object):
     """Keeps a list of our bans for quick look up."""
+    Dict = CaseinsensibleDict
     def __init__(self):
-        self.bans = {}
+        self.bans = self.Dict()
 
     def __len__(self):
         return len(self.bans)
 
+    def __iter__(self):
+        return iter(self.bans)
+
     def list(self, buffer):
         assert buffer
-        channel = weechat.buffer_get_string(buffer, 'localvar_channel')
-        server = weechat.buffer_get_string(buffer, 'localvar_server')
         try:
-            bans = self.bans[server, channel]
+            bans = self.bans[make_key(buffer)]
             return bans.iterkeys()
         except KeyError:
             return ()
+
+    def set_empty_list(self, key):
+        self.bans[key] = self.Dict()
 
     def add(self, server, channel, banmask, **kwargs):
         """Adds a ban to (server, channel) banlist."""
@@ -925,7 +951,7 @@ class BanList(object):
                     setattr(ban, k, v)
         except KeyError:
             if key not in self.bans:
-                self.bans[key] = self.bans.__class__()
+                self.set_empty_list(key)
             self.bans[key][banmask] = BanObject(banmask, **kwargs)
 
     def remove(self, server, channel, banmask=None):#, hostmask=None):
