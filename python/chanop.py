@@ -241,10 +241,19 @@ def debug_print_cache(data, buffer, args):
     return WEECHAT_RC_OK
 
 def timeit(f):
+    """Times a function and prints the result in a buffer."""
+    from time import time
+    units = {0:'s', 1:'ms', 2:'ns'}
     def timed_function(*args, **kwargs):
         t = time()
         rt = f(*args, **kwargs)
-        debug('%s time: %f' %(f.func_name, time() - t), buffer_name='Chanop_timeit')
+        d = time() - t
+        power = 0
+        while d < 1 and d != 0.0 and power < 2:
+            power += 1
+            d *= 1000.0
+        debug('%s time: %.2f %s' %(f.func_name, d, units[power]),\
+                buffer_name='Chanop_timeit')
         return rt
     return timed_function
 
@@ -312,6 +321,7 @@ def is_hostmask(s):
         return False
 
 _hostmask_regexp_cache = {}
+@timeit
 def hostmask_pattern_match(pattern, hostmask):
     # we will take the trouble of using regexps, since they match faster than fnmatch once compiled
     #pattern = '*'.join([ s for s in pattern.split('*') if s ]) # remove double *
@@ -351,6 +361,7 @@ def get_nick(hostmask):
     else:
         return hostmask
 
+@timeit
 def supported_modes(server, mode=None):
     """Checks if server supports a specific chanmode. If <mode> is None returns all supported
     modes."""
@@ -395,7 +406,7 @@ class Infolist(object):
         self.cursor = 0
         self.pointer = weechat.infolist_get(name, '', args)
         if self.pointer == '':
-            raise Exception('Infolist initialising failed')
+            raise Exception("Infolist initialising failed (name:'%s' args:'%s')" %(name, args))
 
     def __len__(self):
         """True False evaluation."""
