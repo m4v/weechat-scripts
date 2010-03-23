@@ -1761,7 +1761,7 @@ def nicks_cmpl(data, completion_item, buffer, completion):
     try:
         users = _user_cache[key]
     except KeyError:
-        users = generate_user_cache(server, channel)
+        users = generate_user_cache(*key)
 
     for nick in users:
         weechat.hook_completion_list_add(completion, nick, 0, weechat.WEECHAT_LIST_POS_SORT)
