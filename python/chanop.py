@@ -930,7 +930,6 @@ class BanList(object):
         return iter(self.bans)
 
     def list(self, buffer):
-        assert buffer
         try:
             bans = self.bans[make_key(buffer)]
             return bans.iterkeys()
@@ -965,7 +964,7 @@ class BanList(object):
         except KeyError:
             pass
 
-    def match(self, server, channel, hostmask):
+    def search(self, server, channel, hostmask):
         ban_list = []
         if hostmask:
             #debug('searching masks for %s' %hostmask)
@@ -973,9 +972,7 @@ class BanList(object):
                 bans = self.bans[server, channel]
                 #debug('Ban list: %s' %str(bans))
                 for ban in bans.itervalues():
-                    if ban.hostmask == hostmask:
-                        ban_list.append(ban)
-                    elif hostmask_pattern_match(ban.banmask, hostmask):
+                    if ban.hostmask == hostmask or hostmask_pattern_match(ban.banmask, hostmask):
                         ban_list.append(ban)
             except KeyError:
                 pass
@@ -1010,13 +1007,8 @@ class BanList(object):
                 weechat.prnt(buffer, '%s%s%s%s set by %s%s%s %s'\
                         %(  weechat.color('white'), ban.banmask, weechat.color('default'),
                             hostmask, weechat.color('lightgreen'),
-                            ban.operator and get_nick(ban.operator) or self.nick,
+                            ban.operator and get_nick(ban.operator),# or self.nick,
                             weechat.color('default'), ban.date))
-
-banlist = BanList()
-quietlist = BanList()
-
-modemaskDict = { 'b':banlist, 'q': quietlist }
 
 
 ##############################
@@ -1251,7 +1243,7 @@ class UnBan(Ban):
 
     _prefix = '-'
     def search_bans(self, hostmask):
-        return self.masklist.match(self.server, self.channel, hostmask)
+        return self.masklist.search(self.server, self.channel, hostmask)
 
     def remove_ban(self, *banmask):
         for mask in banmask:
@@ -1441,28 +1433,25 @@ def chanop_init():
             server = servers['name']
             channels = get_config_list('channels.%s' %server)
             chanop_channels[server] = channels
-            for chan in channels:
-                generate_user_cache(server, chan)
-            #update_bans(server)
-
-def update_bans(server):
-    buffer = weechat.buffer_search('irc', 'server.%s' %server)
-    if buffer:
-        channels = get_config_list('channels.%s' %server)
-        modes = weechat.config_get_plugin('chanmodes.%s' %server)
-        if not modes:
-            modes = weechat.config_get_plugin('chanmodes')
-        for channel in channels:
-            fetch_ban_list(buffer, channel, modes=modes)
+            buffer = weechat.buffer_search('irc', 'server.%s' %server)
+            modes = weechat.config_get_plugin('chanmodes.%s' %server)
+            if not modes:
+                modes = weechat.config_get_plugin('chanmodes')
+            for channel in channels:
+                generate_user_cache(server, channel)
+                fetch_ban_list(buffer, channel, modes=modes)
 
 
 ### ban list ###
+banlist = BanList()
+mutelist = BanList()
+chanmodes = { 'b':banlist, 'q': mutelist }
+
 hook_banlist = ()
 hook_banlist_time = {}
 hook_banlist_queue = []
 def fetch_ban_list(buffer, channel=None, modes=None):
     """Fetches hostmasks for a given channel mode and channel."""
-
     global hook_banlist
     debug('fetch bans called b:%s c:%s m:%s' %(buffer, channel, modes))
     if not channel:
@@ -1493,8 +1482,8 @@ def fetch_ban_list(buffer, channel=None, modes=None):
     if not hook_banlist and modes:
         # only hook once
         hook_banlist = (
-                weechat.hook_modifier('irc_in_367', 'banlist_367_cb', ''),
-                weechat.hook_modifier('irc_in_368', 'banlist_368_cb', buffer)
+                weechat.hook_modifier('irc_in_367', 'masklist_mask_cb', ''),
+                weechat.hook_modifier('irc_in_368', 'masklist_end_cb', buffer)
                 )
     # The server will send all messages together sequentially, so is easy to tell for which channel
     # and mode the banmask is if we keep a queue list in hook_banlist_queue
@@ -1507,22 +1496,29 @@ def fetch_ban_list(buffer, channel=None, modes=None):
         hook_banlist_queue.append(key)
         hook_banlist_time[key] = now()
 
-def banlist_367_cb(data, modifier, modifier_data, string):
+@timeit
+def masklist_mask_cb(data, modifier, modifier_data, string):
     """Adds ban to the list."""
     #debug(string)
-    args = string.split()
-    channel, banmask, op, date = args[-4:]
+    channel, banmask, op, date = string.split()[-4:]
     server = modifier_data
     mode = hook_banlist_queue[0][2]
-    modemaskDict[mode].add(server, channel, banmask, hostmask=None, operator=op, date=date)
+    chanmodes[mode].add(server, channel, banmask, operator=op, date=date)
     return ''
 
-def banlist_368_cb(buffer, modifier, modifier_data, string):
+@timeit
+def masklist_end_cb(buffer, modifier, modifier_data, string):
     """Ban listing over."""
+    #debug(string)
     global waiting_for_completion, hook_banlist
     server, channel, mode = hook_banlist_queue.pop(0)
-    debug('got bans for %s %s %s' %(server, channel, mode))
-    masklist = modemaskDict[mode]
+    masklist = chanmodes[mode]
+    key = (server, channel)
+    if key not in masklist:
+        debug('no bans for %s %s %s' %(server, channel, mode))
+        masklist.set_empty_list(key) 
+    else:
+        debug('got bans for %s %s %s' %(server, channel, mode))
     if not hook_banlist_queue:
         for hook in hook_banlist:
             weechat.unhook(hook)
@@ -1548,6 +1544,56 @@ def banlist_368_cb(buffer, modifier, modifier_data, string):
             weechat.buffer_set(buffer, 'input', '%s nothing.' %input)
         waiting_for_completion = None
     return ''
+
+@timeit
+def mode_cb(data, signal, signal_data):
+    debug('MODE: %s' %' '.join((data, signal, signal_data)))
+    #:m4v!~znc@unaffiliated/m4v MODE #test -bo+v asd!*@* m4v dude
+    server = signal[:signal.find(',')]
+    nick = signal_data[1:signal_data.find('!')]
+    if nick == weechat.info_get('irc_nick', server):
+        # mode set by us, return for now (banmasks were already updated)
+        return WEECHAT_RC_OK
+    channel, modes, args = signal_data.split(' ', 4)[2:]
+    if len(modes) == 2 and modes[1] in 'ovjm':
+        # return for these modes fairly used but not useful to us
+        return WEECHAT_RC_OK
+    key = (server, channel)
+    for masklist in chanmodes.itervalues():
+        if key in masklist:
+            break
+        # from a channel we're not tracking
+        return WEECHAT_RC_OK
+    servermodes = set(supported_modes(server))
+    if servermodes.intersection(set(modes)):
+        action = ''
+        L = []
+        args = args.split()
+        op = signal_data[1:signal_data.find(' ')]
+        when = now()
+        for c in modes:
+            if c in '+-':
+                action = c
+            elif c in servermodes:
+                L.append((action, c, args.pop(0)))
+            elif c in 'ov': # these have an argument, drop it
+                del args[0]
+        debug('MODE: %s' %(L, ))
+        for action, mode, mask in L:
+            masklist = chanmodes[mode]
+            debug('MODE: %s%s %s %s' %(action, mode, mask, op))
+            if action == '+':
+                if key in _user_cache:
+                    hostmask = hostmask_pattern_match(mask, _user_cache[key].itervalues())
+                    debug(hostmask)
+                    hostmask = hostmask[0]
+                else:
+                    hostmask = None
+                    debug('MODE: key not in user cache')
+                masklist.add(server, channel, mask, operator=op, hostmask=hostmask, date=when)
+            elif action == '-':
+                masklist.remove(server, channel, mask)
+    return WEECHAT_RC_OK
 
 
 ### user cache ###
@@ -1698,7 +1744,7 @@ waiting_for_completion = None
 banlist_args = ''
 def unban_mask_cmpl(data, completion_item, buffer, completion):
     mode = data
-    masklist = modemaskDict[mode]
+    masklist = chanmodes[mode]
     masks = masklist.list(buffer)
     if not masks:
         global waiting_for_completion, hook_banlist, banlist_args
@@ -1823,6 +1869,8 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_signal('*,irc_in_part', 'part_cb', '')
     weechat.hook_signal('*,irc_in_quit', 'quit_cb', '')
     weechat.hook_signal('*,irc_in_nick', 'nick_cb', '')
+    
+    weechat.hook_signal('*,irc_in_mode', 'mode_cb', '')
 
     weechat.hook_timer(10*60*1000, 0, 0, 'garbage_collector_cb', '')
 
