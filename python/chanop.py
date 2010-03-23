@@ -199,6 +199,16 @@ def debug(s, prefix='', buffer_name=None):
         weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
     weechat.prnt(buffer, '%s\t%s' %(prefix, s))
 
+global start
+start = now()
+def debug_timed(s, prefix='', **kwargs):
+    global start
+    if not prefix:
+        prefix = now() - start
+    _debug(s, prefix=prefix, **kwargs)
+
+debug, _debug = debug_timed, debug
+
 def error(s, prefix=None, buffer='', trace=''):
     """Error msg"""
     prefix = prefix or script_nick
