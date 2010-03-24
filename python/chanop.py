@@ -1524,10 +1524,11 @@ def masklist_end_cb(buffer, modifier, modifier_data, string):
         if list:
             global banlist_args
             if banlist_args:
+                pattern = banlist_args
                 if is_nick(pattern):
                     matched_masks = search_nick_in_masks(pattern, list)
                 else:
-                    matched_masks = hostmask_pattern_match(banlist_args, list)
+                    matched_masks = hostmask_pattern_match(pattern, list)
                 if matched_masks:
                     weechat.buffer_set(buffer, 'input', '%s %s ' %(input, ' '.join(matched_masks)))
                 banlist_args = ''
