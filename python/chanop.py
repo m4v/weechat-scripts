@@ -906,7 +906,7 @@ class BanObject(object):
         return "<BanObject %s %s >" %(self.banmask, self.date)
 
 
-class CaseinsensibleDict(dict):
+class CaseInsensibleDict(dict):
     def __setitem__(self, k, v):
         dict.__setitem__(self, self.key(k), v)
 
@@ -927,9 +927,9 @@ class CaseinsensibleDict(dict):
         return k
 
 
-class BanList(CaseinsensibleDict):
+class BanList(CaseInsensibleDict):
     """Keeps a list of our bans for quick look up."""
-    Dict = CaseinsensibleDict
+    Dict = CaseInsensibleDict
     def list(self, buffer):
         try:
             bans = self[make_key(buffer)]
@@ -1524,8 +1524,11 @@ def masklist_end_cb(buffer, modifier, modifier_data, string):
         if list:
             global banlist_args
             if banlist_args:
-                matched_masks = hostmask_pattern_match(banlist_args, list)
-                if len(matched_masks):
+                if is_nick(pattern):
+                    matched_masks = search_nick_in_masks(pattern, list)
+                else:
+                    matched_masks = hostmask_pattern_match(banlist_args, list)
+                if matched_masks:
                     weechat.buffer_set(buffer, 'input', '%s %s ' %(input, ' '.join(matched_masks)))
                 banlist_args = ''
             else:
@@ -1558,11 +1561,11 @@ def mode_cb(data, signal, signal_data):
         return WEECHAT_RC_OK
     servermodes = set(supported_modes(server))
     if servermodes.intersection(set(modes)):
+        # split chanmodes into tuples like ('+', 'b', 'asd!*@*')
         action = ''
         L = []
         args = args.split()
         op = signal_data[1:signal_data.find(' ')]
-        when = now()
         for c in modes:
             if c in '+-':
                 action = c
@@ -1571,6 +1574,7 @@ def mode_cb(data, signal, signal_data):
             elif c in 'ov': # these have an argument, drop it
                 del args[0]
         debug('MODE: %s' %(L, ))
+        # update masklist
         for action, mode, mask in L:
             masklist = maskModes[mode]
             debug('MODE: %s%s %s %s' %(action, mode, mask, op))
@@ -1582,7 +1586,7 @@ def mode_cb(data, signal, signal_data):
                 else:
                     hostmask = None
                     debug('MODE: key not in user cache')
-                masklist.add(server, channel, mask, operator=op, hostmask=hostmask, date=when)
+                masklist.add(server, channel, mask, operator=op, hostmask=hostmask)
             elif action == '-':
                 masklist.remove(server, channel, mask)
     return WEECHAT_RC_OK
@@ -1666,22 +1670,26 @@ def nick_cb(data, signal, signal_data):
 @timeit
 def garbage_collector_cb(data, counter):
     # purge anything collected from channels that aren't in our list
-    global chanop_channels
+
+    def is_tracked(server, channel):
+        global chanop_channels
+        return server in chanop_channels and channel in chanop_channels[server]
+
     for key in _user_cache.keys():
-        if key[0] not in chanop_channels or key[1] not in chanop_channels[key[0]]:
-            debug('collector: purging %s' %(key, ))
+        if not is_tracked(*key):
+            debug('collector: purging nicks %s' %(key, ))
             del _user_cache[key]
 
     for key in _user_temp_cache.keys():
         _key = key[0]
-        if _key[0] not in chanop_channels or _key[1] not in chanop_channels[_key[0]]:
-            debug('collector: purging %s' %(key, ))
+        if not is_tracked(*_key):
+            debug('collector: purging temp nicks %s' %(key, ))
             del _user_temp_cache[key]
 
     for mode, masklist in maskModes.iteritems():
         for key in masklist.keys():
-            if key[0] not in chanop_channels or key[1] not in chanop_channels[key[0]]:
-                debug('collector: purging %s %s' %(mode, key))
+            if not is_tracked(*key):
+                debug('collector: purging masks %s %s' %(mode, key))
                 del masklist[key]
 
     # purge nicks that left the channel for 20min
@@ -1745,9 +1753,10 @@ global waiting_for_completion, banlist_args
 waiting_for_completion = None
 banlist_args = ''
 def unban_mask_cmpl(data, completion_item, buffer, completion):
+    """Completion for applied banmasks, for commands like /ounban /ounmute"""
     mode = data
     masklist = maskModes[mode]
-    masks = masklist.list(buffer)
+    masks = list(masklist.list(buffer))
     if not masks:
         global waiting_for_completion, hook_banlist, banlist_args
         input = weechat.buffer_get_string(buffer, 'input')
@@ -1762,14 +1771,16 @@ def unban_mask_cmpl(data, completion_item, buffer, completion):
         else:
             weechat.buffer_set(buffer, 'input', '%s nothing.' %input)
     else:
+        # mask list updated, do completion
         #debug('unban mask completion: %s' %(masks, ))
         input = weechat.buffer_get_string(buffer, 'input')
-        if input[-1] != ' ':
-            # find banmasks that matches pattern and put it in the input
-            input, _, pattern = input.rpartition(' ')
-            masks = list(masks) # since is a iterator and I need to loop it more than once
-            matched_masks = hostmask_pattern_match(pattern, masks)
-            if len(matched_masks):
+        input, _, pattern = input.rpartition(' ')
+        if pattern:
+            if is_nick(pattern):
+                matched_masks = search_nick_in_masks(pattern, masks)
+            else:
+                matched_masks = hostmask_pattern_match(pattern, masks)
+            if matched_masks:
                 weechat.buffer_set(buffer, 'input', '%s %s ' %(input, ' '.join(matched_masks)))
         for mask in masks:
             weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_SORT)
