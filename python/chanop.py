@@ -1775,22 +1775,29 @@ def ban_mask_cmpl(data, completion_item, buffer, completion):
             users = generate_user_cache(server, channel)
 
         input, _, pattern = input.rpartition(' ')
-        debug('ban_mask_completion: %s' %pattern)
+        debug('ban_mask_completion: %s*' %pattern)
         masks = hostmask_pattern_match(pattern + '*', users.itervalues())
         if '@' in pattern:
-            # complete hostname
+            # complete *!*@hostname
             pattern = pattern[:pattern.find('@')]
             for mask in masks:
                 mask = '%s@%s' %(pattern, mask[mask.find('@')+1:])
                 debug('ban_mask_completion: mask: %s' %mask)
                 weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_SORT)
         elif '!' in pattern:
-            # complete username
+            # complete *!username@*
             pattern = pattern[:pattern.find('!')]
             for mask in masks:
                 mask = '%s!%s@*' %(pattern, mask[mask.find('!')+1:mask.find('@')])
                 debug('ban_mask_completion: mask: %s' %mask)
                 weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_SORT)
+        else:
+            # complete nick!*@*
+            for mask in masks:
+                mask = '%s!*@*' %get_nick(mask)
+                debug('ban_mask_completion: mask: %s' %mask)
+                weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_SORT)
+
     return WEECHAT_RC_OK
 
 def nicks_cmpl(data, completion_item, buffer, completion):
