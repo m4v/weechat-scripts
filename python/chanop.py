@@ -1765,39 +1765,50 @@ def unban_mask_cmpl(data, completion_item, buffer, completion):
     return WEECHAT_RC_OK
 
 def ban_mask_cmpl(data, completion_item, buffer, completion):
+    """Completion for banmasks, for commands like /oban /omute"""
     input = weechat.buffer_get_string(buffer, 'input')
-    if input[-1] != ' ':
-        key = make_key(buffer)
-        try:
-            users = _user_cache[key]
-        except KeyError:
-            users = generate_user_cache(server, channel)
+    if input[-1] == ' ':
+        # no pattern, return
+        return WEECHAT_RC_OK
 
-        input, _, pattern = input.rpartition(' ')
-        if pattern[-1] != '*':
-            search_pattern = pattern + '*'
-        else:
-            search_pattern = pattern
-        debug('ban_mask_completion: %s' %search_pattern)
+    key = make_key(buffer)
+    try:
+        users = _user_cache[key]
+    except KeyError:
+        users = generate_user_cache(server, channel)
 
-        if '@' in pattern:
-            # complete *!*@hostname
-            pattern = pattern[:pattern.find('@')]
-            make_mask = lambda mask : '%s@%s' %(pattern, mask[mask.find('@')+1:])
-        elif '!' in pattern:
-            # complete *!username@*
-            pattern = pattern[:pattern.find('!')]
-            make_mask = lambda mask : '%s!%s@*' %(pattern, mask[mask.find('!')+1:mask.find('@')])
-        else:
-            # complete nick!*@*
-            make_mask = lambda mask : '%s!*@*' %get_nick(mask)
+    input, _, pattern = input.rpartition(' ')
+    if pattern[-1] != '*':
+        search_pattern = pattern + '*'
+    else:
+        search_pattern = pattern
+    debug('ban_mask_completion: %s' %search_pattern)
 
-        masks = hostmask_pattern_match(search_pattern, users.itervalues())
+    if '@' in pattern:
+        # complete *!*@hostname
+        prefix, suffix = pattern.split('@', 1)
+        make_mask = lambda mask : '%s@%s' %(prefix, mask[mask.find('@')+1:])
+    elif '!' in pattern:
+        # complete *!username@*
+        prefix, suffix = pattern.split('!', 1)
+        make_mask = lambda mask : '%s!%s@*' %(prefix, mask[mask.find('!')+1:mask.find('@')])
+    else:
+        # complete nick!*@*
+        prefix, suffix = '', pattern
+        make_mask = lambda mask : '%s!*@*' %get_nick(mask)
+
+    debug('ban mask cmpl: p:%s s:%s' %(prefix, suffix))
+    masks = hostmask_pattern_match(search_pattern, users.itervalues())
+    if '*' in suffix or '?' in suffix:
+        # In these cases completion will fail, since weechat takes '*?' as literals
+        # so put all the found masks in the input
+        # XXX do I want this? can lead to some unexpected results
+        weechat.buffer_set(buffer, 'input', '%s %s' %(input, ' '.join(map(make_mask, masks))))
+    else:
         for mask in masks:
             mask = make_mask(mask)
-            debug('ban_mask_completion: mask: %s' %mask)
+            debug('ban mask cmpl: mask: %s' %mask)
             weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_SORT)
-
     return WEECHAT_RC_OK
 
 def nicks_cmpl(data, completion_item, buffer, completion):
