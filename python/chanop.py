@@ -1851,6 +1851,15 @@ if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
         SCRIPT_DESC, '', ''):
 
+    # colors
+    color_delimiter   = weechat.color('chat_delimiters')
+    color_script_nick = weechat.color('chat_nick')
+    color_reset       = weechat.color('reset')
+
+    # pretty [chanop]
+    script_nick = '%s[%s%s%s]%s' %(color_delimiter, color_script_nick, SCRIPT_NAME, color_delimiter,
+            color_reset)
+
     chanop_init()
 
     for opt, val in settings.iteritems():
@@ -1909,14 +1918,6 @@ if __name__ == '__main__' and import_ok and \
     # debug commands
     weechat.hook_command('ocaches', '', '', '', '', 'debug_print_cache', '')
 
-    # colors
-    color_delimiter   = weechat.color('chat_delimiters')
-    color_script_nick = weechat.color('chat_nick')
-    color_reset       = weechat.color('reset')
-    
-    # pretty [chanop]
-    script_nick = '%s[%s%s%s]%s' %(color_delimiter, color_script_nick, SCRIPT_NAME, color_delimiter,
-            color_reset)
 
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
