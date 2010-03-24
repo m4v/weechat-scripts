@@ -319,12 +319,23 @@ def is_hostmask(s):
     else:
         return False
 
+_nickchars = r'[]\`_^{|}'
+_nickRe = re.compile(r'^[A-Za-z%s][-0-9A-Za-z%s]*$' %(re.escape(_nickchars), re.escape(_nickchars)))
+def is_nick(s):
+    return bool(_nickRe.match(s))
+
+def is_ip(s):
+    """Returns whether or not a given string is an IPV4 address."""
+    import socket
+    try:
+        return bool(socket.inet_aton(s))
+    except socket.error:
+        return False
+
 _hostmask_regexp_cache = {}
 @timeit
 def hostmask_pattern_match(pattern, hostmask):
     # we will take the trouble of using regexps, since they match faster than fnmatch once compiled
-    #pattern = '*'.join([ s for s in pattern.split('*') if s ]) # remove double *
-    #pattern = '?'.join([ s for s in pattern.split('?') if s ]) # ditto
     if pattern in _hostmask_regexp_cache:
         regexp = _hostmask_regexp_cache[pattern]
     else:
@@ -341,17 +352,20 @@ def hostmask_pattern_match(pattern, hostmask):
         _hostmask_regexp_cache[pattern] = regexp
 
     if isinstance(hostmask, str):
-        return regexp.search(hostmask)
-    else:
-        return [ mask for mask in hostmask if regexp.search(mask) ]
+        hostmask = [hostmask]
+    return [ mask for mask in hostmask if regexp.search(mask) ]
 
-def is_ip(s):
-    """Returns whether or not a given string is an IPV4 address."""
-    import socket
-    try:
-        return bool(socket.inet_aton(s))
-    except socket.error:
-        return False
+def search_nick_in_masks(nick, masks):
+    L = []
+    for nicks in _user_cache.itervalues(): # FIXME not good, the same nick can be in two servers
+        if nick in nicks:                  # FIXME not case insensible
+            # pattern is a nick, fetch hostmask and match
+            hostmask = nicks[nick]
+            for mask in masks:
+                if hostmask_pattern_match(mask, hostmask):
+                    L.append(mask)
+            break
+    return L
 
 def get_nick(hostmask):
     n = hostmask.find('!')
