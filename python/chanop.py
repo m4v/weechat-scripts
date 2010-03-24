@@ -186,6 +186,15 @@ now = lambda : int(time())
 
 
 ### Messages ###
+def debug_time_stamp(f):
+    start = now()
+    def setprefix(s, prefix='', **kwargs):
+        if not prefix:
+            prefix = now() - start
+        f(s, prefix=prefix, **kwargs)
+    return setprefix
+
+@debug_time_stamp
 def debug(s, prefix='', buffer_name=None):
     """Debug msg"""
     if not weechat.config_get_plugin('debug'): return
@@ -198,16 +207,6 @@ def debug(s, prefix='', buffer_name=None):
         weechat.buffer_set(buffer, 'time_for_each_line', '0')
         weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
     weechat.prnt(buffer, '%s\t%s' %(prefix, s))
-
-global start
-start = now()
-def debug_timed(s, prefix='', **kwargs):
-    global start
-    if not prefix:
-        prefix = now() - start
-    _debug(s, prefix=prefix, **kwargs)
-
-debug, _debug = debug_timed, debug
 
 def error(s, prefix=None, buffer='', trace=''):
     """Error msg"""
@@ -249,7 +248,7 @@ def timeit(f):
         rt = f(*args, **kwargs)
         d = time() - t
         power = 0
-        while d < 1 and d != 0.0 and power < 2:
+        while d < 1 and power < 2:
             power += 1
             d *= 1000.0
         debug('%s time: %.2f %s' %(f.func_name, d, units[power]),\
