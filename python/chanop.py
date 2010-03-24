@@ -1762,7 +1762,6 @@ def unban_mask_cmpl(data, completion_item, buffer, completion):
                 weechat.buffer_set(buffer, 'input', '%s %s ' %(input, ' '.join(matched_masks)))
         for mask in masks:
             weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_SORT)
-        fetch_ban_list(buffer, modes=mode)
     return WEECHAT_RC_OK
 
 def ban_mask_cmpl(data, completion_item, buffer, completion):
