@@ -366,12 +366,13 @@ def search_nick_in_masks(nick, masks):
             break
     return L
 
-def get_nick(hostmask):
-    n = hostmask.find('!')
-    if n > 0:
-        return hostmask[:n]
+def get_nick(s):
+    if s[0] == ':':
+        m = 1
     else:
-        return hostmask
+        m = 0
+    n = s.find('!')
+    return s[m:n]
 
 @timeit
 def supported_modes(server, mode=None):
@@ -1127,7 +1128,7 @@ class Ban(CommandNeedsOp):
             return hostmask
         nick = user = host = '*'
         if 'nick' in self.banmask:
-            nick = hostmask[:hostmask.find('!')]
+            nick = get_nick(hostmask)
         if 'user' in self.banmask:
             user = hostmask.split('!',1)[1].split('@')[0]
         if 'host' in self.banmask:
@@ -1585,7 +1586,7 @@ def mode_cb(data, signal, signal_data):
     debug('MODE: %s' %' '.join((data, signal, signal_data)))
     #:m4v!~znc@unaffiliated/m4v MODE #test -bo+v asd!*@* m4v dude
     server = signal[:signal.find(',')]
-    nick = signal_data[1:signal_data.find('!')]
+    nick = get_nick(signal_data) 
     if nick == weechat.info_get('irc_nick', server):
         # mode set by us, return for now (banmasks were already updated)
         return WEECHAT_RC_OK
@@ -1672,7 +1673,7 @@ def part_cb(data, signal, signal_data):
     channel = signal_data.split()[2]
     key = (server, channel)
     if key in _user_cache:
-        nick = signal_data[1:signal_data.find('!')]
+        nick = get_nick(signal_data)
         _user_temp_cache[(key, nick)] = now()
     return WEECHAT_RC_OK
 
@@ -1681,7 +1682,7 @@ def quit_cb(data, signal, signal_data):
     server = signal[:signal.find(',')]
     keys = [ key for key in _user_cache if key[0] == server ]
     if keys:
-        nick = signal_data[1:signal_data.find('!')]
+        nick = get_nick(signal_data)
         _now = now()
         for key in keys:
             if nick in _user_cache[key]:
