@@ -1380,38 +1380,77 @@ class Mode(CommandNeedsOp):
         cmd = '/mode %s' %modes
         self.queue(cmd)
 
-class BanList(CommandChanop):
+class ShowBans(CommandChanop):
     command = 'olistbans'
+    masklist = banlist
+    showbuffer = ''
+    title = 'Banmasks known to chanop'
 
+    def __init__(self, *args, **kwargs):
+        super(ShowBans, self).__init__(*args, **kwargs)
+        # set colors
+        self.c_reset = weechat.color('default')
+        self.c_mask = weechat.color('white')
+        self.c_host = weechat.color('cyan')
+        self.c_op = weechat.color('lightgreen')
+        self.c_channel = weechat.color('lightred')
+ 
     def get_buffer(self):
+        if self.showbuffer:
+            return self.showbuffer
         buffer = weechat.buffer_search('python', SCRIPT_NAME)
         if not buffer:
             buffer = weechat.buffer_new(SCRIPT_NAME, '', '', '', '')
             weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
             weechat.buffer_set(buffer, 'time_for_each_line', '0')
-            weechat.buffer_set(buffer, 'title', 'Chanop Ban List')
+        self.showbuffer = buffer
         return buffer
 
+    def prnt(self, s):
+        weechat.prnt(self.get_buffer(), s)
+
+    def prnt_ban(self, banmask, op, when, hostmask=None):
+        padding = self.get_config_int('padding') or 40
+        padding = padding - len(banmask)
+        if padding < 0:
+            padding = 0
+        padding = '.'*padding
+        self.prnt('%s%s%s %sset by %s%s%s at %s' %(self.c_mask, banmask, self.c_reset,
+                padding, self.c_op, op, self.c_reset, when))
+        if hostmask:
+            self.prnt('  %s%s%s' %(self.c_host, hostmask, self.c_reset))
+
+    def clear(self):
+        b = self.get_buffer()
+        weechat.buffer_clear(b)
+        weechat.buffer_set(b, 'display', '1')
+
+    def set_title(self, s):
+        weechat.buffer_set(self.get_buffer(), 'title', s)
+
     def execute(self):
-        buffer = self.get_buffer()
-        weechat.buffer_set(buffer, 'display', '1')
-        if not banlist:
-            say("No bans known.", buffer=buffer)
+        self.clear()
+        masklist = self.masklist
+        if not masklist:
+            self.prnt("No bans known.")
             return
-        for server, channel in banlist.iterkeys():
+        mask_count = 0
+        for key, masks in masklist.iteritems():
             #say('%s %s' %(server, channel), buffer=buffer)
-            weechat.prnt(buffer, '[%s %s]' %(server, channel))
-            for ban in banlist[server, channel].itervalues():
-                if ban.hostmask:
-                    hostmask = ' (%s%s%s)' %(weechat.color('cyan'), ban.hostmask,
-                            weechat.color('default'))
-                else:
-                    hostmask = ''
-                weechat.prnt(buffer, '%s%s%s%s set by %s%s%s %s'\
-                        %(  weechat.color('white'), ban.banmask, weechat.color('default'),
-                            hostmask, weechat.color('lightgreen'),
-                            ban.operator and get_nick(ban.operator) or self.nick,
-                            weechat.color('default'), ban.date))
+            if not masks:
+                continue
+            mask_count += len(masks)
+            self.prnt('\n%s[%s %s]' %(self.c_channel, key[0], key[1]))
+            for ban in masks.itervalues():
+                op = ban.operator and get_nick(ban.operator) or self.nick
+                self.prnt_ban(ban.banmask, op, ban.date, ban.hostmask)
+        self.set_title('%s - total: %s' %(self.title, mask_count))
+
+
+class ShowMutes(ShowBans):
+    command = 'olistmutes'
+    masklist = mutelist
+    title = 'Quietmasks known to chanop'
 
 
 
@@ -1884,7 +1923,8 @@ if __name__ == '__main__' and import_ok and \
     # hook /oban /ounban /olistbans
     Ban().hook()
     UnBan().hook()
-    BanList().hook()
+    ShowBans().hook()
+    ShowMutes().hook()
     # hook /omute /ounmute
     Mute().hook()
     UnMute().hook()
