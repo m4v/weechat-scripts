@@ -367,12 +367,36 @@ def search_nick_in_masks(nick, masks):
     return L
 
 def get_nick(s):
-    if s[0] == ':':
-        m = 1
-    else:
-        m = 0
+    """
+    'nick!user@host' => 'nick'
+    ':nick!user@host' => 'nick'"""
     n = s.find('!')
-    return s[m:n]
+    if n < 1:
+        return ''
+    if s[0] == ':':
+        return s[1:n]
+    return s[:n]
+
+def get_user(s):
+    """
+    'nick!user@host' => 'user'"""
+    n = s.find('!')
+    m = s.find('@')
+    if n > 0 and m > 2 and m > n:
+        return s[n+1:m]
+    return ''
+
+def get_host(s):
+    """
+    'nick!user@host' => 'host'"""
+    n = s.find('@')
+    if n < 3:
+        # not a valid hostmask
+        return ''
+    m = s.find(' ')
+    if m > 0 and m > n:
+        return s[n+1:m]
+    return s[n+1:]
 
 @timeit
 def supported_modes(server, mode=None):
@@ -1173,9 +1197,9 @@ class Ban(CommandNeedsOp):
         if 'nick' in self.banmask:
             nick = get_nick(hostmask)
         if 'user' in self.banmask:
-            user = hostmask.split('!',1)[1].split('@')[0]
+            user = get_user(hostmask)
         if 'host' in self.banmask:
-            host = hostmask[hostmask.find('@') + 1:]
+            host = get_host(hostmask)
         elif 'host1' in self.banmask:
             host = hostmask[hostmask.find('@') + 1:]
             if is_ip(host):
