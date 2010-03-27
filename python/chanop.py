@@ -241,7 +241,7 @@ def debug_print_cache(data, buffer, args):
 def timeit(f):
     """Times a function and prints the result in a buffer."""
     from time import time
-    units = {0:'s', 1:'ms', 2:'ns'}
+    units = {0:'s', 1:'ms', 2:'us'}
     def timed_function(*args, **kwargs):
         t = time()
         rt = f(*args, **kwargs)
