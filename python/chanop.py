@@ -907,7 +907,33 @@ class BanObject(object):
         return "<BanObject %s %s >" %(self.banmask, self.date)
 
 
+class CaseInsensibleString(str):
+    def __init__(self, s=''):
+        self.lowered = s.lower()
+
+    def __eq__(self, s):
+        try:
+            return self.lowered == s.lower()
+        except:
+            return False
+
+    def __ne__(self, s):
+        return not self == s
+
+    def __hash__(self):
+        return hash(self.lowered)
+
+
 class CaseInsensibleDict(dict):
+    def __init__(self, d=None):
+        if d:
+            self.update(d)
+
+    def update(self, d):
+        assert isinstance(d, dict)
+        for k, v in d.iteritems():
+            self[k] = v
+
     def __setitem__(self, k, v):
         dict.__setitem__(self, self.key(k), v)
 
@@ -922,10 +948,27 @@ class CaseInsensibleDict(dict):
 
     def key(self, k):
         if isinstance(k, str):
-            return k.lower()
+            return CaseInsensibleString(k)
         elif isinstance(k, tuple):
-            return tuple([ s.lower() for s in k ])
-        return k
+            return tuple([ self.key(v) for v in k ])
+        return rt
+
+
+class CaseInsensibleSet(set):
+    normalize = staticmethod(CaseInsensibleString)
+
+    def __init__(self, iterable=()):
+        iterable = map(self.normalize, iterable)
+        set.__init__(self, iterable)
+
+    def __contains__(self, v):
+        return set.__contains__(self, self.normalize(v))
+
+    def add(self, v):
+        set.add(self, self.normalize(v))
+
+    def remove(self, v):
+        set.remove(self, self.normalize(v))
 
 
 class BanList(CaseInsensibleDict):
@@ -1460,14 +1503,14 @@ class ShowMutes(ShowBans):
 
 ### init stuff ###
 global chanop_channels
-chanop_channels = {}
+chanop_channels = CaseInsensibleDict()
 def chanop_init():
     global chanop_channels
     servers = Infolist('irc_server')
     while servers.next():
         if servers['is_connected']:
             server = servers['name']
-            channels = get_config_list('channels.%s' %server)
+            channels = CaseInsensibleSet(get_config_list('channels.%s' %server))
             chanop_channels[server] = channels
             buffer = weechat.buffer_search('irc', 'server.%s' %server)
             modes = weechat.config_get_plugin('chanmodes.%s' %server)
