@@ -871,8 +871,10 @@ class CommandChanop(Command):
     def is_nick(self, nick):
         return nick in self.users
 
-    def get_host(self, name):
+    def get_host(self, name=None):
         try:
+            if name is None:
+                return self.users[self.nick]
             host = self.users[name]
             return host
         except KeyError:
@@ -1274,7 +1276,7 @@ class Ban(CommandNeedsOp):
         return banmask
 
     def add_ban(self, banmask, hostmask=None):
-        self.masklist.add(self.server, self.channel, banmask, hostmask=hostmask)
+        self.masklist.add(self.server, self.channel, banmask, op=self.get_host(), hostmask=hostmask)
 
     def execute_op(self):
         args = self.args.split()
@@ -1510,21 +1512,13 @@ class Mode(CommandNeedsOp):
         cmd = '/mode %s' %modes
         self.queue(cmd)
 
+
 class ShowBans(CommandChanop):
     command = 'olistbans'
     masklist = banlist
     showbuffer = ''
-    title = 'Banmasks known to chanop'
+    name = 'bans'
 
-    def __init__(self, *args, **kwargs):
-        super(ShowBans, self).__init__(*args, **kwargs)
-        # set colors
-        self.c_reset = weechat.color('default')
-        self.c_mask = weechat.color('white')
-        self.c_host = weechat.color('cyan')
-        self.c_op = weechat.color('lightgreen')
-        self.c_channel = weechat.color('lightred')
- 
     def get_buffer(self):
         if self.showbuffer:
             return self.showbuffer
@@ -1545,10 +1539,12 @@ class ShowBans(CommandChanop):
         if padding < 0:
             padding = 0
         padding = '.'*padding
-        self.prnt('%s%s%s %sset by %s%s%s at %s' %(self.c_mask, banmask, self.c_reset,
-                padding, self.c_op, op, self.c_reset, when))
+        self.prnt('%s%s%s %sset by %s%s%s at %s' %(colot_mask, banmask, color_reset,
+                padding, color_chat_nick, op, color_reset, when))
         if hostmask:
-            self.prnt('  %s%s%s' %(self.c_host, hostmask, self.c_reset))
+            if not isinstance(hostmask, str):
+                hostmask = ' '.join(hostmask)
+            self.prnt('  %s%s' %(color_chat_host, hostmask))
 
     def clear(self):
         b = self.get_buffer()
@@ -1564,23 +1560,31 @@ class ShowBans(CommandChanop):
         if not masklist:
             self.prnt("No bans known.")
             return
+        if self.args:
+            key = (self.server, self.args)
+        else:
+            key = make_key(self.buffer)
+        try:
+            masks = masklist[key]
+        except KeyError:
+            masks = None
         mask_count = 0
-        for key, masks in masklist.iteritems():
-            #say('%s %s' %(server, channel), buffer=buffer)
-            if not masks:
-                continue
-            mask_count += len(masks)
-            self.prnt('\n%s[%s %s]' %(self.c_channel, key[0], key[1]))
+        if masks:
+            mask_count = len(masks)
+            self.prnt('\n%s[%s %s]' %(color_channel, key[0], key[1]))
             for ban in masks.itervalues():
-                op = ban.operator and get_nick(ban.operator) or self.nick
+                op = ban.operator and get_nick(ban.operator)
                 self.prnt_ban(ban.banmask, op, ban.date, ban.hostmask)
-        self.set_title('%s - total: %s' %(self.title, mask_count))
+        else:
+            self.prnt('Not known bans for %s.%s' %key)
+        self.set_title('List of %s known by chanop in %s (total: %s)' %(self.name, key[1],
+                mask_count))
 
 
 class ShowMutes(ShowBans):
     command = 'olistmutes'
     masklist = mutelist
-    title = 'Quietmasks known to chanop'
+    name = 'quiets'
 
 
 
