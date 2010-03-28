@@ -205,7 +205,6 @@ def debug(s, prefix='', buffer_name=None):
     if not buffer:
         buffer = weechat.buffer_new(buffer_name, '', '', '', '')
         weechat.buffer_set(buffer, 'nicklist', '0')
-        weechat.buffer_set(buffer, 'time_for_each_line', '0')
         weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
     weechat.prnt(buffer, '%s\t%s' %(prefix, s))
 
@@ -253,6 +252,15 @@ def debug_print_cache(data, buffer, args):
         _debug('regexp for %s' %pattern)
     return WEECHAT_RC_OK
 
+def debug_garbage_collector(data, buffer, args):
+    return garbage_collector_cb('', 0)
+
+def debug_print_time_avg(data, buffer, args):
+    for k, v in _time_avg.items():
+        debug('f: %s t: %.4f' %(k, v[0]/v[1]), buffer_name='chanop_timeavg')
+    return WEECHAT_RC_OK
+
+_time_avg = {}
 def timeit(f):
     """Times a function and prints the result in a buffer."""
     from time import time
@@ -267,6 +275,13 @@ def timeit(f):
             d *= 1000.0
         debug('%s time: %.2f %s' %(f.func_name, d, units[power]),\
                 buffer_name='Chanop_timeit')
+        try:
+            v, n = _time_avg[f.func_name]
+            v += d
+            n += 1
+            _time_avg[f.func_name] = (v, n)
+        except KeyError:
+            _time_avg[f.func_name] = (d, 1)
         return rt
     return timed_function
 
@@ -1198,6 +1213,7 @@ class Ban(CommandNeedsOp):
     banmask = []
     _mode = 'b'
     _prefix = '+'
+
     def parse_args(self, *args):
         CommandNeedsOp.parse_args(self, *args)
         self._parse_args(self, *args)
@@ -1853,7 +1869,6 @@ def nick_cb(data, signal, signal_data):
 @timeit
 def garbage_collector_cb(data, counter):
     # purge anything collected from channels that aren't in our list
-
     def is_tracked(server, channel):
         global chanop_channels
         return server in chanop_channels and channel in chanop_channels[server]
@@ -2142,6 +2157,8 @@ if __name__ == '__main__' and import_ok and \
 
     # debug commands
     weechat.hook_command('ocaches', '', '', '', '', 'debug_print_cache', '')
+    weechat.hook_command('ocollect', '', '', '', '', 'debug_garbage_collector', '')
+    weechat.hook_command('otime', '', '', '', '', 'debug_print_time_avg', '')
 
 
 
