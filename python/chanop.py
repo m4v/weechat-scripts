@@ -371,7 +371,7 @@ def hostmask_pattern_match(pattern, hostmask):
 def search_nick_in_masks(nick, masks):
     L = []
     for nicks in _user_cache.itervalues(): # FIXME not good, the same nick can be in two servers
-        if nick in nicks:                  # FIXME not case insensible
+        if nick in nicks:
             # pattern is a nick, fetch hostmask and match
             hostmask = nicks[nick]
             for mask in masks:
@@ -1086,6 +1086,16 @@ mutelist = BanList()
 maskModes = { 'b':banlist, 'q': mutelist }
 
 
+class UserList(CaseInsensibleDict):
+    def __setitem__(self, k, v):
+        debug('user list: setting %r -> %r' %(k, v), buffer_name='chanop_verbose')
+        super(UserList, self).__setitem__(k, v)
+
+    def __delitem__(self, k):
+        debug('user list: deleting %r' %(k, ), buffer_name='chanop_verbose')
+        super(UserList, self).__delitem__(k)
+
+
 ##############################
 ### Chanop Command Classes ###
 
@@ -1758,9 +1768,9 @@ def mode_cb(data, signal, signal_data):
 
 
 ### user cache ###
-_user_cache = {}
+_user_cache = UserList()
 def generate_user_cache(server, channel):
-    users = {}
+    users = UserList()
     try:
         infolist = Infolist('irc_nick', '%s,%s' %(server, channel))
     except:
@@ -1789,7 +1799,7 @@ def join_cb(data, signal, signal_data):
             del _user_temp_cache[(key, nick)]
     return WEECHAT_RC_OK
 
-_user_temp_cache = {}
+_user_temp_cache = UserList()
 @timeit
 def part_cb(data, signal, signal_data):
     #debug('PART: %s' %' '.join((data, signal, signal_data)))
@@ -1862,8 +1872,12 @@ def garbage_collector_cb(data, counter):
     for key, when in _user_temp_cache.items():
         if (_now - when) > 1200:
             key2, nick = key
-            del _user_cache[key2][nick]
-            del _user_temp_cache[key]
+            #debug('collector: purging nick %s %s' %(key2, nick))
+            try:
+                del _user_temp_cache[key]
+                del _user_cache[key2][nick]
+            except KeyError:
+                pass
 
     if weechat.config_get_plugin('debug'):
         user_count = sum(map(len, _user_cache.itervalues()))
