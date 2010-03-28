@@ -284,7 +284,7 @@ def get_config_int(config, get_function=None):
         error("'%s' is not a number." %value)
         return int(default)
 
-valid_banmask = set(('nick', 'user', 'host', 'exact'))
+valid_banmask = set(('nick', 'user', 'host', 'exact', 'webchat'))
 def get_config_banmask(config='default_banmask', get_function=None):
     if get_function and callable(get_function):
         value = get_function(config)
@@ -377,13 +377,20 @@ def get_nick(s):
         return s[1:n]
     return s[:n]
 
-def get_user(s):
+def get_user(s, trim=False):
     """
     'nick!user@host' => 'user'"""
     n = s.find('!')
     m = s.find('@')
     if n > 0 and m > 2 and m > n:
-        return s[n+1:m]
+        s = s[n+1:m]
+        if trim:
+            if s[0] == '~':
+                return s[1:]
+            elif len(s) > 2 and s[1] == '=':
+                return s[2:]
+        else:
+            return s
     return ''
 
 def get_host(s):
@@ -397,6 +404,18 @@ def get_host(s):
     if m > 0 and m > n:
         return s[n+1:m]
     return s[n+1:]
+
+def hex_to_ip(s):
+    """
+    '7f000001' => '127.0.0.1'"""
+    if not len(s) == 8:
+        return ''
+    try:
+        ip = map(lambda n: s[n:n+2], range(0, len(s), 2))
+        ip = map(lambda n: int(n, 16), ip)
+        return '.'.join(map(str, ip))
+    except:
+        return ''
 
 @timeit
 def supported_modes(server, mode=None):
@@ -1164,7 +1183,8 @@ class Ban(CommandNeedsOp):
     def _parse_args(self, *args):
         args = self.args.split()
         try:
-            (opts, args) = getopt.gnu_getopt(args, 'hune', ('host', 'host2', 'host1', 'user', 'nick', 'exact'))
+            (opts, args) = getopt.gnu_getopt(args, 'hunew', ('host', 'user', 'nick', 'exact',
+                'webchat'))
         except getopt.GetoptError, e:
             raise Exception, e
         self.banmask = []
@@ -1179,6 +1199,8 @@ class Ban(CommandNeedsOp):
                 self.banmask.append('user')
             elif k in ('-n', '--nick'):
                 self.banmask.append('nick')
+            elif k in ('-w', '--webchat'):
+                self.banmask.append('webchat')
             elif k in ('-e', '--exact'):
                 self.banmask = ['exact']
                 break
@@ -1193,6 +1215,12 @@ class Ban(CommandNeedsOp):
         assert self.banmask # really, if there isn't any banmask by now there's something wrong
         if 'exact' in self.banmask:
             return hostmask
+        elif 'webchat' in self.banmask:
+            user = get_user(hostmask, trim=True)
+            if is_ip(hex_to_ip(user)):
+                return '*!%s@*' %get_user(hostmask)
+            else:
+                return '*!*@%s' %get_host(hostmask)
         nick = user = host = '*'
         if 'nick' in self.banmask:
             nick = get_nick(hostmask)
