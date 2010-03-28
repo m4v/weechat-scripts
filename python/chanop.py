@@ -361,7 +361,7 @@ def search_nick_in_masks(nick, masks):
             # pattern is a nick, fetch hostmask and match
             hostmask = nicks[nick]
             for mask in masks:
-                if hostmask_pattern_match(mask, hostmask):
+                if is_hostmask(mask) and hostmask_pattern_match(mask, hostmask):
                     L.append(mask)
             break
     return L
