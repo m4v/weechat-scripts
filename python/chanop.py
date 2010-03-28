@@ -1686,7 +1686,7 @@ def mode_cb(data, signal, signal_data):
         # mode set by us, return for now (banmasks were already updated)
         return WEECHAT_RC_OK
     channel, modes, args = signal_data.split(' ', 4)[2:]
-    if len(modes) == 2 and modes[1] in 'ovjm':
+    if len(modes) == 2 and modes[1] in 'ovjml':
         # return for these modes fairly used but not useful to us
         return WEECHAT_RC_OK
     key = (server, channel)
