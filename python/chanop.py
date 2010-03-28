@@ -183,6 +183,7 @@ import getopt, re
 from time import time
 
 now = lambda : int(time())
+info_get = weechat.info_get
 
 
 ### Messages ###
@@ -331,11 +332,6 @@ def is_hostmask(s):
         return True
     else:
         return False
-
-_nickchars = r'[]\`_^{|}'
-_nickRe = re.compile(r'^[A-Za-z%s][-0-9A-Za-z%s]*$' %(re.escape(_nickchars), re.escape(_nickchars)))
-def is_nick(s):
-    return bool(_nickRe.match(s))
 
 def is_ip(s):
     """Returns whether or not a given string is an IPV4 address."""
@@ -2075,6 +2071,16 @@ if __name__ == '__main__' and import_ok and \
     # pretty [chanop]
     script_nick = '%s[%s%s%s]%s' %(color_delimiter, color_chat_nick, SCRIPT_NAME, color_delimiter,
             color_reset)
+
+    # valid nick, use weechat's api if available
+    version = weechat.info_get('version_number', '')
+    if not version or version < 0x30200:
+        _nickchars = r'[]\`_^{|}'
+        _nickRe = re.compile(r'^[A-Za-z%s][-0-9A-Za-z%s]*$' %(re.escape(_nickchars), re.escape(_nickchars)))
+        def is_nick(s):
+            return bool(_nickRe.match(s))
+    else:
+        is_nick = lambda s : bool(info_get('irc_is_nick', s))
 
     chanop_init()
 
