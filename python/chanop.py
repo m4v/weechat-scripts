@@ -950,7 +950,7 @@ def deop_callback(buffer, count):
 
 
 class BanObject(object):
-    #__slots__ = ('banmask', 'hostmask', 'operator', 'time', 'expires', 'removed')
+    __slots__ = ('banmask', 'hostmask', 'operator', 'date', 'expires')
     def __init__(self, banmask, hostmask=None, operator=None, date=None, expires=None):
         self.banmask = banmask
         self.hostmask = hostmask
