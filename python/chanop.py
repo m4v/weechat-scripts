@@ -1980,6 +1980,29 @@ def nicks_cmpl(data, completion_item, buffer, completion):
         weechat.hook_completion_list_add(completion, nick, 0, weechat.WEECHAT_LIST_POS_SORT)
     return WEECHAT_RC_OK
 
+def hosts_cmpl(data, completion_item, buffer, completion):
+    key = make_key(buffer)
+    try:
+        users = _user_cache[key]
+    except KeyError:
+        users = generate_user_cache(*key)
+
+    for hostmask in users.itervalues():
+        weechat.hook_completion_list_add(completion, get_host(hostmask), 0, weechat.WEECHAT_LIST_POS_SORT)
+    return WEECHAT_RC_OK
+
+def users_cmpl(data, completion_item, buffer, completion):
+    key = make_key(buffer)
+    try:
+        users = _user_cache[key]
+    except KeyError:
+        users = generate_user_cache(*key)
+
+    for hostmask in users.itervalues():
+        user = get_user(hostmask, trim=True)
+        weechat.hook_completion_list_add(completion, user, 0, weechat.WEECHAT_LIST_POS_SORT)
+    return WEECHAT_RC_OK
+
 
 ### Register Script and set configs ###
 if __name__ == '__main__' and import_ok and \
@@ -2041,7 +2064,9 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_completion('chanop_unmute_mask', '', 'unban_mask_cmpl', 'q')
     weechat.hook_completion('chanop_ban_mask', '', 'ban_mask_cmpl', '')
     weechat.hook_completion('chanop_nicks', '', 'nicks_cmpl', '')
-
+    weechat.hook_completion('chanop_users', '', 'users_cmpl', '')
+    weechat.hook_completion('chanop_hosts', '', 'hosts_cmpl', '')
+    
     weechat.hook_signal('*,irc_in_join', 'join_cb', '')
     weechat.hook_signal('*,irc_in_part', 'part_cb', '')
     weechat.hook_signal('*,irc_in_quit', 'quit_cb', '')
