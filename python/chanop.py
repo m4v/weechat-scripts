@@ -1272,7 +1272,7 @@ class Ban(CommandNeedsOp):
         return banmask
 
     def add_ban(self, banmask, hostmask=None):
-        self.masklist.add(self.server, self.channel, banmask, op=self.get_host(), hostmask=hostmask)
+        self.masklist.add(self.server, self.channel, banmask, operator=self.get_host(), hostmask=hostmask)
 
     def execute_op(self):
         args = self.args.split()
