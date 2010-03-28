@@ -1604,20 +1604,21 @@ def chanop_init():
                 modes = weechat.config_get_plugin('chanmodes')
             for channel in channels:
                 generate_user_cache(server, channel)
-                fetch_ban_list(buffer, channel, modes=modes)
+                fetch_ban_list(buffer, channel=channel, modes=modes)
 
 
 ### ban list ###
 hook_banlist = ()
 hook_banlist_time = {}
 hook_banlist_queue = []
-def fetch_ban_list(buffer, channel=None, modes=None):
+def fetch_ban_list(buffer, server=None, channel=None, modes=None):
     """Fetches hostmasks for a given channel mode and channel."""
     global hook_banlist
     debug('fetch bans called b:%s c:%s m:%s' %(buffer, channel, modes))
     if not channel:
         channel = weechat.buffer_get_string(buffer, 'localvar_channel')
-    server = weechat.buffer_get_string(buffer, 'localvar_server')
+    if not server:
+        server = weechat.buffer_get_string(buffer, 'localvar_server')
     # check modes
     if not modes:
         modes = supported_modes(server)
@@ -1788,11 +1789,18 @@ def join_cb(data, signal, signal_data):
     server = signal[:signal.find(',')]
     channel = signal_data[signal_data.rfind(' ')+2:]
     key = (server, channel)
+    nick = get_nick(signal_data)
     #debug('JOIN: %s' %(key, ))
-    if key in _user_cache:
+    if nick == weechat.info_get('irc_nick', server):
+        global chanop_channels
+        if server in chanop_channels and channel in chanop_channels[server]:
+            # joined a channel that we should track
+            debug('updating for %s' %(key, ))
+            generate_user_cache(server, channel)
+            fetch_ban_list('', server, channel)
+    elif key in _user_cache:
         hostname = signal_data[1:signal_data.find(' ')]
         users = _user_cache[key]
-        nick = get_nick(hostname)
         users[nick] = hostname
         # did the user do a cycle?
         if (key, nick) in _user_temp_cache:
