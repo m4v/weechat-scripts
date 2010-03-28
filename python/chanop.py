@@ -163,6 +163,7 @@ settings = {
 'kick_reason'           :'kthxbye!',
 'enable_multi_kick'     :'off',
 'invert_kickban_order'  :'off',
+'display_affected'      :'off',
 'chanmodes'             :'bq',
 'modes'                 :'4',
 }
@@ -222,6 +223,19 @@ def say(s, prefix=None, buffer=''):
     """normal msg"""
     prefix = prefix or script_nick
     weechat.prnt(buffer, '%s\t%s' %(prefix, s))
+
+def print_affected_users(buffer='', *hostmasks):
+    def format_user(hostmask):
+        nick, host = hostmask.split('!', 1)
+        return '%s%s%s(%s%s%s)' %(color_chat_nick, nick, color_delimiter, color_chat_host,
+                host, color_delimiter)
+
+    max = 8
+    count = len(hostmasks)
+    if count > max:
+        hostmasks = hostmasks[:max]
+    say('Affected users (%s): %s%s' %(count, ' '.join(map(format_user,
+        hostmasks)), count > max and ' %s...' %color_reset or ''), buffer=buffer)
 
 ### More debug stuff ###
 def debug_print_cache(data, buffer, args):
@@ -1265,6 +1279,7 @@ class Ban(CommandNeedsOp):
             self.add_ban(mask, hostmask)
             banmasks.append(mask)
         if banmasks:
+            banmasks = set(banmasks) # remove duplicates
             self.ban(*banmasks)
         else:
             say("Sorry, found nothing to ban.", buffer=self.buffer)
@@ -1272,6 +1287,9 @@ class Ban(CommandNeedsOp):
 
     def mode_is_supported(self):
         return supported_modes(self.server, self._mode)
+
+    def print_affected_users(self, *hostmasks):
+        print_affected_users(self.buffer, *hostmasks)
 
     def ban(self, *banmasks, **kwargs):
         if self._mode != 'b' and not self.mode_is_supported():
@@ -1281,11 +1299,17 @@ class Ban(CommandNeedsOp):
         else:
             mode = self._mode
         max_modes = self.get_config_int('modes')
+        affected_users = []
         for n in range(0, len(banmasks), max_modes):
             slice = banmasks[n:n+max_modes]
+            if self._prefix == '+': # only when applying masks
+                for mask in slice:
+                    affected_users.extend(hostmask_pattern_match(mask, self.users.itervalues()))
             bans = ' '.join(slice)
             cmd = '/mode %s%s %s' %(self._prefix, mode*len(slice), bans)
             self.queue(cmd, **kwargs)
+        if affected_users and get_config_boolean('display_affected'):
+            self.print_affected_users(*set(affected_users))
 
 
 class UnBan(Ban):
@@ -1710,6 +1734,7 @@ def mode_cb(data, signal, signal_data):
             elif c in 'ov': # these have an argument, drop it
                 del args[0]
         debug('MODE: %s' %(L, ))
+        affected_users = []
         # update masklist
         for action, mode, mask in L:
             masklist = maskModes[mode]
@@ -1718,13 +1743,17 @@ def mode_cb(data, signal, signal_data):
                 if key in _user_cache:
                     hostmask = hostmask_pattern_match(mask, _user_cache[key].itervalues())
                     debug(hostmask)
-                    hostmask = hostmask[0]
+                    if hostmask:
+                        affected_users.extend(hostmask)
                 else:
                     hostmask = None
                     debug('MODE: key not in user cache')
                 masklist.add(server, channel, mask, operator=op, hostmask=hostmask)
             elif action == '-':
                 masklist.remove(server, channel, mask)
+        if affected_users and get_config_boolean('display_affected'):
+            buffer = weechat.buffer_search('irc', '%s.%s' %key)
+            print_affected_users(buffer, *set(affected_users))
     return WEECHAT_RC_OK
 
 
@@ -2010,12 +2039,15 @@ if __name__ == '__main__' and import_ok and \
         SCRIPT_DESC, '', ''):
 
     # colors
-    color_delimiter   = weechat.color('chat_delimiters')
-    color_script_nick = weechat.color('chat_nick')
-    color_reset       = weechat.color('reset')
+    color_delimiter = weechat.color('chat_delimiters')
+    color_chat_nick = weechat.color('chat_nick')
+    color_chat_host = weechat.color('chat_host')
+    color_mask      = weechat.color('white')
+    color_channel   = weechat.color('lightred')
+    color_reset     = weechat.color('reset')
 
     # pretty [chanop]
-    script_nick = '%s[%s%s%s]%s' %(color_delimiter, color_script_nick, SCRIPT_NAME, color_delimiter,
+    script_nick = '%s[%s%s%s]%s' %(color_delimiter, color_chat_nick, SCRIPT_NAME, color_delimiter,
             color_reset)
 
     chanop_init()
