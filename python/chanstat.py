@@ -214,6 +214,11 @@ class ChanStatDB(dict):
                 avrg = (avrg * (avrg_period - diff) + value * diff) / avrg_period
                 chan.avrg_date = _now
                 chan.avrg_period = avrg_period
+                # make sure avrg is between max and min
+                if avrg > chan.max:
+                    avrg = chan.max
+                elif avrg < chan.min:
+                    avrg = chan.min
                 debug('avrg %s %.2f → %.2f (%s %.2f)' %(key[1], chan.average, avrg, diff,
                     avrg - chan.average))
                 chan.average = avrg
