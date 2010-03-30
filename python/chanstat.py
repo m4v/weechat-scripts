@@ -393,36 +393,6 @@ def new_channel_low_cb(data, count):
     return WEECHAT_RC_OK
 
 # chanstat command
-def draw_plot(key, display=''):
-    reader = channel_stats.logger.get_reader(key)
-    data = [ r for r in reader ]
-    x = ', '.join([ r[0] for r in data ])
-    y = ', '.join([ r[1] for r in data ])
-    avrg_x = ', '.join([ r[0] for r in data if len(r) == 3 ])
-    avrg_y = ', '.join([ r[2] for r in data if len(r) == 3 ])
-
-    weechat.hook_process(
-            "python -c \"\n"
-            "display = '%s'\n"
-            "if display:\n"
-            "   import os\n"
-            "   os.environ['DISPLAY'] = display\n"
-            "from pylab import plot, show, legend\n"
-            "x = (%s)\n"
-            "y = (%s)\n"
-            "ax = (%s)\n"
-            "ay = (%s)\n"
-            "plot(x, y, 'o')\n"
-            "plot(ax, ay)\n"
-            "show()\"" %(display, x, y, avrg_x, avrg_y), 0, 'draw_plot_cb', '')
-
-def draw_plot_cb(data, command, rc, stdout, stderr):
-    if stdout:
-        debug(stdout)
-    if stderr:
-        debug(stderr)
-    return WEECHAT_RC_OK
-
 def chanstat_cmd(data, buffer, args):
     prnt = weechat.prnt
     if args == '--save':
@@ -440,16 +410,6 @@ def chanstat_cmd(data, buffer, args):
     channel = weechat.buffer_get_string(buffer, 'localvar_channel')
     server = weechat.buffer_get_string(buffer, 'localvar_server')
     key = (server, channel)
-
-    args = args.split()
-    if len(args) > 0 and args[0] == '--plot':
-        plot = True
-        if len(args) == 2:
-            display = args[1]
-            draw_plot(key, display)
-        else:
-            draw_plot(key)
-        return WEECHAT_RC_OK
 
     update_user_count(server, channel)
     # clear any update in queue
