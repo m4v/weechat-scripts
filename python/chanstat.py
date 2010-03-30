@@ -166,6 +166,7 @@ class StatLog(object):
         writer.writerow(args)
 
     def get_reader(self, key):
+        key = tuple(map(str.lower, key))
         if key in self.writers:
             del self.writers[key]
         import csv
@@ -183,8 +184,8 @@ class ChanStatDB(dict):
         if not value:
             return
         _now = now()
-        #self.logger.log(key, _now, value)
         avrg = 0
+        key = tuple(map(str.lower, key))
         if key in self:
             chan = self[key]
             if value > chan.max:
@@ -223,6 +224,10 @@ class ChanStatDB(dict):
             self.logger.log(key, _now, value, avrg)
         else:
             self.logger.log(key, _now, value)
+
+    def __getitem__(self, key):
+        key = tuple(map(str.lower, key))
+        return dict.__getitem__(self, key)
 
     def initchan(self, key, *args):
         dict.__setitem__(self, key, Channel(*args))
