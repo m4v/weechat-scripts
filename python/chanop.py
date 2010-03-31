@@ -183,7 +183,6 @@ import getopt, re
 from time import time
 
 now = lambda : int(time())
-info_get = weechat.info_get
 
 
 ### Messages ###
@@ -2090,7 +2089,7 @@ if __name__ == '__main__' and import_ok and \
         def is_nick(s):
             return bool(_nickRe.match(s))
     else:
-        is_nick = lambda s : bool(info_get('irc_is_nick', s))
+        is_nick = lambda s : weechat.info_get('irc_is_nick', s)
 
     chanop_init()
 
