@@ -466,10 +466,14 @@ def supported_modes(server, mode=None):
     else:
         return modes
 
-def make_key(buffer):
-    server = weechat.buffer_get_string(buffer, 'localvar_server')
-    channel = weechat.buffer_get_string(buffer, 'localvar_channel')
-    return (server, channel)
+def irc_buffer(buffer):
+    """Returns a pair (server, channel) or None if buffer isn't an irc channel"""
+    buffer_get_string = weechat.buffer_get_string
+    if buffer_get_string(buffer, 'plugin') == 'irc' \
+            and buffer_get_string(buffer, 'localvar_type') == 'channel':
+        channel = buffer_get_string(buffer, 'localvar_channel')
+        server = buffer_get_string(buffer, 'localvar_server')
+        return (server, channel)
 
 
 ### Classes definitions ###
@@ -1044,13 +1048,6 @@ class CaseInsensibleSet(set):
 class BanList(CaseInsensibleDict):
     """Keeps a list of our bans for quick look up."""
     Dict = CaseInsensibleDict
-    def list(self, buffer):
-        try:
-            bans = self[make_key(buffer)]
-            return bans.iterkeys()
-        except KeyError:
-            return ()
-
     def set_empty_list(self, key):
         self[key] = self.Dict()
 
@@ -1575,7 +1572,7 @@ class ShowBans(CommandChanop):
         if self.args:
             key = (self.server, self.args)
         else:
-            key = make_key(self.buffer)
+            key = irc_buffer(self.buffer)
         try:
             masks = masklist[key]
         except KeyError:
@@ -1704,7 +1701,10 @@ def masklist_end_cb(buffer, modifier, modifier_data, string):
         debug('over')
     if waiting_for_completion:
         buffer, completion  = waiting_for_completion
-        list = masklist.list(buffer)
+        if key in masklist:
+            list = masklist[key].iterkeys()
+        else:
+            list = None
         input = weechat.buffer_get_string(buffer, 'input')
         input = input[:input.find(' fetching banmasks')] # remove this bit
         if list:
@@ -1951,6 +1951,18 @@ def update_chanop_channels_cb(data, config, value):
 
 ###########################
 ### WeeChat completions ###
+def cmpl_get_irc_users(f):
+    def decorator(data, completion_item, buffer, completion):
+        key = irc_buffer(buffer)
+        if not key:
+            return WEECHAT_RC_OK
+        try:
+            users = _user_cache[key]
+        except KeyError:
+            users = generate_user_cache(*key)
+        return f(users, data, completion_item, buffer, completion)
+    return decorator
+
 global waiting_for_completion, banlist_args
 waiting_for_completion = None
 banlist_args = ''
@@ -1958,14 +1970,17 @@ def unban_mask_cmpl(data, completion_item, buffer, completion):
     """Completion for applied banmasks, for commands like /ounban /ounmute"""
     mode = data
     masklist = maskModes[mode]
-    masks = list(masklist.list(buffer))
+    key = irc_buffer(buffer)
+    if not key:
+        return WEECHAT_RC_OK
+    masks = masklist[key].keys()
     if not masks:
         global waiting_for_completion, hook_banlist, banlist_args
         input = weechat.buffer_get_string(buffer, 'input')
         if input[-1] != ' ':
             input, _, banlist_args = input.rpartition(' ')
         input = input.strip()
-        fetch_ban_list(buffer, modes=mode)
+        fetch_ban_list(buffer, key[0], key[1], modes=mode)
         # check if it's fetching a banlist or nothing (due to fetching too soon)
         if hook_banlist:
             waiting_for_completion = (buffer, completion)
@@ -1988,18 +2003,13 @@ def unban_mask_cmpl(data, completion_item, buffer, completion):
             weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_SORT)
     return WEECHAT_RC_OK
 
-def ban_mask_cmpl(data, completion_item, buffer, completion):
+@cmpl_get_irc_users
+def ban_mask_cmpl(users, data, completion_item, buffer, completion):
     """Completion for banmasks, for commands like /oban /omute"""
     input = weechat.buffer_get_string(buffer, 'input')
     if input[-1] == ' ':
         # no pattern, return
         return WEECHAT_RC_OK
-
-    key = make_key(buffer)
-    try:
-        users = _user_cache[key]
-    except KeyError:
-        users = generate_user_cache(server, channel)
 
     input, _, pattern = input.rpartition(' ')
     if pattern[-1] != '*':
@@ -2035,35 +2045,20 @@ def ban_mask_cmpl(data, completion_item, buffer, completion):
             weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_SORT)
     return WEECHAT_RC_OK
 
-def nicks_cmpl(data, completion_item, buffer, completion):
-    key = make_key(buffer)
-    try:
-        users = _user_cache[key]
-    except KeyError:
-        users = generate_user_cache(*key)
-
+@cmpl_get_irc_users
+def nicks_cmpl(users, data, completion_item, buffer, completion):
     for nick in users:
         weechat.hook_completion_list_add(completion, nick, 0, weechat.WEECHAT_LIST_POS_SORT)
     return WEECHAT_RC_OK
 
-def hosts_cmpl(data, completion_item, buffer, completion):
-    key = make_key(buffer)
-    try:
-        users = _user_cache[key]
-    except KeyError:
-        users = generate_user_cache(*key)
-
+@cmpl_get_irc_users
+def hosts_cmpl(users, data, completion_item, buffer, completion):
     for hostmask in users.itervalues():
         weechat.hook_completion_list_add(completion, get_host(hostmask), 0, weechat.WEECHAT_LIST_POS_SORT)
     return WEECHAT_RC_OK
 
-def users_cmpl(data, completion_item, buffer, completion):
-    key = make_key(buffer)
-    try:
-        users = _user_cache[key]
-    except KeyError:
-        users = generate_user_cache(*key)
-
+@cmpl_get_irc_users
+def users_cmpl(users, data, completion_item, buffer, completion):
     for hostmask in users.itervalues():
         user = get_user(hostmask, trim=True)
         weechat.hook_completion_list_add(completion, user, 0, weechat.WEECHAT_LIST_POS_SORT)
