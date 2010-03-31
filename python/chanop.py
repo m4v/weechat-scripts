@@ -1021,7 +1021,7 @@ class CaseInsensibleDict(dict):
             return CaseInsensibleString(k)
         elif isinstance(k, tuple):
             return tuple([ self.key(v) for v in k ])
-        return rt
+        return k
 
 
 class CaseInsensibleSet(set):
@@ -1551,7 +1551,7 @@ class ShowBans(CommandChanop):
         if padding < 0:
             padding = 0
         padding = '.'*padding
-        self.prnt('%s%s%s %sset by %s%s%s at %s' %(colot_mask, banmask, color_reset,
+        self.prnt('%s%s%s %sset by %s%s%s at %s' %(color_mask, banmask, color_reset,
                 padding, color_chat_nick, op, color_reset, when))
         if hostmask:
             if not isinstance(hostmask, str):
