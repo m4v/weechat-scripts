@@ -2019,29 +2019,22 @@ def ban_mask_cmpl(users, data, completion_item, buffer, completion):
 
     if '@' in pattern:
         # complete *!*@hostname
-        prefix, suffix = pattern.split('@', 1)
+        prefix = pattern[:pattern.find('@')]
         make_mask = lambda mask : '%s@%s' %(prefix, mask[mask.find('@')+1:])
     elif '!' in pattern:
         # complete *!username@*
-        prefix, suffix = pattern.split('!', 1)
+        prefix = pattern[:pattern.find('!')]
         make_mask = lambda mask : '%s!%s@*' %(prefix, mask[mask.find('!')+1:mask.find('@')])
     else:
         # complete nick!*@*
-        prefix, suffix = '', pattern
         make_mask = lambda mask : '%s!*@*' %get_nick(mask)
 
-    debug('ban mask cmpl: p:%s s:%s' %(prefix, suffix))
+    debug('ban mask cmpl: %s' %prefix)
     masks = hostmask_pattern_match(search_pattern, users.itervalues())
-    if '*' in suffix or '?' in suffix:
-        # In these cases completion will fail, since weechat takes '*?' as literals
-        # so put all the found masks in the input
-        # XXX do I want this? can lead to some unexpected results
-        weechat.buffer_set(buffer, 'input', '%s %s' %(input, ' '.join(map(make_mask, masks))))
-    else:
-        for mask in masks:
-            mask = make_mask(mask)
-            debug('ban mask cmpl: mask: %s' %mask)
-            weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_SORT)
+    for mask in masks:
+        mask = make_mask(mask)
+        debug('ban mask cmpl: mask: %s' %mask)
+        weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_SORT)
     return WEECHAT_RC_OK
 
 @cmpl_get_irc_users
