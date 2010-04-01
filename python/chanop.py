@@ -186,6 +186,38 @@ now = lambda : int(time())
 
 
 ### Messages ###
+def error(s, prefix=None, buffer='', trace=''):
+    """Error msg"""
+    prefix = prefix or script_nick
+    weechat.prnt(buffer, '%s%s %s' %(weechat.prefix('error'), prefix, s))
+    if weechat.config_get_plugin('debug'):
+        if not trace:
+            import traceback
+            if traceback.sys.exc_type:
+                trace = traceback.format_exc()
+        not trace or weechat.prnt('', trace)
+
+def say(s, prefix=None, buffer=''):
+    """normal msg"""
+    prefix = prefix or script_nick
+    weechat.prnt(buffer, '%s\t%s' %(prefix, s))
+
+def print_affected_users(buffer, *hostmasks):
+    """Print a list of users, max 8 hostmasks"""
+    def format_user(hostmask):
+        nick, host = hostmask.split('!', 1)
+        return '%s%s%s(%s%s%s)' %(color_chat_nick, nick, color_delimiter, color_chat_host,
+                host, color_delimiter)
+
+    max = 8
+    count = len(hostmasks)
+    if count > max:
+        hostmasks = hostmasks[:max]
+    say('Affected users (%s): %s%s' %(count, ' '.join(map(format_user,
+        hostmasks)), count > max and ' %s...' %color_reset or ''), buffer=buffer)
+
+
+### Debug functions and decorators ###
 def debug_time_stamp(f):
     start = now()
     def setprefix(s, prefix='', **kwargs):
@@ -207,43 +239,13 @@ def debug(s, prefix='', buffer_name=None):
         weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
     weechat.prnt(buffer, '%s\t%s' %(prefix, s))
 
-def error(s, prefix=None, buffer='', trace=''):
-    """Error msg"""
-    prefix = prefix or script_nick
-    weechat.prnt(buffer, '%s%s %s' %(weechat.prefix('error'), prefix, s))
-    if weechat.config_get_plugin('debug'):
-        if not trace:
-            import traceback
-            if traceback.sys.exc_type:
-                trace = traceback.format_exc()
-        not trace or weechat.prnt('', trace)
-
-def say(s, prefix=None, buffer=''):
-    """normal msg"""
-    prefix = prefix or script_nick
-    weechat.prnt(buffer, '%s\t%s' %(prefix, s))
-
-def print_affected_users(buffer='', *hostmasks):
-    def format_user(hostmask):
-        nick, host = hostmask.split('!', 1)
-        return '%s%s%s(%s%s%s)' %(color_chat_nick, nick, color_delimiter, color_chat_host,
-                host, color_delimiter)
-
-    max = 8
-    count = len(hostmasks)
-    if count > max:
-        hostmasks = hostmasks[:max]
-    say('Affected users (%s): %s%s' %(count, ' '.join(map(format_user,
-        hostmasks)), count > max and ' %s...' %color_reset or ''), buffer=buffer)
-
-### Debug functions and decorators ###
 def debug_print_cache(data, buffer, args):
-    """Prints stored caches"""
+    """Prints stuff stored in cache"""
     _debug = lambda s: debug(s, buffer_name = 'Chanop_caches')
-    for key, users in _user_cache.iteritems():
-        for nick, host in users.iteritems():
-            _debug('%s => %s %s' %(key, nick, host))
-    _debug('')
+    #for key, users in _user_cache.iteritems():
+    #    for nick, host in users.iteritems():
+    #        _debug('%s => %s %s' %(key, nick, host))
+    #_debug('')
     for key, time in _user_temp_cache.iteritems():
         _debug('%s left %s at %s' %(key[1], key[0], time))
     _debug('')
@@ -252,16 +254,19 @@ def debug_print_cache(data, buffer, args):
     return WEECHAT_RC_OK
 
 def debug_garbage_collector(data, buffer, args):
+    """Runs garbage collector"""
     return garbage_collector_cb('', 0)
 
 def debug_print_time_avg(data, buffer, args):
+    """Prints timeit avegare"""
     debug('', buffer_name='chanop_timeavg')
     for k, v in _time_avg.items():
         avg = v[0]/v[1]
         debug('f: %20s t: %s' %(k, human_readable_time(avg)), buffer_name='chanop_timeavg')
     return WEECHAT_RC_OK
 
-def debug_return(f):
+def debug_result(f):
+    """Prints args and result of a function"""
     def log(*args, **kwargs):
         rt = f(*args, **kwargs)
         debug('%s(%s %s) => %s' %(f.func_name, str(args), str(kwargs), rt),
@@ -280,6 +285,9 @@ def human_readable_time(t):
 _time_avg = {}
 def timeit(f):
     """Times a function and prints the result in a buffer."""
+    # NOTE: after some use, I found out that timing functions this way to be *very* unrealiable :(
+    # It only helps to give an idea of the time a function takes to complete, for profiling is
+    # useless
     from time import time
     units = {0:'s', 1:'ms', 2:'us'}
     def timed_function(*args, **kwargs):
@@ -304,7 +312,8 @@ def timeit(f):
     return timed_function
 
 
-### config and value validation
+### Config and value validation ###
+# TODO to make a class for this
 boolDict = {'on':True, 'off':False}
 def get_config_boolean(config, get_function=None):
     if get_function and callable(get_function):
@@ -377,6 +386,7 @@ def is_ip(s):
 _hostmask_regexp_cache = {}
 @timeit
 def hostmask_pattern_match(pattern, hostmask):
+    """Returns a list of hostmasks that matches pattern (hostmask can be a string or a list)"""
     # we will take the trouble of using regexps, since they match faster than fnmatch once compiled
     if pattern in _hostmask_regexp_cache:
         regexp = _hostmask_regexp_cache[pattern]
@@ -398,10 +408,10 @@ def hostmask_pattern_match(pattern, hostmask):
     return [ mask for mask in hostmask if regexp.search(mask) ]
 
 def search_nick_in_masks(nick, masks):
+    """Test masks against nick's hostmask, returns a list of those that match"""
     L = []
     for nicks in _user_cache.itervalues(): # FIXME not good, the same nick can be in two servers
         if nick in nicks:
-            # pattern is a nick, fetch hostmask and match
             hostmask = nicks[nick]
             for mask in masks:
                 if is_hostmask(mask) and hostmask_pattern_match(mask, hostmask):
@@ -462,8 +472,9 @@ def hex_to_ip(s):
 
 @timeit
 def supported_modes(server, mode=None):
-    """Checks if server supports a specific chanmode. If <mode> is None returns all supported
-    modes."""
+    """
+    Checks if server supports a specific chanmode. If <mode> is None returns all modes supported
+    by server."""
     modes = weechat.config_get_plugin('chanmodes.%s' %server)
     if not modes:
         modes = weechat.config_get_plugin('chanmodes')
@@ -485,7 +496,7 @@ def supported_modes(server, mode=None):
         return modes
 
 def irc_buffer(buffer):
-    """Returns a pair (server, channel) or None if buffer isn't an irc channel"""
+    """Returns pair (server, channel) or None if buffer isn't an irc channel"""
     buffer_get_string = weechat.buffer_get_string
     if buffer_get_string(buffer, 'plugin') == 'irc' \
             and buffer_get_string(buffer, 'localvar_type') == 'channel':
@@ -494,7 +505,7 @@ def irc_buffer(buffer):
         return (server, channel)
 
 
-### Classes definitions ###
+### WeeChat classes ###
 class Infolist(object):
     """Class for reading WeeChat's infolists."""
 
@@ -630,6 +641,8 @@ class Command(object):
             self.pointer = ''
 
 
+### Command queue classes ###
+# TODO I need to refactor this
 class Message(object):
     """Class that stores the command for scheduling in CommandQueue."""
     def __init__(self, cmd, buffer='', wait=0):
@@ -810,6 +823,7 @@ def enable_anti_flood_cb(data, count):
     return WEECHAT_RC_OK
 
 
+### Base classes for chanop commands ###
 class CommandChanop(Command):
     """Base class for our commands, with config and general functions."""
     infolist = None
@@ -986,6 +1000,7 @@ def deop_callback(buffer, count):
     return WEECHAT_RC_OK
 
 
+### User and masks classes ###
 class BanObject(object):
     __slots__ = ('banmask', 'hostmask', 'operator', 'date', 'expires')
     def __init__(self, banmask, hostmask=None, operator=None, date=None, expires=None):
@@ -1143,7 +1158,7 @@ class Op(CommandChanop):
 
 class Deop(CommandChanop):
     help = ("Drops operator privileges.", "", "")
-    
+
     command = 'odeop'
 
     def execute(self):
@@ -1179,7 +1194,7 @@ class MultiKick(Kick):
             Note: Is not needed, but use ':' as a separator between nicks and the reason.
                   Otherwise, if there's a nick in the channel matching the first word in
                   reason it will be kicked.""")
-    
+
     completion = '%(nicks)|%*'
 
     def execute_op(self, args=None):
@@ -1453,7 +1468,7 @@ class MultiKickBan(KickBan):
     help = ("Kickban one or more nicks.",
             "<nick> [<nick> ..] [:] [<reason>] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]",
             KickBan.help[2])
-    
+
     completion = '%(chanop_nicks)|%*'
 
     def execute_op(self):
@@ -1507,7 +1522,7 @@ class Voice(CommandNeedsOp):
 
     def execute_op(self):
         self.voice(self.args)
-    
+
     def voice(self, args):
         cmd = '/voice %s' %args
         self.queue(cmd)
@@ -1614,11 +1629,10 @@ class ShowMutes(ShowBans):
     name = 'quiets'
 
 
-
 #########################
 ### WeeChat callbacks ###
 
-### init stuff ###
+### Init stuff ###
 global chanop_channels
 chanop_channels = CaseInsensibleDict()
 def chanop_init():
@@ -1638,10 +1652,11 @@ def chanop_init():
                 fetch_ban_list(buffer, channel=channel, modes=modes)
 
 
-### ban list ###
+### Ban list ###
 hook_banlist = ()
 hook_banlist_time = {}
 hook_banlist_queue = []
+# TODO remove buffer arg from arguments, not used or needed
 def fetch_ban_list(buffer, server=None, channel=None, modes=None):
     """Fetches hostmasks for a given channel mode and channel."""
     global hook_banlist
@@ -1709,7 +1724,7 @@ def masklist_end_cb(buffer, modifier, modifier_data, string):
     key = (server, channel)
     if key not in masklist:
         debug('no bans for %s %s %s' %(server, channel, mode))
-        masklist.set_empty_list(key) 
+        masklist.set_empty_list(key)
     else:
         debug('got bans for %s %s %s' %(server, channel, mode))
     if not hook_banlist_queue:
@@ -1747,10 +1762,11 @@ def masklist_end_cb(buffer, modifier, modifier_data, string):
 
 @timeit
 def mode_cb(data, signal, signal_data):
-    debug('MODE: %s' %' '.join((data, signal, signal_data)))
+    """Keep the banmask list updated when somebody changes modes"""
+    #debug('MODE: %s' %' '.join((data, signal, signal_data)))
     #:m4v!~znc@unaffiliated/m4v MODE #test -bo+v asd!*@* m4v dude
     server = signal[:signal.find(',')]
-    nick = get_nick(signal_data) 
+    nick = get_nick(signal_data)
     if nick == weechat.info_get('irc_nick', server):
         # mode set by us, return for now (banmasks were already updated)
         return WEECHAT_RC_OK
@@ -1802,7 +1818,7 @@ def mode_cb(data, signal, signal_data):
     return WEECHAT_RC_OK
 
 
-### user cache ###
+### User cache ###
 _user_cache = UserList()
 def generate_user_cache(server, channel):
     users = UserList()
@@ -1883,7 +1899,7 @@ def nick_cb(data, signal, signal_data):
     return WEECHAT_RC_OK
 
 
-### garbage collector ###
+### Garbage collector ###
 @timeit
 def garbage_collector_cb(data, counter):
     # purge anything collected from channels that aren't in our list
@@ -1932,7 +1948,7 @@ def garbage_collector_cb(data, counter):
     return WEECHAT_RC_OK
 
 
-### config callbacks ###
+### Config callbacks ###
 def enable_multi_kick_conf_cb(data, config, value):
     global cmd_kick, cmd_kban
     cmd_kick.unhook()
@@ -1969,7 +1985,11 @@ def update_chanop_channels_cb(data, config, value):
 
 ###########################
 ### WeeChat completions ###
+
 def cmpl_get_irc_users(f):
+    """
+    Decorator for check if completion is done in a irc channel, and pass the buffer's user list
+    if so."""
     def decorator(data, completion_item, buffer, completion):
         key = irc_buffer(buffer)
         if not key:
@@ -2056,6 +2076,7 @@ def ban_mask_cmpl(users, data, completion_item, buffer, completion):
         weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_SORT)
     return WEECHAT_RC_OK
 
+### Completions for nick, user and host parts of a usermask ###
 @cmpl_get_irc_users
 def nicks_cmpl(users, data, completion_item, buffer, completion):
     for nick in users:
@@ -2151,12 +2172,12 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_completion('chanop_nicks', '', 'nicks_cmpl', '')
     weechat.hook_completion('chanop_users', '', 'users_cmpl', '')
     weechat.hook_completion('chanop_hosts', '', 'hosts_cmpl', '')
-    
+
     weechat.hook_signal('*,irc_in_join', 'join_cb', '')
     weechat.hook_signal('*,irc_in_part', 'part_cb', '')
     weechat.hook_signal('*,irc_in_quit', 'quit_cb', '')
     weechat.hook_signal('*,irc_in_nick', 'nick_cb', '')
-    
+
     weechat.hook_signal('*,irc_in_mode', 'mode_cb', '')
 
     weechat.hook_timer(10*60*1000, 0, 0, 'garbage_collector_cb', '')
