@@ -1949,7 +1949,7 @@ def garbage_collector_cb(data, counter):
             mask_count = sum(map(len, masklist.itervalues()))
             mask_chan = len(masklist)
             debug("collector: %s '%s' cached masks in %s channels" %(mask_count, mode, mask_chan))
-        debug('collector: %s cached users in %s channels' %(user_count, len(user_cache)))
+        debug('collector: %s cached users in %s channels' %(user_count, len(userCache)))
         debug('collector: %s users about to be purged' %len(_user_temp_cache))
         debug('collector: %s cached regexps' %len(_hostmask_regexp_cache))
     return WEECHAT_RC_OK
@@ -2018,7 +2018,10 @@ def unban_mask_cmpl(data, completion_item, buffer, completion):
     key = irc_buffer(buffer)
     if not key:
         return WEECHAT_RC_OK
-    masks = masklist[key].keys()
+    try:
+        masks = masklist[key].keys()
+    except KeyError:
+        masks = None
     if not masks:
         global waiting_for_completion, hook_banlist, banlist_args
         input = weechat.buffer_get_string(buffer, 'input')
