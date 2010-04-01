@@ -1760,17 +1760,25 @@ def masklist_end_cb(buffer, modifier, modifier_data, string):
         waiting_for_completion = None
     return ''
 
+def signal_parse(f):
+    def decorator(data, signal, signal_data):
+        server = signal[:signal.find(',')]
+        channel = signal_data.split()[2].lstrip(':')
+        nick = get_nick(signal_data)
+        return f(server, channel, nick, data, signal, signal_data)
+    decorator.func_name = f.func_name
+    return decorator
+
 @timeit
-def mode_cb(data, signal, signal_data):
+@signal_parse
+def mode_cb(server, channel, nick, data, signal, signal_data):
     """Keep the banmask list updated when somebody changes modes"""
-    #debug('MODE: %s' %' '.join((data, signal, signal_data)))
+    #debug('MODE: %s' %' '.join((server, channel, nick, data, signal, signal_data)))
     #:m4v!~znc@unaffiliated/m4v MODE #test -bo+v asd!*@* m4v dude
-    server = signal[:signal.find(',')]
-    nick = get_nick(signal_data)
     if nick == weechat.info_get('irc_nick', server):
         # mode set by us, return for now (banmasks were already updated)
         return WEECHAT_RC_OK
-    channel, modes, args = signal_data.split(' ', 4)[2:]
+    modes, args = signal_data.split(' ', 4)[3:]
     if len(modes) == 2 and modes[1] in 'ovjml':
         # return for these modes fairly used but not useful to us
         return WEECHAT_RC_OK
@@ -1834,13 +1842,10 @@ def generate_user_cache(server, channel):
     return users
 
 @timeit
-def join_cb(data, signal, signal_data):
-    #debug('JOIN: %s' %' '.join((data, signal, signal_data)))
-    server = signal[:signal.find(',')]
-    channel = signal_data[signal_data.rfind(' ')+2:]
+@signal_parse
+def join_cb(server, channel, nick, data, signal, signal_data):
+    #debug('JOIN: %s' %' '.join((server, channel, nick, data, signal, signal_data)))
     key = (server, channel)
-    nick = get_nick(signal_data)
-    #debug('JOIN: %s' %(key, ))
     if nick == weechat.info_get('irc_nick', server):
         global chanop_channels
         if server in chanop_channels and channel in chanop_channels[server]:
@@ -1859,13 +1864,11 @@ def join_cb(data, signal, signal_data):
 
 _user_temp_cache = UserList()
 @timeit
-def part_cb(data, signal, signal_data):
-    #debug('PART: %s' %' '.join((data, signal, signal_data)))
-    server = signal[:signal.find(',')]
-    channel = signal_data.split()[2]
+@signal_parse
+def part_cb(server, channel, nick, data, signal, signal_data):
+    #debug('PART: %s' %' '.join((server, channel, nick, data, signal, signal_data)))
     key = (server, channel)
     if key in _user_cache:
-        nick = get_nick(signal_data)
         _user_temp_cache[(key, nick)] = now()
     return WEECHAT_RC_OK
 
