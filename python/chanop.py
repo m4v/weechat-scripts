@@ -2071,7 +2071,7 @@ def ban_mask_cmpl(users, data, completion_item, buffer, completion):
         # complete nick!*@*
         make_mask = lambda mask : '%s!*@*' %get_nick(mask)
 
-    debug('ban mask cmpl: %s' %prefix)
+    debug('ban mask cmpl: %s' %pattern)
     masks = hostmask_pattern_match(search_pattern, users.itervalues())
     for mask in masks:
         mask = make_mask(mask)
