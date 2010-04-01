@@ -410,7 +410,7 @@ def hostmask_pattern_match(pattern, hostmask):
 def search_nick_in_masks(nick, masks):
     """Test masks against nick's hostmask, returns a list of those that match"""
     L = []
-    for nicks in _user_cache.itervalues(): # FIXME not good, the same nick can be in two servers
+    for nicks in userCache.itervalues(): # FIXME not good, the same nick can be in two servers
         if nick in nicks:
             hostmask = nicks[nick]
             for mask in masks:
@@ -847,7 +847,7 @@ class CommandChanop(Command):
         self.channel = weechat.buffer_get_string(self.buffer, 'localvar_channel')
         self.nick = weechat.info_get('irc_nick', self.server)
         try:
-            self.users = _user_cache[(self.server, self.channel)]
+            self.users = userCache[(self.server, self.channel)]
         except KeyError:
             self.users = generate_user_cache(self.server, self.channel)
 
@@ -1772,7 +1772,7 @@ def signal_parse(f):
 def signal_parse_no_channel(f):
     def decorator(data, signal, signal_data):
         server = signal[:signal.find(',')]
-        keys = [ key for key in _user_cache if key[0] == server ]
+        keys = [ key for key in userCache if key[0] == server ]
         if keys:
             nick = get_nick(signal_data)
             return f(keys, nick, data, signal, signal_data)
@@ -1819,8 +1819,8 @@ def mode_cb(server, channel, nick, data, signal, signal_data):
             masklist = maskModes[mode]
             debug('MODE: %s%s %s %s' %(action, mode, mask, op))
             if action == '+':
-                if key in _user_cache:
-                    hostmask = hostmask_pattern_match(mask, _user_cache[key].itervalues())
+                if key in userCache:
+                    hostmask = hostmask_pattern_match(mask, userCache[key].itervalues())
                     debug(hostmask)
                     if hostmask:
                         affected_users.extend(hostmask)
@@ -1837,7 +1837,7 @@ def mode_cb(server, channel, nick, data, signal, signal_data):
 
 
 ### User cache ###
-_user_cache = UserList()
+userCache = UserList()
 def generate_user_cache(server, channel):
     users = UserList()
     try:
@@ -1848,7 +1848,7 @@ def generate_user_cache(server, channel):
     while infolist.next():
         name = infolist['name']
         users[name] = '%s!%s' %(name, infolist['host'])
-    _user_cache[(server, channel)] = users
+    userCache[(server, channel)] = users
     return users
 
 @timeit
@@ -1863,9 +1863,9 @@ def join_cb(server, channel, nick, data, signal, signal_data):
             debug('updating for %s' %(key, ))
             generate_user_cache(server, channel)
             fetch_ban_list('', server, channel)
-    elif key in _user_cache:
+    elif key in userCache:
         hostname = signal_data[1:signal_data.find(' ')]
-        users = _user_cache[key]
+        users = userCache[key]
         users[nick] = hostname
         # did the user do a cycle?
         _key = (server, channel, nick)
@@ -1879,7 +1879,7 @@ _user_temp_cache = UserList()
 def part_cb(server, channel, nick, data, signal, signal_data):
     #debug('PART: %s' %' '.join((server, channel, nick, data, signal, signal_data)))
     key = (server, channel)
-    if key in _user_cache:
+    if key in userCache:
         _user_temp_cache[key[0], key[1], nick] = now()
     return WEECHAT_RC_OK
 
@@ -1888,7 +1888,7 @@ def part_cb(server, channel, nick, data, signal, signal_data):
 def quit_cb(keys, nick, data, signal, signal_data):
     _now = now()
     for key in keys:
-        if nick in _user_cache[key]:
+        if nick in userCache[key]:
             _user_temp_cache[key[0], key[1], nick] = _now
     return WEECHAT_RC_OK
 
@@ -1901,9 +1901,9 @@ def nick_cb(keys, nick, data, signal, signal_data):
     newhostname = '%s!%s' %(newnick, hostname[hostname.find('!')+1:])
     _now = now()
     for key in keys:
-        if nick in _user_cache[key]:
+        if nick in userCache[key]:
             _user_temp_cache[key[0], key[1], nick] = _now
-            _user_cache[key][newnick] = newhostname
+            userCache[key][newnick] = newhostname
     return WEECHAT_RC_OK
 
 
@@ -1915,10 +1915,10 @@ def garbage_collector_cb(data, counter):
         global chanop_channels
         return server in chanop_channels and channel in chanop_channels[server]
 
-    for key in _user_cache.keys():
+    for key in userCache.keys():
         if not is_tracked(*key):
             debug('collector: purging nicks %s' %(key, ))
-            del _user_cache[key]
+            del userCache[key]
 
     for key in _user_temp_cache.keys():
         if not is_tracked(key[0], key[1]):
@@ -1939,17 +1939,17 @@ def garbage_collector_cb(data, counter):
             #debug('collector: purging nick %s %s' %(key2, nick))
             try:
                 del _user_temp_cache[key]
-                del _user_cache[server, channel][nick]
+                del userCache[server, channel][nick]
             except KeyError:
                 pass
 
     if weechat.config_get_plugin('debug'):
-        user_count = sum(map(len, _user_cache.itervalues()))
+        user_count = sum(map(len, userCache.itervalues()))
         for mode, masklist in maskModes.iteritems():
             mask_count = sum(map(len, masklist.itervalues()))
             mask_chan = len(masklist)
             debug("collector: %s '%s' cached masks in %s channels" %(mask_count, mode, mask_chan))
-        debug('collector: %s cached users in %s channels' %(user_count, len(_user_cache)))
+        debug('collector: %s cached users in %s channels' %(user_count, len(user_cache)))
         debug('collector: %s users about to be purged' %len(_user_temp_cache))
         debug('collector: %s cached regexps' %len(_hostmask_regexp_cache))
     return WEECHAT_RC_OK
@@ -2002,7 +2002,7 @@ def cmpl_get_irc_users(f):
         if not key:
             return WEECHAT_RC_OK
         try:
-            users = _user_cache[key]
+            users = userCache[key]
         except KeyError:
             users = generate_user_cache(*key)
         return f(users, data, completion_item, buffer, completion)
