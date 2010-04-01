@@ -247,7 +247,7 @@ def debug_print_cache(data, buffer, args):
     #        _debug('%s => %s %s' %(key, nick, host))
     #_debug('')
     for key, time in _user_temp_cache.iteritems():
-        _debug('%s left %s at %s' %(key[1], key[0], time))
+        _debug('%s left %s.%s at %s' %(key[2], key[0], key[1], time))
     _debug('')
     for pattern in _hostmask_regexp_cache:
         _debug('regexp for %s' %pattern)
@@ -1769,6 +1769,16 @@ def signal_parse(f):
     decorator.func_name = f.func_name
     return decorator
 
+def signal_parse_no_channel(f):
+    def decorator(data, signal, signal_data):
+        server = signal[:signal.find(',')]
+        keys = [ key for key in _user_cache if key[0] == server ]
+        if keys:
+            nick = get_nick(signal_data)
+            return f(keys, nick, data, signal, signal_data)
+    decorator.func_name = f.func_name
+    return decorator
+
 @timeit
 @signal_parse
 def mode_cb(server, channel, nick, data, signal, signal_data):
@@ -1858,8 +1868,9 @@ def join_cb(server, channel, nick, data, signal, signal_data):
         users = _user_cache[key]
         users[nick] = hostname
         # did the user do a cycle?
-        if (key, nick) in _user_temp_cache:
-            del _user_temp_cache[(key, nick)]
+        _key = (server, channel, nick)
+        if _key in _user_temp_cache:
+            del _user_temp_cache[_key]
     return WEECHAT_RC_OK
 
 _user_temp_cache = UserList()
@@ -1869,36 +1880,30 @@ def part_cb(server, channel, nick, data, signal, signal_data):
     #debug('PART: %s' %' '.join((server, channel, nick, data, signal, signal_data)))
     key = (server, channel)
     if key in _user_cache:
-        _user_temp_cache[(key, nick)] = now()
+        _user_temp_cache[key[0], key[1], nick] = now()
     return WEECHAT_RC_OK
 
 @timeit
-def quit_cb(data, signal, signal_data):
-    server = signal[:signal.find(',')]
-    keys = [ key for key in _user_cache if key[0] == server ]
-    if keys:
-        nick = get_nick(signal_data)
-        _now = now()
-        for key in keys:
-            if nick in _user_cache[key]:
-                _user_temp_cache[(key, nick)] = _now
+@signal_parse_no_channel
+def quit_cb(keys, nick, data, signal, signal_data):
+    _now = now()
+    for key in keys:
+        if nick in _user_cache[key]:
+            _user_temp_cache[key[0], key[1], nick] = _now
     return WEECHAT_RC_OK
 
 @timeit
-def nick_cb(data, signal, signal_data):
+@signal_parse_no_channel
+def nick_cb(keys, nick, data, signal, signal_data):
     #debug('NICK: %s' %' '.join((data, signal, signal_data)))
-    server = signal[:signal.find(',')]
-    keys = [ key for key in _user_cache if key[0] == server ]
-    if keys:
-        hostname = signal_data[1:signal_data.find(' ')]
-        nick = get_nick(hostname)
-        newnick = signal_data[signal_data.rfind(' ')+2:]
-        newhostname = '%s!%s' %(newnick, hostname[hostname.find('!')+1:])
-        _now = now()
-        for key in keys:
-            if nick in _user_cache[key]:
-                _user_temp_cache[(key, nick)] = _now
-                _user_cache[key][newnick] = newhostname
+    hostname = signal_data[1:signal_data.find(' ')]
+    newnick = signal_data[signal_data.rfind(' ')+2:]
+    newhostname = '%s!%s' %(newnick, hostname[hostname.find('!')+1:])
+    _now = now()
+    for key in keys:
+        if nick in _user_cache[key]:
+            _user_temp_cache[key[0], key[1], nick] = _now
+            _user_cache[key][newnick] = newhostname
     return WEECHAT_RC_OK
 
 
@@ -1916,8 +1921,7 @@ def garbage_collector_cb(data, counter):
             del _user_cache[key]
 
     for key in _user_temp_cache.keys():
-        _key = key[0]
-        if not is_tracked(*_key):
+        if not is_tracked(key[0], key[1]):
             debug('collector: purging temp nicks %s' %(key, ))
             del _user_temp_cache[key]
 
@@ -1931,11 +1935,11 @@ def garbage_collector_cb(data, counter):
     _now = now()
     for key, when in _user_temp_cache.items():
         if (_now - when) > 1200:
-            key2, nick = key
+            server, channel, nick = key
             #debug('collector: purging nick %s %s' %(key2, nick))
             try:
                 del _user_temp_cache[key]
-                del _user_cache[key2][nick]
+                del _user_cache[server, channel][nick]
             except KeyError:
                 pass
 
@@ -1982,7 +1986,7 @@ def update_chanop_channels_cb(data, config, value):
         L = value.split(',')
     else:
         L = []
-    chanop_channels[server] = L
+    chanop_channels[server] = CaseInsensibleSet(L)
     return WEECHAT_RC_OK
 
 
