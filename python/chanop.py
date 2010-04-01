@@ -236,7 +236,7 @@ def print_affected_users(buffer='', *hostmasks):
     say('Affected users (%s): %s%s' %(count, ' '.join(map(format_user,
         hostmasks)), count > max and ' %s...' %color_reset or ''), buffer=buffer)
 
-### More debug stuff ###
+### Debug functions and decorators ###
 def debug_print_cache(data, buffer, args):
     """Prints stored caches"""
     _debug = lambda s: debug(s, buffer_name = 'Chanop_caches')
@@ -255,9 +255,27 @@ def debug_garbage_collector(data, buffer, args):
     return garbage_collector_cb('', 0)
 
 def debug_print_time_avg(data, buffer, args):
+    debug('', buffer_name='chanop_timeavg')
     for k, v in _time_avg.items():
-        debug('f: %s t: %.4f' %(k, v[0]/v[1]), buffer_name='chanop_timeavg')
+        avg = v[0]/v[1]
+        debug('f: %20s t: %s' %(k, human_readable_time(avg)), buffer_name='chanop_timeavg')
     return WEECHAT_RC_OK
+
+def debug_return(f):
+    def log(*args, **kwargs):
+        rt = f(*args, **kwargs)
+        debug('%s(%s %s) => %s' %(f.func_name, str(args), str(kwargs), rt),
+                buffer_name='chanop_verbose')
+        return rt
+    return log
+
+def human_readable_time(t):
+    units = {0:'s', 1:'ms', 2:'us'}
+    p = 0
+    while t < 1 and p < 2:
+        p += 1
+        t *= 1000.0
+    return '%6.2f %s' %(t, units[p])
 
 _time_avg = {}
 def timeit(f):
@@ -268,19 +286,20 @@ def timeit(f):
         t = time()
         rt = f(*args, **kwargs)
         d = time() - t
+        rd = d
         power = 0
         while d < 1 and power < 2:
             power += 1
             d *= 1000.0
-        debug('%s time: %.2f %s' %(f.func_name, d, units[power]),\
+        debug('f: %20s t: %6.2f %s' %(f.func_name, d, units[power]),\
                 buffer_name='Chanop_timeit')
         try:
             v, n = _time_avg[f.func_name]
-            v += d
+            v += rd
             n += 1
             _time_avg[f.func_name] = (v, n)
         except KeyError:
-            _time_avg[f.func_name] = (d, 1)
+            _time_avg[f.func_name] = (rd, 1)
         return rt
     return timed_function
 
