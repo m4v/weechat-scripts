@@ -952,6 +952,7 @@ class CommandChanop(Command):
             self.queue(self.replace_vars(value))
 
 
+deop_hook = {}
 manual_op = False
 class CommandNeedsOp(CommandChanop):
     """Base class for all the commands that requires op status for work."""
@@ -963,26 +964,24 @@ class CommandNeedsOp(CommandChanop):
             weechat.command('', '/help %s' %self.command)
 
     def execute(self, *args):
+        global deop_hook, manual_op
+        buffer = self.buffer
         if not self.args:
             return # don't pointless op and deop it no arguments given
         op = self.get_op()
-        global manual_op
         if op is None:
             return WEECHAT_RC_OK # not a channel
-        elif op is False:
+        elif op is False or buffer in deop_hook:
+            # we're going to autoop or already did
             manual_op = False
         else:
-            # don't deop if we weren't auto-op'ed
             manual_op = True
         self.execute_op(*args)
         if not manual_op and self.get_config_boolean('autodeop'):
             delay = self.get_config_int('autodeop_delay')
             if delay > 0:
-                buffer = self.buffer
-                global deop_hook
                 if buffer in deop_hook:
                     weechat.unhook(deop_hook[buffer])
-
                 deop_hook[buffer] = weechat.hook_timer(delay * 1000, 0, 1, 'deop_callback', buffer)
             else:
                 self.drop_op()
@@ -991,8 +990,6 @@ class CommandNeedsOp(CommandChanop):
         """Commands in this method will be run with op privileges."""
         pass
 
-
-deop_hook = {}
 def deop_callback(buffer, count):
     global deop_hook, cmd_deop
     cmd_deop('', buffer, '')
@@ -1130,13 +1127,7 @@ maskModes = { 'b':banlist, 'q': mutelist }
 
 
 class UserList(CaseInsensibleDict):
-    def __setitem__(self, k, v):
-        debug('user list: setting %r -> %r' %(k, v), buffer_name='chanop_verbose')
-        super(UserList, self).__setitem__(k, v)
-
-    def __delitem__(self, k):
-        debug('user list: deleting %r' %(k, ), buffer_name='chanop_verbose')
-        super(UserList, self).__delitem__(k)
+    pass
 
 
 ##############################
@@ -1776,6 +1767,7 @@ def signal_parse_no_channel(f):
         if keys:
             nick = get_nick(signal_data)
             return f(keys, nick, data, signal, signal_data)
+        return WEECHAT_RC_OK
     decorator.func_name = f.func_name
     return decorator
 
