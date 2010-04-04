@@ -1482,15 +1482,8 @@ class Ban(CommandNeedsOp):
         banmask = '%s!%s@%s' %(nick, user, host)
         return banmask
 
-    def add_ban(self, mask):
-        # check if other hostmasks match mask
-        hostmask = pattern_match(mask, self.users.itervalues())
-        self.masklist.add(self.server, self.channel, banmask, operator=self.get_host(), hostmask=hostmask)
-        return hostmask
-
     def execute_op(self):
         args = self.args.split()
-        users = []
         banmasks = []
         for arg in args:
             mask = arg
@@ -1499,23 +1492,16 @@ class Ban(CommandNeedsOp):
                 hostmask = self.get_host(mask)
                 if hostmask:
                     mask = self.make_banmask(hostmask)
-            users.extend(self.add_ban(mask))
             banmasks.append(mask)
         if banmasks:
             banmasks = set(banmasks) # remove duplicates
-            users = set(users)
             self.ban(*banmasks)
-            self.print_affected_users(*users)
         else:
             say("Sorry, found nothing to ban.", buffer=self.buffer)
             self.queue_clear()
 
     def mode_is_supported(self):
         return supported_modes(self.server, self._mode)
-
-    def print_affected_users(self, *hostmasks):
-        if hostmasks and get_config_boolean('display_affected'):
-            print_affected_users(self.buffer, *hostmasks)
 
     def ban(self, *banmasks, **kwargs):
         if self._mode != 'b' and not self.mode_is_supported():
@@ -1544,21 +1530,21 @@ class UnBan(Ban):
     completion = '%(chanop_nicks)|%(chanop_unban_mask)|%*'
 
     _prefix = '-'
-    def remove_ban(self, *banmask):
-        for mask in banmask:
-            self.masklist.remove(self.server, self.channel, mask)
-
     def execute_op(self):
         args = self.args.split()
         banmasks = []
         for arg in args:
-            masks = self.masklist.search(arg, self.server, self.channel)
+            if is_nick(arg):
+                masks = self.masklist.searchByNick(arg, self.server, self.channel)
+            elif is_hostmask(arg):
+                masks = self.masklist.searchByHostmask(arg, self.server, self.channel)
+            else:
+                masks = []
             if masks:
                 banmasks.extend(masks)
             else:
                 banmasks.append(arg)
         if banmasks:
-            self.remove_ban(*banmasks)
             self.unban(*banmasks)
         else:
             say("Couldn't find any mask for remove with '%s'" %self.args, buffer=self.buffer)
@@ -1608,14 +1594,12 @@ class KickBan(Ban, Kick):
             if not reason:
                 reason = self.get_config('kick_reason')
             banmask = self.make_banmask(hostmask)
-            users = self.add_ban(banmask)
             if not self.invert:
                 self.kick(nick, reason, wait=0)
                 self.ban(banmask)
             else:
                 self.ban(banmask, wait=0)
                 self.kick(nick, reason)
-            self.print_affected_users(*users)
         else:
             say("Sorry, found nothing to kickban.", buffer=self.buffer)
             self.queue_clear()
@@ -1631,7 +1615,6 @@ class MultiKickBan(KickBan):
     def execute_op(self):
         args = self.args.split()
         nicks = []
-        users = []
         while(args):
             nick = args[0]
             if nick[0] == ':' or not self.is_nick(nick):
@@ -1645,15 +1628,12 @@ class MultiKickBan(KickBan):
                 hostmask = self.get_host(nick)
                 if hostmask:
                     mask = self.make_banmask(hostmask)
-                    users.extend(self.add_ban(mask))
                     if not self.invert:
                         self.kick(nick, reason, wait=0)
                         self.ban(banmask)
                     else:
                         self.ban(banmask, wait=0)
                         self.kick(nick, reason)
-            users = set(users)
-            self.print_affected_users(*users)
         else:
             say("Sorry, found nothing to kickban.", buffer=self.buffer)
             self.queue_clear()
@@ -1843,9 +1823,6 @@ def mode_cb(server, channel, nick, data, signal, signal_data):
     """Keep the banmask list updated when somebody changes modes"""
     #debug('MODE: %s' %' '.join((server, channel, nick, data, signal, signal_data)))
     #:m4v!~znc@unaffiliated/m4v MODE #test -bo+v asd!*@* m4v dude
-    if nick == weechat.info_get('irc_nick', server):
-        # mode set by us, return for now (banmasks were already updated)
-        return WEECHAT_RC_OK
     modes, args = signal_data.split(' ', 4)[3:]
     if len(modes) == 2 and modes[1] in 'ovjml':
         # return for these modes fairly used but not useful to us
