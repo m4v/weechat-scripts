@@ -173,7 +173,6 @@ settings = {
 try:
     import weechat
     WEECHAT_RC_OK = weechat.WEECHAT_RC_OK
-    #WEECHAT_RC_ERROR = weechat.WEECHAT_RC_ERROR
     import_ok = True
 except ImportError:
     print "This script must be run under WeeChat."
@@ -474,16 +473,6 @@ def supported_modes(server, mode=None):
         modes = weechat.config_get_plugin('chanmodes')
     if not modes:
         modes = 'b'
-    # XXX I might need the following later.
-    #try:
-    #    modes = _supported_modes_cache[server]
-    #except KeyError:
-    #    try:
-    #        modes = isupport[server]['CHANMODES'].partition(',')[0]
-    #        _supported_modes_cache[server] = modes
-    #    except KeyError:
-    #        modes = 'b'
-
     if mode:
         return mode in modes
     else:
@@ -739,7 +728,7 @@ class CommandQueue(object):
             opt_high = weechat.config_get('irc.network.anti_flood_prio_high')
             value_low = weechat.config_integer(opt_low)
             value_high = weechat.config_integer(opt_high)
-            debug('disabling antiflood')
+            #debug('disabling antiflood')
             wait = self.commandQueueInstance.wait + 1
             if value_low:
                 weechat.config_option_set(opt_low, '0', 0)
@@ -811,7 +800,7 @@ def queue_timeout_cb(channel, count):
     return WEECHAT_RC_OK
 
 def enable_anti_flood_cb(data, count):
-    debug('enabling antiflood: %s' %data)
+    #debug('enabling antiflood: %s' %data)
     option, value = data.split(',')
     weechat.config_option_set(option, value, 0)
     return WEECHAT_RC_OK
@@ -1314,7 +1303,6 @@ class Op(CommandChanop):
             it can be defined per server or per channel in:
               plugins.var.python.%(name)s.op_command.server_name
               plugins.var.python.%(name)s.op_command.server_name.#channel_name""" %{'name':SCRIPT_NAME})
-
     command = 'oop'
 
     def execute(self):
@@ -1323,7 +1311,6 @@ class Op(CommandChanop):
 
 class Deop(CommandChanop):
     help = ("Drops operator privileges.", "", "")
-
     command = 'odeop'
 
     def execute(self):
@@ -1332,7 +1319,6 @@ class Deop(CommandChanop):
 
 class Kick(CommandNeedsOp):
     help = ("Kick nick.", "<nick> [<reason>]", "")
-
     command = 'okick'
     completion = '%(nicks)'
 
@@ -1359,7 +1345,6 @@ class MultiKick(Kick):
             Note: Is not needed, but use ':' as a separator between nicks and the reason.
                   Otherwise, if there's a nick in the channel matching the first word in
                   reason it will be kicked.""")
-
     completion = '%(nicks)|%*'
 
     def execute_op(self, args=None):
@@ -1400,10 +1385,8 @@ class Ban(CommandNeedsOp):
 
             Example:
             /oban somebody --user --host : will use a *!user@hostname banmask.""")
-
     command = 'oban'
     completion = '%(chanop_nicks)|%(chanop_ban_mask)|%*'
-
     masklist = banlist
     banmask = []
     _mode = 'b'
@@ -1461,24 +1444,6 @@ class Ban(CommandNeedsOp):
             user = get_user(hostmask)
         if 'host' in self.banmask:
             host = get_host(hostmask)
-        elif 'host1' in self.banmask:
-            host = hostmask[hostmask.find('@') + 1:]
-            if is_ip(host):
-                # make a 123.123.123.* banmask
-                host = host.split('.')[:-1]
-                host.append('*')
-            host = '.'.join(host)
-        elif 'host2' in self.banmask:
-            host = hostmask[hostmask.find('@') + 1:]
-            if is_ip(host):
-                # make a 123.123.* banmask
-                host = host.split('.')[:-2]
-                host.append('*')
-#            elif '.' in host:
-#                # make a *.domain.com banmask
-#                host = host.split('.')[2:]
-#               host.insert(0, '*')
-            host = '.'.join(host)
         banmask = '%s!%s@%s' %(nick, user, host)
         return banmask
 
@@ -1525,21 +1490,22 @@ class UnBan(Ban):
             Note: Unbaning with <nick> is not very useful at the momment, only the bans known by the
                   script (bans that were applied with this script) will be removed and only *if*
                   <nick> is present in the channel.""")
-
     command = 'ounban'
     completion = '%(chanop_nicks)|%(chanop_unban_mask)|%*'
-
     _prefix = '-'
+
+    def search_masks(self, s):
+        if is_nick(s):
+            return self.masklist.searchByNick(s, self.server, self.channel)
+        elif is_hostmask(s):
+            return self.masklist.searchByHostmask(s, self.server, self.channel)
+        return []
+
     def execute_op(self):
         args = self.args.split()
         banmasks = []
         for arg in args:
-            if is_nick(arg):
-                masks = self.masklist.searchByNick(arg, self.server, self.channel)
-            elif is_hostmask(arg):
-                masks = self.masklist.searchByHostmask(arg, self.server, self.channel)
-            else:
-                masks = []
+            masks = self.search_masks(arg)
             if masks:
                 banmasks.extend(masks)
             else:
@@ -1562,10 +1528,8 @@ class Mute(Ban):
             Note: This command is disabled by default and should be enabled for networks that
                   support "/mode +q hostmask", use:
                   /set plugins.var.python.%s.enable_mute.your_server_name on""" %SCRIPT_NAME)
-
     command = 'omute'
     completion = '%(chanop_nicks)|%(chanop_ban_mask)|%*'
-
     _mode = 'q'
     masklist = mutelist
 
@@ -1573,7 +1537,6 @@ class Mute(Ban):
 class UnMute(UnBan):
     command = 'ounmute'
     completion = '%(chanop_nicks)|%(chanop_unmute_mask)|%*'
-
     _mode = 'q'
     masklist = mutelist
 
@@ -1582,11 +1545,10 @@ class KickBan(Ban, Kick):
     help = ("Kickban nick.",
             "<nick> [<reason>] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]",
             "Combines /okick and /oban commands.")
-
     command = 'okban'
     completion = '%(chanop_nicks)'
-
     invert = False
+
     def execute_op(self):
         nick, s, reason = self.args.partition(' ')
         hostmask = self.get_host(nick)
@@ -1609,7 +1571,6 @@ class MultiKickBan(KickBan):
     help = ("Kickban one or more nicks.",
             "<nick> [<nick> ..] [:] [<reason>] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]",
             KickBan.help[2])
-
     completion = '%(chanop_nicks)|%*'
 
     def execute_op(self):
@@ -1642,7 +1603,6 @@ class MultiKickBan(KickBan):
 class Topic(CommandNeedsOp):
     help = ("Changes channel topic.", "[-delete | topic]",
             "Clear topic if '-delete' is the new topic.")
-
     command = 'otopic'
     completion = '%(irc_channel_topic)||-delete'
 
@@ -1656,7 +1616,6 @@ class Topic(CommandNeedsOp):
 
 class Voice(CommandNeedsOp):
     help = ("Gives voice to somebody.", "nick", "")
-
     command = 'ovoice'
     completion = '%(nicks)'
 
@@ -1674,7 +1633,6 @@ class Voice(CommandNeedsOp):
 
 class DeVoice(Voice):
     help = ("Removes voice from somebody.", "nick", "")
-
     command = 'odevoice'
 
     def execute_op(self):
@@ -1684,7 +1642,6 @@ class DeVoice(Voice):
 class Mode(CommandNeedsOp):
     help = ("Changes channel modes.", "",
             "")
-
     command = 'omode'
 
     def execute_op(self):
