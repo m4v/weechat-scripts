@@ -232,7 +232,7 @@ def debug(s, prefix='', buffer_name=None):
     """Debug msg"""
     if not weechat.config_get_plugin('debug'): return
     if not buffer_name:
-        buffer_name = 'DEBUG_' + SCRIPT_NAME
+        buffer_name = SCRIPT_NAME + '_debug'
     buffer = weechat.buffer_search('python', buffer_name)
     if not buffer:
         buffer = weechat.buffer_new(buffer_name, '', '', '', '')
@@ -242,7 +242,7 @@ def debug(s, prefix='', buffer_name=None):
 
 def debug_print_cache(data, buffer, args):
     """Prints stuff stored in cache"""
-    _debug = lambda s: debug(s, buffer_name = 'Chanop_caches')
+    _debug = lambda s: debug(s, buffer_name = 'chanop_cache')
     for key, users in userCache.iteritems():
         _debug('\n')
         for nick, host in users.iteritems():
@@ -259,20 +259,11 @@ def debug_garbage_collector(data, buffer, args):
     """Runs garbage collector"""
     return garbage_collector_cb('', 0)
 
-def debug_print_time_avg(data, buffer, args):
-    """Prints timeit avegare"""
-    debug('', buffer_name='chanop_timeavg')
-    for k, v in _time_avg.items():
-        avg = v[0]/v[1]
-        debug('f: %20s t: %s' %(k, human_readable_time(avg)), buffer_name='chanop_timeavg')
-    return WEECHAT_RC_OK
-
 def debug_result(f):
     """Prints args and result of a function"""
     def log(*args, **kwargs):
         rt = f(*args, **kwargs)
-        debug('%s(%s %s) => %s' %(f.func_name, str(args), str(kwargs), rt),
-                buffer_name='chanop_verbose')
+        debug('%s(%s %s) => %s' %(f.func_name, str(args), str(kwargs), rt))
         return rt
     return log
 
@@ -283,6 +274,15 @@ def human_readable_time(t):
         p += 1
         t *= 1000.0
     return '%6.2f %s' %(t, units[p])
+
+def debug_print_time_avg(data, buffer, args):
+    """Prints timeit avegare"""
+    _debug = lambda s: debug(s, buffer_name = 'chanop_timeavg')
+    _debug('')
+    for k, v in _time_avg.items():
+        avg = v[0]/v[1]
+        _debug('f: %20s t: %s' %(k, human_readable_time(avg)))
+    return WEECHAT_RC_OK
 
 _time_avg = {}
 def timeit(f):
@@ -296,20 +296,14 @@ def timeit(f):
         t = time()
         rt = f(*args, **kwargs)
         d = time() - t
-        rd = d
-        power = 0
-        while d < 1 and power < 2:
-            power += 1
-            d *= 1000.0
-        debug('f: %20s t: %6.2f %s' %(f.func_name, d, units[power]),\
-                buffer_name='Chanop_timeit')
+        debug('f: %20s t: %s' %(f.func_name, human_readable_time(d)), buffer_name='Chanop_timeit')
         try:
             v, n = _time_avg[f.func_name]
-            v += rd
+            v += d
             n += 1
             _time_avg[f.func_name] = (v, n)
         except KeyError:
-            _time_avg[f.func_name] = (rd, 1)
+            _time_avg[f.func_name] = (d, 1)
         return rt
     return timed_function
 
@@ -391,7 +385,6 @@ def hostmask_pattern_match(pattern, strings):
         return pattern_match(pattern, strings)
     return []
 
-@timeit
 def pattern_match(pattern, strings):
     # we will take the trouble of using regexps, since they match faster than fnmatch once compiled
     if pattern in _regexp_cache:
@@ -464,7 +457,6 @@ def hex_to_ip(s):
     except:
         return ''
 
-@timeit
 def supported_modes(server, mode=None):
     """
     Checks if server supports a specific chanmode. If <mode> is None returns all modes supported
@@ -644,7 +636,7 @@ class Message(object):
                command = '/wait %s %s' %(self.wait, self.command)
         else:
             command = self.command
-        debug(command)
+        debug('sending: %r' %command)
         if weechat.config_get_plugin('debug') == '2':
             # don't run commands
             return True
@@ -1047,7 +1039,7 @@ class ServerChannelDict(CaseInsensibleDict):
     def purge(self):
         for key in self.keys():
             if not is_tracked(*key):
-                debug('Removing not traked %s.%s list (%s items)' %(key[0], key[1], len(self[key])))
+                debug('Removing not tracked %s.%s list (%s items)' %(key[0], key[1], len(self[key])))
                 del self[key]
         for data in self.itervalues():
             data.purge()
@@ -1146,22 +1138,18 @@ class MaskCache(ServerChannelDict):
         return self.searchByHostmask(hostmask, server, channel)
 
     def search(self, s, server, channel):
-        debug('search masks: %r' %s)
         if is_nick(s):
             masks = self.searchByNick(s, server, channel)
         elif is_hostmask(s):
             masks = self.searchByHostmask(s, server, channel)
         else:
             masks = self.searchByPattern(s, server, channel)
-        debug('found: %s' %(masks, ))
         return masks
 
     def fetch(self, server, channel):
         """Fetches masks for a given server and channel."""
-        debug('fetch mask called s:%s c:%s m:%s' %(server, channel, self.mode))
         # check modes
         if not supported_modes(server, self.mode):
-            debug('Not supported %s %s' %(mode, server))
             return
         # check the last time we did this
         try:
@@ -1182,7 +1170,7 @@ class MaskCache(ServerChannelDict):
             return
         cmd = '/mode %s %s' %(channel, self.mode)
         #weechat_queue.queue(cmd, buffer=buffer)
-        debug('fetching bans %r' %cmd)
+        debug('fetching masks: %r' %cmd)
         buffer = weechat.buffer_search('irc', 'server.%s' %server)
         weechat.command(buffer, cmd)
         self.hook_queue.append(key)
@@ -1193,7 +1181,6 @@ banlist = MaskCache('b')
 mutelist = MaskCache('q')
 maskModes = { 'b':banlist, 'q': mutelist }
 
-@timeit
 def masklist_add_cb(data, modifier, modifier_data, string):
     """Adds ban to the list."""
     #debug(string)
@@ -1203,7 +1190,6 @@ def masklist_add_cb(data, modifier, modifier_data, string):
     maskModes[mode].add(server, channel, banmask, operator=op, date=date)
     return ''
 
-@timeit
 def masklist_end_cb(data, modifier, modifier_data, string):
     """Ban listing over."""
     #debug(string)
@@ -1212,16 +1198,15 @@ def masklist_end_cb(data, modifier, modifier_data, string):
     masklist = maskModes[mode]
     key = (server, channel)
     if key not in masklist:
-        debug('no bans for %s %s %s' %(server, channel, mode))
         masklist.initList(*key)
     else:
-        debug('got bans for %s %s %s' %(server, channel, mode))
+        debug('got masks for %s.%s %r' %(server, channel, mode))
     if not MaskCache.hook_queue:
         # fetch is over
         for hook in MaskCache.hook_fetch:
             weechat.unhook(hook)
         del MaskCache.hook_fetch[:]
-        debug('over')
+        debug('fetch over')
     # check if there is a completion waiting for the fetch to finish
     if waiting_for_completion:
         buffer, completion  = waiting_for_completion
@@ -1792,7 +1777,6 @@ def signal_parse_no_channel(f):
     decorator.func_name = f.func_name
     return decorator
 
-@timeit
 @signal_parse
 def mode_cb(server, channel, nick, data, signal, signal_data):
     """Keep the banmask list updated when somebody changes modes"""
@@ -1822,15 +1806,13 @@ def mode_cb(server, channel, nick, data, signal, signal_data):
                 L.append((action, c, args.pop(0)))
             elif c in 'ov': # these have an argument, drop it
                 del args[0]
-        debug('MODE: %s' %(L, ))
         affected_users = []
         # update masklist
         for action, mode, mask in L:
             masklist = maskModes[mode]
-            debug('MODE: %s%s %s %s' %(action, mode, mask, op))
+            #debug('MODE: %s%s %s %s' %(action, mode, mask, op))
             if action == '+':
                 hostmask = hostmask_pattern_match(mask, userCache.get(*key).itervalues())
-                debug(hostmask)
                 if hostmask:
                     affected_users.extend(hostmask)
                 masklist.add(server, channel, mask, operator=op, hostmask=hostmask)
@@ -1843,7 +1825,6 @@ def mode_cb(server, channel, nick, data, signal, signal_data):
 
 
 ### User list ###
-@timeit
 @signal_parse
 def join_cb(server, channel, nick, data, signal, signal_data):
     #debug('JOIN: %s' %' '.join((server, channel, nick, data, signal, signal_data)))
@@ -1851,7 +1832,6 @@ def join_cb(server, channel, nick, data, signal, signal_data):
     if nick == weechat.info_get('irc_nick', server):
         if is_tracked(server, channel):
             # joined a channel that we should track
-            debug('updating for %s' %(key, ))
             userCache.generate_cache(server, channel)
             for mode in supported_modes(server):
                 maskModes[mode].fetch(server, channel)
@@ -1860,7 +1840,6 @@ def join_cb(server, channel, nick, data, signal, signal_data):
         userCache[key][nick] = hostname
     return WEECHAT_RC_OK
 
-@timeit
 @signal_parse
 def part_cb(server, channel, nick, data, signal, signal_data):
     #debug('PART: %s' %' '.join((server, channel, nick, data, signal, signal_data)))
@@ -1869,14 +1848,12 @@ def part_cb(server, channel, nick, data, signal, signal_data):
         userCache[key].remove(nick)
     return WEECHAT_RC_OK
 
-@timeit
 @signal_parse_no_channel
 def quit_cb(keys, nick, data, signal, signal_data):
     for key in keys:
         userCache[key].remove(nick)
     return WEECHAT_RC_OK
 
-@timeit
 @signal_parse_no_channel
 def nick_cb(keys, nick, data, signal, signal_data):
     #debug('NICK: %s' %' '.join((data, signal, signal_data)))
@@ -1890,7 +1867,6 @@ def nick_cb(keys, nick, data, signal, signal_data):
 
 
 ### Garbage collector ###
-@timeit
 def garbage_collector_cb(data, counter):
     for masklist in maskModes.itervalues():
         masklist.purge()
@@ -2019,7 +1995,6 @@ def ban_mask_cmpl(users, data, completion_item, buffer, completion):
         search_pattern = pattern + '*'
     else:
         search_pattern = pattern
-    debug('ban_mask_completion: %s' %search_pattern)
 
     if '@' in pattern:
         # complete *!*@hostname
@@ -2033,11 +2008,9 @@ def ban_mask_cmpl(users, data, completion_item, buffer, completion):
         # complete nick!*@*
         make_mask = lambda mask : '%s!*@*' %get_nick(mask)
 
-    debug('ban mask cmpl: %s' %pattern)
     masks = pattern_match(search_pattern, users.itervalues())
     for mask in masks:
         mask = make_mask(mask)
-        debug('ban mask cmpl: mask: %s' %mask)
         weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_SORT)
     return WEECHAT_RC_OK
 
@@ -2145,9 +2118,9 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_timer(30*60*1000, 0, 0, 'garbage_collector_cb', '')
 
     # debug commands
-    weechat.hook_command('ocaches', '', '', '', '', 'debug_print_cache', '')
-    weechat.hook_command('ocollect', '', '', '', '', 'debug_garbage_collector', '')
-    weechat.hook_command('otime', '', '', '', '', 'debug_print_time_avg', '')
+    #weechat.hook_command('ocaches', '', '', '', '', 'debug_print_cache', '')
+    #weechat.hook_command('ocollect', '', '', '', '', 'debug_garbage_collector', '')
+    #weechat.hook_command('otime', '', '', '', '', 'debug_print_time_avg', '')
 
 
 
