@@ -17,7 +17,7 @@
 ###
 
 ###
-#  Helper script for IRC operators
+#   Helper script for IRC operators
 #
 #   Inspired by auto_bleh.pl (irssi) and chanserv.py (xchat) scripts
 #
@@ -27,15 +27,23 @@
 #   Still this script is very configurable and its behaviour can be configured in a per server or per
 #   channel basis so it can fit most needs without changing its code.
 #
+#   Features several completions for ban/mute masks and a memory for channel masks and users (so
+#   users that parted are still bannable).
+#
 #   Commands (see detailed help with /help in WeeChat):
-#   * /oop   : Request op
-#   * /odeop : Drops op
-#   * /okick : Kicks user (or users)
-#   * /oban  : Apply bans
-#   * /ounban: Remove bans
-#   * /omute : Silences user (disabled by default)
-#   * /okban : Kicks and bans user (or users)
-#   * /otopic: Changes channel topic
+#   *      /oop: Request op
+#   *    /odeop: Drop op
+#   *    /okick: Kick user (or users)
+#   *     /oban: Apply bans
+#   *   /ounban: Remove bans
+#   *    /omute: Apply mutes
+#   *  /ounmute: Remove mutes
+#   *    /okban: Kick and bans user (or users)
+#   *   /otopic: Change channel topic
+#   *    /omode: Change channel modes
+#   *    /olist: List cached masks (bans or mutes)
+#   *   /ovoice: Give voice to user
+#   * /odevoice: Remove voice from user
 #
 #
 #   Settings:
@@ -63,7 +71,7 @@
 #     (for quakenet only)
 #
 #   * plugins.var.python.chanop.deop_command:
-#     Same as op_command but for deop, really not needed since /deop works anywhere, but it's there.
+#     Same as op_command but for deop.
 #     It accepts the special vars $server, $channel and $nick
 #
 #   * plugins.var.python.chanop.autodeop:
@@ -79,14 +87,12 @@
 #     List of keywords separated by comas. Defines default banmask, when using /oban, /okban or
 #     /omute
 #     You can use several keywords for build a banmask, each keyword defines how the banmask will be
-#     generated for a given hostmask.
-#     Valid keywords are: nick, user, host, exact
+#     generated for a given hostmask, see /help oban
+#     Valid keywords are: nick, user, host, exact and webchat
 #
 #     Examples:
 #     /set plugins.var.python.chanop.default_banmask host (bans with *!*@host)
 #     /set plugins.var.python.chanop.default_banmask host,user (bans with *!user@host)
-#     /set plugins.var.python.chanop.default_banmask exact
-#     (bans with nick!user@host, same as using 'nick,user,host')
 #
 #   * plugins.var.python.chanop.kick_reason:
 #     Default kick reason if none was given in the command.
@@ -94,11 +100,6 @@
 #   * plugins.var.python.chanop.enable_remove:
 #     If enabled, it will use "/quote remove" command instead of /kick, enable it only in
 #     networks that support it, like freenode.
-#     Valid values 'on', 'off'
-#
-#   * plugins.var.python.chanop.enable_mute:
-#     Mute is disabled by default, this means /omute will ban instead of silence a user, this is
-#     because not all networks support "/mode +q" and it should be enabled only for those that do.
 #     Valid values 'on', 'off'
 #
 #
@@ -112,11 +113,6 @@
 #     This also applies to /okban command, multiple kickbans would be enabled.
 #     Valid values 'on', 'off'
 #
-#   * plugins.var.python.chanop.merge_bans:
-#     Only if you want to reduce flooding when applying (or removing) several bans and
-#     if the IRC server supports it. Every 4 bans will be merged in a
-#     single command. Valid values 'on', 'off'
-#
 #   * plugins.var.python.chanop.invert_kickban_order:
 #     /okban kicks first, then bans, this inverts the order.
 #     Valid values 'on', 'off'
@@ -126,17 +122,23 @@
 #  * use dedicated config file like in urlgrab.py
 #   (win free config value validation by WeeChat)
 #  * ban expire time
-#  * add completions
-#  * command for switch channel moderation on/off
-#  * implement ban with channel forward
-#  * user tracker (for ban even when they already /part'ed)
-#  * ban by realname
-#  * bantracker (keeps a record of ban and kicks) (?)
-#  * smart banmask (?)
+#  * save ban.mask and ban.hostmask across reloads
+#  * allow to override mute command (for quiet with ChanServ)
+#  * rewrite the queue message stuff
+#  * support for bans with channel forward
+#  * support for extbans (?)
 #  * multiple-channel ban (?)
 #
 #
 #   History:
+#   2010-
+#   version 0.2: major updates
+#   * fixed mutes for ircd-seven
+#   * added commands: /ovoice /odevoice /ounmute /omode /olist
+#   * config options removed:
+#     - merge_bans: replaced by 'modes' option
+#     - enable_mute: replaced by 'chanmodes' option
+#
 #   2009-11-9
 #   version 0.1.1: fixes
 #   * script renamed to 'chanop' because it was causing conflicts with python
@@ -164,7 +166,7 @@ settings = {
 'kick_reason'           :'kthxbye!',
 'enable_multi_kick'     :'off',
 'invert_kickban_order'  :'off',
-'display_affected'      :'off',
+'display_affected'      :'off', # FIXME make configurable per channel
 'chanmodes'             :'bq',
 'modes'                 :'4',
 'fetch_bans'            :'on',
@@ -631,7 +633,7 @@ class Message(object):
         #debug('Message: wait %s' %self.wait)
         if self.wait:
             if isinstance(self.wait, float):
-                command = '/wait %sms %s' %(int(self.wait*1000), self.command)
+               command = '/wait %sms %s' %(int(self.wait*1000), self.command)
             else:
                command = '/wait %s %s' %(self.wait, self.command)
         else:
