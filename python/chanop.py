@@ -2136,7 +2136,7 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_signal('*,irc_in_nick', 'nick_cb', '')
     weechat.hook_signal('*,irc_in_mode', 'mode_cb', '')
 
-    weechat.hook_timer(10*60*1000, 0, 0, 'garbage_collector_cb', '')
+    weechat.hook_timer(30*60*1000, 0, 0, 'garbage_collector_cb', '')
 
     # debug commands
     weechat.hook_command('ocaches', '', '', '', '', 'debug_print_cache', '')
