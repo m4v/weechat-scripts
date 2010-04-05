@@ -156,6 +156,7 @@ SCRIPT_DESC    = "Helper script for IRC operators"
 ### default settings ###
 settings = {
 'op_command'            :'/msg chanserv op $channel $nick',
+'deop_command'          :'/deop',
 'autodeop'              :'on',
 'autodeop_delay'        :'180',
 'default_banmask'       :'host',
@@ -928,7 +929,9 @@ class CommandChanop(Command):
     def drop_op(self):
         op = self.has_op()
         if op is True:
-            value = '/deop'
+            value = self.get_config('deop_command')
+            if not value:
+                value = '/deop'
             self.queue(self.replace_vars(value))
 
 
