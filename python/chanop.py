@@ -1549,7 +1549,6 @@ class KickBan(Ban, Kick):
             "Combines /okick and /oban commands.")
     command = 'okban'
     completion = '%(chanop_nicks)'
-    invert = False
 
     def execute_op(self):
         nick, s, reason = self.args.partition(' ')
@@ -1558,7 +1557,7 @@ class KickBan(Ban, Kick):
             if not reason:
                 reason = self.get_config('kick_reason')
             banmask = self.make_banmask(hostmask)
-            if not self.invert:
+            if not self.get_config_boolean('invert_kickban_order'):
                 self.kick(nick, reason, wait=0)
                 self.ban(banmask)
             else:
@@ -1590,8 +1589,8 @@ class MultiKickBan(KickBan):
             for nick in nicks:
                 hostmask = self.get_host(nick)
                 if hostmask:
-                    mask = self.make_banmask(hostmask)
-                    if not self.invert:
+                    banmask = self.make_banmask(hostmask)
+                    if not self.get_config_boolean('invert_kickban_order'):
                         self.kick(nick, reason, wait=0)
                         self.ban(banmask)
                     else:
@@ -1907,14 +1906,6 @@ def enable_multi_kick_conf_cb(data, config, value):
     cmd_kban.hook()
     return WEECHAT_RC_OK
 
-def invert_kickban_order_conf_cb(data, config, value):
-    global cmd_kban
-    if boolDict[value]:
-        cmd_kban.invert = True
-    else:
-        cmd_kban.invert = False
-    return WEECHAT_RC_OK
-
 def update_chanop_channels_cb(data, config, value):
     #debug('CONFIG: %s' %(' '.join((data, config, value))))
     global chanop_channels
@@ -2086,8 +2077,6 @@ if __name__ == '__main__' and import_ok and \
         cmd_kban = KickBan()
     cmd_kick.hook()
     cmd_kban.hook()
-    if get_config_boolean('invert_kickban_order'):
-        cmd_kban.invert = True
     # hook /oban /ounban /olist
     Ban().hook()
     UnBan().hook()
@@ -2103,8 +2092,6 @@ if __name__ == '__main__' and import_ok and \
 
     weechat.hook_config('plugins.var.python.%s.enable_multi_kick' %SCRIPT_NAME,
             'enable_multi_kick_conf_cb', '')
-    weechat.hook_config('plugins.var.python.%s.invert_kickban_order' %SCRIPT_NAME,
-            'invert_kickban_order_conf_cb', '')
     weechat.hook_config('plugins.var.python.%s.channels.*' %SCRIPT_NAME,
             'update_chanop_channels_cb', '')
 
