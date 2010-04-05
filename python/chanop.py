@@ -931,6 +931,14 @@ class CommandChanop(Command):
                 value = '/deop'
             self.queue(self.replace_vars(value))
 
+    def voice(self, args):
+        cmd = '/voice %s' %args
+        self.queue(cmd)
+
+    def devoice(self, args):
+        cmd = '/devoice %s' %args
+        self.queue(cmd)
+
 
 deop_hook = {}
 manual_op = False
@@ -1445,11 +1453,12 @@ class Ban(CommandNeedsOp):
         banmasks = []
         for arg in args:
             mask = arg
-            hostmask = None
-            if not is_hostmask(mask):
-                hostmask = self.get_host(mask)
+            if not is_hostmask(arg):
+                hostmask = self.get_host(arg)
                 if hostmask:
                     mask = self.make_banmask(hostmask)
+                    if self.has_voice(arg):
+                        self.devoice(arg)
             banmasks.append(mask)
         if banmasks:
             banmasks = set(banmasks) # remove duplicates
@@ -1614,14 +1623,6 @@ class Voice(CommandNeedsOp):
 
     def execute_op(self):
         self.voice(self.args)
-
-    def voice(self, args):
-        cmd = '/voice %s' %args
-        self.queue(cmd)
-
-    def devoice(self, args):
-        cmd = '/devoice %s' %args
-        self.queue(cmd)
 
 
 class DeVoice(Voice):
