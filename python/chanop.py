@@ -1711,12 +1711,16 @@ class ShowBans(CommandChanop):
         weechat.buffer_set(self.get_buffer(), 'title', s)
 
     def execute(self):
-        self.padding = self.get_config_int('padding') or 40
+        try:
+            self.padding = int(weechat.config_get_plugin('padding'))
+        except:
+            self.padding = 40
         self.clear()
         masklist = maskModes[self.mode]
         if not masklist:
             self.prnt("No %s known." %self.type)
             return
+        # XXX fails if used in a non irc buffer, display message or something
         if self.args:
             key = (self.server, self.args)
         else:
@@ -1729,7 +1733,9 @@ class ShowBans(CommandChanop):
         if masks:
             mask_count = len(masks)
             self.prnt('\n%s[%s %s]' %(color_channel, key[0], key[1]))
-            for ban in masks.itervalues():
+            masks = [ m for m in masks.itervalues() ]
+            masks.sort(key=lambda x: x.date)
+            for ban in masks:
                 op = ban.operator and get_nick(ban.operator) or self.server
                 self.prnt_ban(ban.mask, op, ban.date, ban.hostmask)
         else:
