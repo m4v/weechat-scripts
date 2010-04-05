@@ -1653,10 +1653,25 @@ class Mode(CommandNeedsOp):
 
 
 class ShowBans(CommandChanop):
-    command = 'olistbans'
-    masklist = banlist
+    command = 'olist'
+    completion = 'bans|mutes %(irc_server_channels)'
     showbuffer = ''
-    name = 'bans'
+
+    def parse_args(self, data, buffer, args):
+        self.buffer = buffer
+        self.server = weechat.buffer_get_string(self.buffer, 'localvar_server')
+        self.channel = weechat.buffer_get_string(self.buffer, 'localvar_channel')
+        type, _, args = args.partition(' ')
+        if not type:
+            raise ValueError, 'missing argument'
+        if type == 'bans':
+            self.mode = 'b'
+        elif type == 'mutes':
+            self.mode = 'q'
+        else:
+            raise ValueError, 'incorrect argument'
+        self.type = type
+        self.args = args.strip()
 
     def get_buffer(self):
         if self.showbuffer:
@@ -1673,8 +1688,7 @@ class ShowBans(CommandChanop):
         weechat.prnt(self.get_buffer(), s)
 
     def prnt_ban(self, banmask, op, when, hostmask=None):
-        padding = self.get_config_int('padding') or 40
-        padding = padding - len(banmask)
+        padding = self.padding - len(banmask)
         if padding < 0:
             padding = 0
         padding = '.'*padding
@@ -1694,15 +1708,16 @@ class ShowBans(CommandChanop):
         weechat.buffer_set(self.get_buffer(), 'title', s)
 
     def execute(self):
+        self.padding = self.get_config_int('padding') or 40
         self.clear()
-        masklist = self.masklist
+        masklist = maskModes[self.mode]
         if not masklist:
-            self.prnt("No bans known.")
+            self.prnt("No %s known." %self.type)
             return
         if self.args:
             key = (self.server, self.args)
         else:
-            key = irc_buffer(self.buffer)
+            key = (self.server, self.channel)
         try:
             masks = masklist[key]
         except KeyError:
@@ -1715,15 +1730,9 @@ class ShowBans(CommandChanop):
                 op = ban.operator and get_nick(ban.operator) or self.server
                 self.prnt_ban(ban.mask, op, ban.date, ban.hostmask)
         else:
-            self.prnt('Not known bans for %s.%s' %key)
-        self.set_title('List of %s known by chanop in %s (total: %s)' %(self.name, key[1],
-                mask_count))
-
-
-class ShowMutes(ShowBans):
-    command = 'olistmutes'
-    masklist = mutelist
-    name = 'quiets'
+            self.prnt('Not known %s for %s.%s' %(self.type, key[0], key[1]))
+        self.set_title('List of %s known by chanop in %s.%s (total: %s)' %(self.type, key[0],
+            key[1], mask_count))
 
 
 #########################
@@ -2091,11 +2100,10 @@ if __name__ == '__main__' and import_ok and \
     cmd_kban.hook()
     if get_config_boolean('invert_kickban_order'):
         cmd_kban.invert = True
-    # hook /oban /ounban /olistbans
+    # hook /oban /ounban /olist
     Ban().hook()
     UnBan().hook()
     ShowBans().hook()
-    ShowMutes().hook()
     # hook /omute /ounmute
     Mute().hook()
     UnMute().hook()
