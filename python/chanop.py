@@ -824,14 +824,17 @@ class CommandChanop(Command):
         self.nick = weechat.info_get('irc_nick', self.server)
         self.users = userCache.get(self.server, self.channel)
 
-    def replace_vars(self, s): # XXX maybe can use WeeChat api?
-        if '$channel' in s:
-            s = s.replace('$channel', self.channel)
-        if '$nick' in s:
-            s = s.replace('$nick', self.nick)
-        if '$server' in s:
-            s = s.replace('$server', self.server)
-        return s
+    def replace_vars(self, s):
+        try:
+            return weechat.buffer_string_replace_local_var(self.buffer, s)
+        except AttributeError:
+            if '$channel' in s:
+                s = s.replace('$channel', self.channel)
+            if '$nick' in s:
+                s = s.replace('$nick', self.nick)
+            if '$server' in s:
+                s = s.replace('$server', self.server)
+            return s
 
     def get_config(self, config):
         string = '%s.%s.%s' %(config, self.server, self.channel)
