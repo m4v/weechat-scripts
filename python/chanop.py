@@ -1002,8 +1002,17 @@ class CaseInsensibleString(str):
     def __hash__(self):
         return hash(self.lowered)
 
+def caseInsensibleKey(k):
+    if isinstance(k, str):
+        return CaseInsensibleString(k)
+    elif isinstance(k, tuple):
+        return tuple([ caseInsensibleKey(v) for v in k ])
+    return k
+
 
 class CaseInsensibleDict(dict):
+    key = staticmethod(caseInsensibleKey)
+
     def __setitem__(self, k, v):
         dict.__setitem__(self, self.key(k), v)
 
@@ -1016,16 +1025,9 @@ class CaseInsensibleDict(dict):
     def __contains__(self, k):
         return dict.__contains__(self, self.key(k))
 
-    def key(self, k):
-        if isinstance(k, str):
-            return CaseInsensibleString(k)
-        elif isinstance(k, tuple):
-            return tuple([ self.key(v) for v in k ])
-        return k
-
 
 class CaseInsensibleSet(set):
-    normalize = staticmethod(CaseInsensibleString)
+    normalize = staticmethod(caseInsensibleKey)
 
     def __init__(self, iterable=()):
         iterable = map(self.normalize, iterable)
@@ -1739,7 +1741,7 @@ class ShowBans(CommandChanop):
 
 ### Init stuff ###
 global chanop_channels
-chanop_channels = CaseInsensibleDict()
+chanop_channels = CaseInsensibleSet()
 def chanop_init():
     global chanop_channels
     servers = Infolist('irc_server')
@@ -1747,8 +1749,8 @@ def chanop_init():
     while servers.next():
         if servers['is_connected']:
             server = servers['name']
-            channels = CaseInsensibleSet(get_config_list('channels.%s' %server))
-            chanop_channels[server] = channels
+            channels = get_config_list('channels.%s' %server)
+            chanop_channels.update([ (server, channel) for channel in channels ])
             for channel in channels:
                 userCache.generate_cache(server, channel)
                 if fetch_bans:
@@ -1758,7 +1760,7 @@ def chanop_init():
 def is_tracked(server, channel):
     """Check if a server channel pair should be tracked by script"""
     global chanop_channels
-    return server in chanop_channels and channel in chanop_channels[server]
+    return (server, channel) in chanop_channels
 
 
 ### Ban list ###
@@ -1792,11 +1794,12 @@ def mode_cb(server, channel, nick, data, signal, signal_data):
         # return for these modes fairly used but not useful to us
         return WEECHAT_RC_OK
     key = (server, channel)
+    allkeys = CaseInsensibleSet()
     for masklist in maskModes.itervalues():
-        if key in masklist:
-            break
-        # from a channel we're not tracking
-        return WEECHAT_RC_OK
+        allkeys.update(masklist)
+        if key not in allkeys and not is_tracked(server, channel):
+            # from a channel we're not tracking
+            return WEECHAT_RC_OK
     servermodes = set(supported_modes(server))
     if servermodes.intersection(set(modes)):
         # split chanmodes into tuples like ('+', 'b', 'asd!*@*')
