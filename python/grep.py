@@ -1545,24 +1545,6 @@ def make_username_regexp(buffer, *args):
         return '|'.join(regexp)
     return ''
 
-def make_hex_username_regexp(buffer, *args):
-    debug('make_hex_username: %s' %str(args))
-    if not buffer:
-        return ''
-    regexp = []
-    try:
-        for nick in args:
-            user = get_username(buffer, nick)
-            if not user: continue
-            hex = map(lambda n: user[n:n+2], range(0, len(user), 2))
-            hex = map(lambda s: int(s, 16), hex)
-            regexp.append('.'.join(map(str, hex)))
-    except:
-        return ''
-    if regexp:
-        return '|'.join(regexp)
-    return ''
-
 def get_username(buffer, nick):
     host = get_host(buffer, nick)
     if host:
@@ -1596,7 +1578,6 @@ templates = {
         'url'  :make_url_regexp,
         'host' :make_host_regexp,
         'user' :make_username_regexp,
-        'hexuser':make_hex_username_regexp,
         }
 
 ### Main ###
