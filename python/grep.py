@@ -1264,12 +1264,11 @@ def cmd_grep_parsing(args, buffer=''):
         s = match.groups()[0]
         debug(s)
         tmpl_args = s.split()
-        tmpl_key = tmpl_args[0]
-        del tmpl_args[0]
+        tmpl_key, _, tmpl_args = s.partition(' ')
         try:
             template = templates[tmpl_key]
             if callable(template):
-                return template(buffer, *tmpl_args)
+                return template(buffer, tmpl_args)
             else:
                 return template
         except:
@@ -1511,19 +1510,19 @@ def completion_grep_args(data, completion_item, buffer, completion):
 
 ### Templates ###
 _tmplRe = re.compile(r'%\{(\w+.*?)\}')
-def make_url_regexp(buffer, *args):
+def make_url_regexp(buffer, args):
     if args:
-        words = r'(?:%s)' %'|'.join(re.escape(args))
+        words = r'(?:%s)' %'|'.join(re.escape(args.split()))
         return r'((?:\w+://|www\.)[^\s]*%s[^\s]*(?:/[^\])>\s]*)?)' %words
     else:
         return url
 
-def make_host_regexp(buffer, *args):
+def make_host_regexp(buffer, args):
     debug('make host: %s' %str(args))
     if not buffer:
         return ''
     regexp = []
-    for nick in args:
+    for nick in args.split():
         host = get_host(buffer, nick)
         if not host: continue
         host = host[host.find('@')+1:]
@@ -1532,12 +1531,12 @@ def make_host_regexp(buffer, *args):
         return '|'.join(regexp)
     return ''
 
-def make_username_regexp(buffer, *args):
+def make_username_regexp(buffer, args):
     debug('make username: %s' %str(args))
     if not buffer:
         return ''
     regexp = []
-    for nick in args:
+    for nick in args.split():
         user = get_username(buffer, nick)
         if not user: continue
         regexp.append(re.escape(user))
@@ -1558,8 +1557,9 @@ def get_host(buffer, nick):
     if not nick_infolist:
         return None
     host = None
+    nick = nick.lower()
     while weechat.infolist_next(nick_infolist):
-        if nick == weechat.infolist_string(nick_infolist, 'name'):
+        if nick == weechat.infolist_string(nick_infolist, 'name').lower():
             host = weechat.infolist_string(nick_infolist, 'host')
             break
     weechat.infolist_free(nick_infolist)
@@ -1578,6 +1578,7 @@ templates = {
         'url'  :make_url_regexp,
         'host' :make_host_regexp,
         'user' :make_username_regexp,
+        'escape': lambda b, s: re.escape(s),
         }
 
 ### Main ###
