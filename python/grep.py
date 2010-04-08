@@ -436,9 +436,9 @@ def dir_list(dir, filter_list=(), filter_excludes=True, include_dir=False):
     join = path.join
     def walk_path():
         for basedir, subdirs, files in walk(dir):
-            if include_dir: 
-                subdirs = map(lambda s : join(s, ''), subdirs)
-                files.extend(subdirs)
+            #if include_dir:
+            #    subdirs = map(lambda s : join(s, ''), subdirs)
+            #    files.extend(subdirs)
             files_path = map(lambda f : join(basedir, f), files)
             files_path = [ file for file in files_path if not filter(file) ]
             extend(files_path)
@@ -1456,8 +1456,11 @@ def cmd_logs(data, buffer, args):
 def completion_log_files(data, completion_item, buffer, completion):
     #debug('completion: %s' %', '.join((data, completion_item, buffer, completion)))
     global home_dir
-    for log in dir_list(home_dir, include_dir=True):
-        weechat.hook_completion_list_add(completion, strip_home(log), 0, weechat.WEECHAT_LIST_POS_SORT)
+    l = len(home_dir)
+    completion_list_add = weechat.hook_completion_list_add
+    WEECHAT_LIST_POS_END = weechat.WEECHAT_LIST_POS_END
+    for log in dir_list(home_dir):
+        completion_list_add(completion, log[l:], 0, WEECHAT_LIST_POS_END)
     return WEECHAT_RC_OK
 
 def completion_grep_args(data, completion_item, buffer, completion):
@@ -1522,7 +1525,7 @@ Python regular expression syntax:
 """,
             # completion template
             "buffer %(buffers_names) %(grep_arguments)|%*"
-            "||log %(grep_log_files)|%(filename) %(grep_arguments)|%*"
+            "||log %(grep_log_files) %(grep_arguments)|%*"
             "||stop"
             "||%(grep_arguments)|%*",
             'cmd_grep' ,'')
