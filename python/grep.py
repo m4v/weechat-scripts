@@ -377,15 +377,15 @@ def strip_home(s, dir=''):
     return s
 
 ### Messages ###
-def debug(s, prefix='debug'):
+def debug(s, prefix='', buffer_name=None):
     """Debug msg"""
     if not weechat.config_get_plugin('debug'): return
-    buffer_name = 'DEBUG_' + SCRIPT_NAME
+    if not buffer_name:
+        buffer_name = SCRIPT_NAME + '_debug'
     buffer = weechat.buffer_search('python', buffer_name)
     if not buffer:
         buffer = weechat.buffer_new(buffer_name, '', '', '', '')
         weechat.buffer_set(buffer, 'nicklist', '0')
-        weechat.buffer_set(buffer, 'time_for_each_line', '0')
         weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
     weechat.prnt(buffer, '%s\t%s' %(prefix, s))
 
