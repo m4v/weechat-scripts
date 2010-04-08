@@ -886,7 +886,7 @@ def show_matching_lines():
         else:
             # we hook a process so grepping runs in background.
             #debug('on background')
-            global hook_file_grep, script_path
+            global hook_file_grep, script_path, bytecode
             timeout = 1000*60*10 # 10 min
 
             quotify = lambda s: '"%s"' %s
@@ -895,7 +895,7 @@ def show_matching_lines():
             cmd = grep_proccess_cmd %dict(logs=files_string, head=head, pattern=pattern, tail=tail,
                     hilight=hilight, after_context=after_context, before_context=before_context,
                     exact=exact, matchcase=matchcase, home_dir=home_dir, script_path=script_path,
-                    count=count, invert=invert)
+                    count=count, invert=invert, bytecode=bytecode)
 
             #debug(cmd)
             hook_file_grep = weechat.hook_process(cmd, timeout, 'grep_file_callback', '')
@@ -906,7 +906,7 @@ def show_matching_lines():
         buffer_update()
 
 # defined here for commodity
-grep_proccess_cmd = """python -c '
+grep_proccess_cmd = """python -%(bytecode)sc '
 import sys, cPickle
 sys.path.append("%(script_path)s") # add WeeChat script dir so we can import grep
 from grep import make_regexp, grep_file, strip_home
@@ -1490,6 +1490,15 @@ if __name__ == '__main__' and import_ok and \
     script_path = path.dirname(__file__)
     sys.path.append(script_path)
     delete_bytecode()
+
+    # check python version
+    import sys
+    global bytecode
+    if sys.version_info > (2, 6):
+        bytecode = 'B'
+    else:
+        bytecode = ''
+
 
     weechat.hook_command(SCRIPT_COMMAND, cmd_grep.__doc__,
             "[log <file> | buffer <name> | stop] [-a|--all] [-b|--buffer] [-c|--count] [-m|--matchcase] "
