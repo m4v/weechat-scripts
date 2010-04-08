@@ -102,6 +102,23 @@
 #     networks that support it, like freenode.
 #     Valid values 'on', 'off'
 #
+#   * plugins.var.python.chanop.invert_kickban_order:
+#     /okban kicks first, then bans, this inverts the order.
+#     Valid values 'on', 'off'
+#
+#   * plugins.var.python.chanop.display_affected:
+#
+#
+#   The following configs can't be defined per channel.
+#
+#   * plugins.var.python.chanop.channels:
+#
+#   * plugins.var.python.chanop.fetch_bans:
+#
+#   * plugins.var.python.chanop.modes:
+#
+#   * plugins.var.python.chanop.chanmodes:
+#
 #
 #   The following configs are global and can't be defined per server or channel.
 #
@@ -111,10 +128,6 @@
 #     you're not careful when writting the kick reason.
 #
 #     This also applies to /okban command, multiple kickbans would be enabled.
-#     Valid values 'on', 'off'
-#
-#   * plugins.var.python.chanop.invert_kickban_order:
-#     /okban kicks first, then bans, this inverts the order.
 #     Valid values 'on', 'off'
 #
 #
@@ -169,7 +182,7 @@ settings = {
 'display_affected'      :'off', # FIXME make configurable per channel
 'chanmodes'             :'bq',
 'modes'                 :'4',
-'fetch_bans'            :'on',
+'fetch_bans'            :'on', # FIXME make per server
 }
 
 
