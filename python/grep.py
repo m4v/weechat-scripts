@@ -66,6 +66,13 @@
 #
 #
 #   History:
+#   2010-04-08
+#   version 0.6.6: bug fixes
+#   * use WEECHAT_LIST_POS_END in log file completion, makes completion faster
+#   * disable bytecode if using python 2.6
+#   * use single quotes in command string
+#   * fix bug that could change buffer's title when using /grep stop
+#
 #   2010-01-24
 #   version 0.6.5: disable bytecode is a 2.6 feature, instead, resort to delete the bytecode manually
 #
@@ -159,7 +166,7 @@ except ImportError:
 
 SCRIPT_NAME    = "grep"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.6.5"
+SCRIPT_VERSION = "0.6.6"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Search in buffers and logs"
 SCRIPT_COMMAND = "grep"
