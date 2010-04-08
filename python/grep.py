@@ -1325,7 +1325,7 @@ def cmd_grep_stop(buffer, args):
             say(s, buffer=buffer)
             grep_buffer = weechat.buffer_search('python', SCRIPT_NAME)
             if grep_buffer:
-                weechat.buffer_set(buffer, 'title', s)
+                weechat.buffer_set(grep_buffer, 'title', s)
             del matched_lines
         else:
             say(get_grep_file_status(), buffer=buffer)
