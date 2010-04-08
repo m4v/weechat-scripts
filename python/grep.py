@@ -66,6 +66,13 @@
 #
 #
 #   History:
+#   2010-04-08
+#   version 0.6.6: bug fixes
+#   * use WEECHAT_LIST_POS_END in log file completion, makes completion faster
+#   * disable bytecode if using python 2.6
+#   * use single quotes in command string
+#   * fix bug that could change buffer's title when using /grep stop
+#
 #   2010-01-24
 #   version 0.6.5: disable bytecode is a 2.6 feature, instead, resort to delete the bytecode manually
 #
@@ -381,17 +388,17 @@ def strip_home(s, dir=''):
     return s
 
 ### Messages ###
-def debug(s, prefix='', buffer=None):
+def debug(s, prefix='', buffer=None, buffer_name=None):
     """Debug msg"""
     if not weechat.config_get_plugin('debug'): return
+    if not buffer_name:
+        buffer_name = SCRIPT_NAME + '_debug'
     if buffer is None:
-        buffer_name = 'DEBUG_' + SCRIPT_NAME
         buffer = weechat.buffer_search('python', buffer_name)
-        if not buffer:
-            buffer = weechat.buffer_new(buffer_name, '', '', '', '')
-            weechat.buffer_set(buffer, 'nicklist', '0')
-            weechat.buffer_set(buffer, 'time_for_each_line', '0')
-            weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
+    if not buffer:
+        buffer = weechat.buffer_new(buffer_name, '', '', '', '')
+        weechat.buffer_set(buffer, 'nicklist', '0')
+        weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
     weechat.prnt(buffer, '%s\t%s' %(prefix, s))
 
 def error(s, prefix=None, buffer='', trace=''):
@@ -441,9 +448,9 @@ def dir_list(dir, filter_list=(), filter_excludes=True, include_dir=False):
     join = path.join
     def walk_path():
         for basedir, subdirs, files in walk(dir):
-            if include_dir: 
-                subdirs = map(lambda s : join(s, ''), subdirs)
-                files.extend(subdirs)
+            #if include_dir:
+            #    subdirs = map(lambda s : join(s, ''), subdirs)
+            #    files.extend(subdirs)
             files_path = map(lambda f : join(basedir, f), files)
             files_path = [ file for file in files_path if not filter(file) ]
             extend(files_path)
@@ -887,7 +894,7 @@ def show_matching_lines():
         else:
             # we hook a process so grepping runs in background.
             #debug('on background')
-            global hook_file_grep, script_path
+            global hook_file_grep, script_path, bytecode
             timeout = 1000*60*10 # 10 min
 
             quotify = lambda s: '"%s"' %s
@@ -896,7 +903,7 @@ def show_matching_lines():
             cmd = grep_proccess_cmd %dict(logs=files_string, head=head, pattern=pattern, tail=tail,
                     hilight=hilight, after_context=after_context, before_context=before_context,
                     exact=exact, matchcase=matchcase, home_dir=home_dir, script_path=script_path,
-                    count=count, invert=invert)
+                    count=count, invert=invert, bytecode=bytecode)
 
             #debug(cmd)
             hook_file_grep = weechat.hook_process(cmd, timeout, 'grep_file_callback', '')
@@ -908,7 +915,7 @@ def show_matching_lines():
         buffer_update()
 
 # defined here for commodity
-grep_proccess_cmd = """python -c '
+grep_proccess_cmd = """python -%(bytecode)sc '
 import sys, cPickle, cStringIO
 sys.path.append("%(script_path)s") # add WeeChat script dir so we can import grep
 from grep import make_regexp, grep_file, strip_home
@@ -1355,7 +1362,7 @@ def cmd_grep_stop(buffer, args):
             say(s, buffer=buffer)
             grep_buffer = weechat.buffer_search('python', SCRIPT_NAME)
             if grep_buffer:
-                weechat.buffer_set(buffer, 'title', s)
+                weechat.buffer_set(grep_buffer, 'title', s)
             del matched_lines
         else:
             say(get_grep_file_status(), buffer=buffer)
@@ -1486,8 +1493,11 @@ def cmd_logs(data, buffer, args):
 def completion_log_files(data, completion_item, buffer, completion):
     #debug('completion: %s' %', '.join((data, completion_item, buffer, completion)))
     global home_dir
-    for log in dir_list(home_dir, include_dir=True):
-        weechat.hook_completion_list_add(completion, strip_home(log), 0, weechat.WEECHAT_LIST_POS_SORT)
+    l = len(home_dir)
+    completion_list_add = weechat.hook_completion_list_add
+    WEECHAT_LIST_POS_END = weechat.WEECHAT_LIST_POS_END
+    for log in dir_list(home_dir):
+        completion_list_add(completion, log[l:], 0, WEECHAT_LIST_POS_END)
     return WEECHAT_RC_OK
 
 def completion_grep_args(data, completion_item, buffer, completion):
@@ -1607,6 +1617,15 @@ if __name__ == '__main__' and import_ok and \
     script_path = path.dirname(__file__)
     sys.path.append(script_path)
     delete_bytecode()
+
+    # check python version
+    import sys
+    global bytecode
+    if sys.version_info > (2, 6):
+        bytecode = 'B'
+    else:
+        bytecode = ''
+
 
     weechat.hook_command(SCRIPT_COMMAND, cmd_grep.__doc__,
             "[log <file> | buffer <name> | stop] [-a|--all] [-b|--buffer] [-c|--count] [-m|--matchcase] "
