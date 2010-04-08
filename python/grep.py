@@ -395,10 +395,10 @@ def debug(s, prefix='', buffer=None, buffer_name=None):
         buffer_name = SCRIPT_NAME + '_debug'
     if buffer is None:
         buffer = weechat.buffer_search('python', buffer_name)
-    if not buffer:
-        buffer = weechat.buffer_new(buffer_name, '', '', '', '')
-        weechat.buffer_set(buffer, 'nicklist', '0')
-        weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
+        if not buffer:
+            buffer = weechat.buffer_new(buffer_name, '', '', '', '')
+            weechat.buffer_set(buffer, 'nicklist', '0')
+            weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
     weechat.prnt(buffer, '%s\t%s' %(prefix, s))
 
 def error(s, prefix=None, buffer='', trace=''):
@@ -1513,7 +1513,7 @@ def completion_grep_args(data, completion_item, buffer, completion):
 _tmplRe = re.compile(r'%\{(\w+.*?)\}')
 def make_url_regexp(buffer, *args):
     if args:
-        words = r'(?:%s)' %'|'.join(args)
+        words = r'(?:%s)' %'|'.join(re.escape(args))
         return r'((?:\w+://|www\.)[^\s]*%s[^\s]*(?:/[^\])>\s]*)?)' %words
     else:
         return url
@@ -1526,8 +1526,8 @@ def make_host_regexp(buffer, *args):
     for nick in args:
         host = get_host(buffer, nick)
         if not host: continue
-        host = host[host.find('@')+1:].replace('.', '\\.')
-        regexp.append(host)
+        host = host[host.find('@')+1:]
+        regexp.append(re.escape(host))
     if regexp:
         return '|'.join(regexp)
     return ''
@@ -1540,7 +1540,7 @@ def make_username_regexp(buffer, *args):
     for nick in args:
         user = get_username(buffer, nick)
         if not user: continue
-        regexp.append(user)
+        regexp.append(re.escape(user))
     if regexp:
         return '|'.join(regexp)
     return ''
@@ -1548,7 +1548,7 @@ def make_username_regexp(buffer, *args):
 def get_username(buffer, nick):
     host = get_host(buffer, nick)
     if host:
-        return host[host.find('=')+1:host.find('@')] # FIXME this is too freenode specific
+        return host[:host.find('@')]
     return ''
 
 def get_host(buffer, nick):
