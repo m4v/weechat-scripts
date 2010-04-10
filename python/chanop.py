@@ -1933,7 +1933,10 @@ def update_chanop_channels_cb(data, config, value):
         L = value.split(',')
     else:
         L = []
-    chanop_channels[server] = CaseInsensibleSet(L)
+    for serv, chan in list(chanop_channels):
+        if serv == server:
+            chanop_channels.remove((serv, chan))
+    chanop_channels.update([ (server, channel) for channel in L ])
     return WEECHAT_RC_OK
 
 
