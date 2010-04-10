@@ -1544,6 +1544,18 @@ def make_username_regexp(buffer, args):
         return '|'.join(regexp)
     return ''
 
+def make_simple_regexp(buffer, pattern):
+    s = '^'
+    for c in pattern:
+        if c == '*':
+            s += '.*'
+        elif c == '?':
+            s += '.'
+        else:
+            s += re.escape(c)
+    s += '$'
+    return s
+
 def get_username(buffer, nick):
     host = get_host(buffer, nick)
     if host:
@@ -1579,6 +1591,7 @@ templates = {
         'host' :make_host_regexp,
         'user' :make_username_regexp,
         'escape': lambda b, s: re.escape(s),
+        'simple': make_simple_regexp,
         }
 
 ### Main ###
