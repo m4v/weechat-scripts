@@ -1802,8 +1802,11 @@ def mode_cb(server, channel, nick, data, signal, signal_data):
     """Keep the banmask list updated when somebody changes modes"""
     #debug('MODE: %s' %' '.join((server, channel, nick, data, signal, signal_data)))
     #:m4v!~znc@unaffiliated/m4v MODE #test -bo+v asd!*@* m4v dude
-    modes, args = signal_data.split(' ', 4)[3:]
-    if len(modes) == 2 and modes[1] in 'ovjml':
+    pair = signal_data.split(' ', 4)[3:]
+    if len(pair) != 2:
+        return WEECHAT_RC_OK
+    modes, args = pair
+    if len(modes) == 2 and modes[1] in 'ovjl':
         # return for these modes fairly used but not useful to us
         return WEECHAT_RC_OK
     key = (server, channel)
