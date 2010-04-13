@@ -1511,8 +1511,9 @@ def completion_grep_args(data, completion_item, buffer, completion):
 ### Templates ###
 _tmplRe = re.compile(r'%\{(\w+.*?)\}')
 def make_url_regexp(buffer, args):
+    debug('make url: %s' %args)
     if args:
-        words = r'(?:%s)' %'|'.join(re.escape(args.split()))
+        words = r'(?:%s)' %'|'.join(map(re.escape, args.split()))
         return r'((?:\w+://|www\.)[^\s]*%s[^\s]*(?:/[^\])>\s]*)?)' %words
     else:
         return url
