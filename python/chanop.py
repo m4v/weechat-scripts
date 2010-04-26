@@ -38,7 +38,7 @@
 #   *   /ounban: Remove bans
 #   *    /omute: Apply mutes
 #   *  /ounmute: Remove mutes
-#   *    /okban: Kick and bans user (or users)
+#   * /obankick: Ban and kick user (or users)
 #   *   /otopic: Change channel topic
 #   *    /omode: Change channel modes
 #   *    /olist: List cached masks (bans or mutes)
@@ -84,7 +84,7 @@
 #     Using zero causes to deop immediately.
 #
 #   * plugins.var.python.chanop.default_banmask:
-#     List of keywords separated by comas. Defines default banmask, when using /oban, /okban or
+#     List of keywords separated by comas. Defines default banmask, when using /oban, /obankick or
 #     /omute
 #     You can use several keywords for build a banmask, each keyword defines how the banmask will be
 #     generated for a given hostmask, see /help oban
@@ -102,8 +102,8 @@
 #     networks that support it, like freenode.
 #     Valid values 'on', 'off'
 #
-#   * plugins.var.python.chanop.invert_kickban_order:
-#     /okban kicks first, then bans, this inverts the order.
+#   * plugins.var.python.chanop.invert_bankick_order:
+#     /obankick bans first, then kicks, this inverts the order.
 #     Valid values 'on', 'off'
 #
 #   * plugins.var.python.chanop.display_affected:
@@ -127,7 +127,7 @@
 #     Be careful with this as you can kick somebody by accident if
 #     you're not careful when writting the kick reason.
 #
-#     This also applies to /okban command, multiple kickbans would be enabled.
+#     This also applies to /obankick command, multiple bankicks would be enabled.
 #     Valid values 'on', 'off'
 #
 #
@@ -151,6 +151,9 @@
 #   * config options removed:
 #     - merge_bans: replaced by 'modes' option
 #     - enable_mute: replaced by 'chanmodes' option
+#   * /okban renamed to /obankick because is too easy to try /okick and execute /okban due
+#     to tab fail.
+#   * inverted bankick order for keep consistent with the name, now it bans first.
 #
 #   2009-11-9
 #   version 0.1.1: fixes
@@ -178,7 +181,7 @@ settings = {
 'enable_remove'         :'off',
 'kick_reason'           :'kthxbye!',
 'enable_multi_kick'     :'off',
-'invert_kickban_order'  :'off',
+'invert_bankick_order'  :'off',
 'display_affected'      :'off', # FIXME make configurable per channel
 'chanmodes'             :'bq',
 'modes'                 :'4',
@@ -729,7 +732,7 @@ class CommandQueue(object):
             self.commandQueueInstance = instance
 
         def __call__(self):
-            """Chanop sends one message per second, except some cases (like kickbans) where it sends
+            """Chanop sends one message per second, except some cases (like bankicks) where it sends
             them without delay. WeeChat's antiflood interferes with this, so we have to disable it
             temporally."""
             opt_low = weechat.config_get('irc.network.anti_flood_prio_low')
@@ -1558,11 +1561,11 @@ class UnMute(UnBan):
     masklist = mutelist
 
 
-class KickBan(Ban, Kick):
+class BanKick(Ban, Kick):
     help = ("Kickban nick.",
             "<nick> [<reason>] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]",
             "Combines /okick and /oban commands.")
-    command = 'okban'
+    command = 'obankick'
     completion = '%(chanop_nicks)'
 
     def execute_op(self):
@@ -1572,21 +1575,21 @@ class KickBan(Ban, Kick):
             if not reason:
                 reason = self.get_config('kick_reason')
             banmask = self.make_banmask(hostmask)
-            if not self.get_config_boolean('invert_kickban_order'):
+            if self.get_config_boolean('invert_bankick_order'):
                 self.kick(nick, reason, wait=0)
                 self.ban(banmask)
             else:
                 self.ban(banmask, wait=0)
                 self.kick(nick, reason)
         else:
-            say("Sorry, found nothing to kickban.", buffer=self.buffer)
+            say("Sorry, found nothing to bankick.", buffer=self.buffer)
             self.queue_clear()
 
 
-class MultiKickBan(KickBan):
+class MultiBanKick(BanKick):
     help = ("Kickban one or more nicks.",
             "<nick> [<nick> ..] [:] [<reason>] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]",
-            KickBan.help[2])
+            BanKick.help[2])
     completion = '%(chanop_nicks)|%*'
 
     def execute_op(self):
@@ -1605,14 +1608,14 @@ class MultiKickBan(KickBan):
                 hostmask = self.get_host(nick)
                 if hostmask:
                     banmask = self.make_banmask(hostmask)
-                    if not self.get_config_boolean('invert_kickban_order'):
+                    if self.get_config_boolean('invert_bankick_order'):
                         self.kick(nick, reason, wait=0)
                         self.ban(banmask)
                     else:
                         self.ban(banmask, wait=0)
                         self.kick(nick, reason)
         else:
-            say("Sorry, found nothing to kickban.", buffer=self.buffer)
+            say("Sorry, found nothing to bankick.", buffer=self.buffer)
             self.queue_clear()
 
 
@@ -1916,17 +1919,17 @@ def garbage_collector_cb(data, counter):
 
 ### Config callbacks ###
 def enable_multi_kick_conf_cb(data, config, value):
-    global cmd_kick, cmd_kban
+    global cmd_kick, cmd_bankick
     cmd_kick.unhook()
-    cmd_kban.unhook()
+    cmd_bankick.unhook()
     if boolDict[value]:
         cmd_kick = MultiKick()
-        cmd_kban = MultiKickBan()
+        cmd_bankick = MultiBanKick()
     else:
         cmd_kick = Kick()
-        cmd_kban = KickBan()
+        cmd_bankick = BanKick()
     cmd_kick.hook()
-    cmd_kban.hook()
+    cmd_bankick.hook()
     return WEECHAT_RC_OK
 
 def update_chanop_channels_cb(data, config, value):
@@ -2094,15 +2097,15 @@ if __name__ == '__main__' and import_ok and \
     Op().hook()
     cmd_deop = Deop()
     cmd_deop.hook()
-    # hook /okick /okban
+    # hook /okick /obankick
     if get_config_boolean('enable_multi_kick'):
         cmd_kick = MultiKick()
-        cmd_kban = MultiKickBan()
+        cmd_bankick = MultiBanKick()
     else:
         cmd_kick = Kick()
-        cmd_kban = KickBan()
+        cmd_bankick = BanKick()
     cmd_kick.hook()
-    cmd_kban.hook()
+    cmd_bankick.hook()
     # hook /oban /ounban /olist
     Ban().hook()
     UnBan().hook()
