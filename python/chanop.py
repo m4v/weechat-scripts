@@ -1751,6 +1751,10 @@ class ShowBans(CommandChanop):
 
 #########################
 ### WeeChat callbacks ###
+def cmd_sync(data, buffer, args):
+    chanop_init()
+    return WEECHAT_RC_OK
+
 
 ### Init stuff ###
 global chanop_channels
@@ -2111,6 +2115,8 @@ if __name__ == '__main__' and import_ok and \
     Mode().hook()
     Voice().hook()
     DeVoice().hook()
+    
+    weechat.hook_command('osync', '', '', '', '', 'cmd_sync', '')
 
     weechat.hook_config('plugins.var.python.%s.enable_multi_kick' %SCRIPT_NAME,
             'enable_multi_kick_conf_cb', '')
