@@ -232,7 +232,7 @@ def print_affected_users(buffer, *hostmasks):
     count = len(hostmasks)
     if count > max:
         hostmasks = hostmasks[:max]
-    say('Affected users (%s): %s%s' %(count, ' '.join(map(format_user,
+    say('Affects (%s): %s%s' %(count, ' '.join(map(format_user,
         hostmasks)), count > max and ' %s...' %color_reset or ''), buffer=buffer)
 
 
