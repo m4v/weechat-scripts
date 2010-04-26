@@ -1325,7 +1325,13 @@ class Op(CommandChanop):
     command = 'oop'
 
     def execute(self):
-        self.get_op()
+        op = self.get_op()
+        if op is True and self.buffer in deop_hook:
+            # /oop was called before auto-deoping, we assume that the user wants to stay opped
+            # permanently
+            hook = deop_hook[self.buffer]
+            weechat.unhook(hook)
+            del deop_hook[self.buffer]
 
 
 class Deop(CommandChanop):
