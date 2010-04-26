@@ -1083,7 +1083,11 @@ class MaskObject(object):
         self.mask = mask
         self.hostmask = hostmask
         self.operator = operator
-        self.date = date or now()
+        if date:
+            date = int(date)
+        else:
+            date = now()
+        self.date = date
         self.expires = expires
 
     def __repr__(self):
