@@ -391,6 +391,8 @@ def is_hostmask(s):
 
 def is_ip(s):
     """Returns whether or not a given string is an IPV4 address."""
+    if s.count('.') != 3:
+        return False
     import socket
     try:
         return bool(socket.inet_aton(s))
