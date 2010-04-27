@@ -43,6 +43,11 @@
 #
 #   History:
 #
+#   2010-04-
+#   version 0.4: features
+#   * support for users using webchat (at least in freenode)
+#   * removed tabs
+#
 #   2010-01-11
 #   version 0.3.1: bug fix
 #   * irc_nick infolist wasn't freed in get_host_by_nick()
