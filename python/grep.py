@@ -1593,6 +1593,7 @@ templates = {
         'user' :make_username_regexp,
         'escape': lambda b, s: re.escape(s),
         'simple': make_simple_regexp,
+        'domain': domain,
         }
 
 ### Main ###
