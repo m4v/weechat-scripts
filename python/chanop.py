@@ -1302,7 +1302,7 @@ class UserCache(ServerChannelDict):
         try:
             infolist = Infolist('irc_nick', '%s,%s' %(server, channel))
         except:
-            error('Not in a IRC channel.')
+            #error('Not in a IRC channel.') # better to fail silently
             return users
         while infolist.next():
             name = infolist['name']
@@ -1792,25 +1792,33 @@ def cmd_sync(data, buffer, args):
 global chanop_channels
 chanop_channels = CaseInsensibleSet()
 def chanop_init():
-    global chanop_channels
     servers = Infolist('irc_server')
-    fetch_bans = get_config_boolean('fetch_bans')
     while servers.next():
         if servers['is_connected']:
             server = servers['name']
-            channels = get_config_list('channels.%s' %server)
-            chanop_channels.update([ (server, channel) for channel in channels ])
-            for channel in channels:
-                userCache.generate_cache(server, channel)
-                if fetch_bans:
-                    for mode in supported_modes(server):
-                        maskModes[mode].fetch(server, channel)
+            server_init(server)
+
+def server_init(server):
+    global chanop_channels
+    channels = get_config_list('channels.%s' %server)
+    if channels:
+        chanop_channels.update([ (server, channel) for channel in channels ])
+        fetch_bans = get_config_boolean('fetch_bans')
+        for channels in channels:
+            userCache.generate_cache(server, channel)
+            if fetch_bans:
+                for mode in supported_modes(server):
+                    maskModes[mode].fetch(server, channel)
 
 def is_tracked(server, channel):
     """Check if a server channel pair should be tracked by script"""
     global chanop_channels
     return (server, channel) in chanop_channels
 
+def connected_cb(data, signal, signal_data):
+    #debug('CONNECTED: %s' %' '.join((data, signal, signal_data)))
+    server_init(signal_data)
+    return WEECHAT_RC_OK
 
 ### Ban list ###
 def signal_parse(f):
@@ -2167,6 +2175,8 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_signal('*,irc_in_quit', 'quit_cb', '')
     weechat.hook_signal('*,irc_in_nick', 'nick_cb', '')
     weechat.hook_signal('*,irc_in_mode', 'mode_cb', '')
+
+    weechat.hook_signal('irc_server_connected', 'connected_cb', '')
 
     weechat.hook_timer(30*60*1000, 0, 0, 'garbage_collector_cb', '')
 
