@@ -30,6 +30,11 @@
 #
 #
 #   History:
+#   2010-04-27
+#   version 0.2:
+#   * complete any word behind the cursor, not just the last one in input line.
+#   * change script display name 'completion' to 'cmpl'.
+#
 #   2010-01-26
 #   version 0.1: release
 #
@@ -46,12 +51,10 @@ except ImportError:
 
 SCRIPT_NAME    = "completion"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.1"
+SCRIPT_VERSION = "0.2"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Word completions for WeeChat"
 SCRIPT_COMMAND = "completion"
-
-completion_template = 'completion_script'
 
 ### Config ###
 settings = {
@@ -149,10 +152,10 @@ def completion_replacer(data, completion_item, buffer, completion):
         #debug(word)
         if word in replace_table:
             replace = replace_table[word]
-            n = len(word)
             if pos >= len(input.strip()):
                 # cursor is in the end of line, append a space
                 replace += ' '
+            n = len(word)
             weechat.buffer_set(buffer, 'input', '%s%s%s' %(input[:pos-n], replace, input[pos:]))
             weechat.buffer_set(buffer, 'input_pos', str(pos - n + len(replace)))
     return WEECHAT_RC_OK
@@ -195,8 +198,8 @@ add: adds a new completion, <word> => <text>.
 del: deletes a completion.
 Without arguments it displays current completions.
 
-<word> will be replaced by <text> when pressing tab, where <word>
-is any word behind the cursor.
+<word> will be replaced by <text> when pressing tab in input line,
+where <word> is any word currently behind the cursor.
 
 Setup:
 For this script to work, you must add the template
