@@ -715,6 +715,8 @@ class CommandQueue(object):
             self.channel = channel
 
         def __call__(self):
+            if not self.channel:
+                return True
             config = 'channels.%s' %self.server
             channels = get_config_list(config)
             if not channels:
