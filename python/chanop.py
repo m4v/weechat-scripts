@@ -1731,6 +1731,7 @@ class ShowBans(CommandChanop):
         weechat.buffer_set(self.get_buffer(), 'title', s)
 
     def execute(self):
+        self.showbuffer = ''
         try:
             self.padding = int(weechat.config_get_plugin('padding'))
         except:
