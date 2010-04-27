@@ -19,6 +19,7 @@
 ###
 #
 #   This scripts adds word completion, like irssi's /completion
+#   (depends on WeeChat 0.3.1 or newer)
 #
 #   Commands:
 #   * /completion: see /help completion
@@ -170,29 +171,33 @@ def completion_keys(data, completion_item, buffer, completion):
 if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
         SCRIPT_DESC, '', ''):
-    
+
     # colors
     color_delimiter   = weechat.color('chat_delimiters')
     color_script_nick = weechat.color('chat_nick')
     color_reset   = weechat.color('reset')
-    
+
     # pretty [SCRIPT_NAME]
     script_nick = '%s[%s%s%s]%s' %(color_delimiter, color_script_nick, 'cmpl', color_delimiter,
             color_reset)
 
-    # settings
-    for opt, val in settings.iteritems():
-        if not weechat.config_is_set_plugin(opt):
-            weechat.config_set_plugin(opt, val)
+    version = weechat.info_get('version', '')
+    if version == '0.3.0':
+        error('WeeChat 0.3.1 or newer is required for this script.')
+    else:
+        # settings
+        for opt, val in settings.iteritems():
+            if not weechat.config_is_set_plugin(opt):
+                weechat.config_set_plugin(opt, val)
 
-    load_replace_table()
-    
-    completion_template = 'completion_script'
-    weechat.hook_completion(completion_template,
-            "Replaces last word in input by its configured value.", 'completion_replacer', '')
-    weechat.hook_completion('completion_keys', "Words in completion list.", 'completion_keys', '')
-    
-    weechat.hook_command(SCRIPT_COMMAND, SCRIPT_DESC , "[add <word> <text>|del <word>]",
+        load_replace_table()
+
+        completion_template = 'completion_script'
+        weechat.hook_completion(completion_template,
+                "Replaces last word in input by its configured value.", 'completion_replacer', '')
+        weechat.hook_completion('completion_keys', "Words in completion list.", 'completion_keys', '')
+
+        weechat.hook_command(SCRIPT_COMMAND, SCRIPT_DESC , "[add <word> <text>|del <word>]",
 """
 add: adds a new completion, <word> => <text>.
 del: deletes a completion.
