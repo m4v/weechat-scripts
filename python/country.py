@@ -82,7 +82,7 @@ try:
 except:
 	pytz_module = False
 
-import os
+import os, re
 
 ### ip database
 database_url = 'http://geolite.maxmind.com/download/geoip/database/GeoIPCountryCSV.zip'
@@ -244,34 +244,50 @@ def get_ip_process_cb(data, command, rc, stdout, stderr):
 		hook_get_ip = ''
 	return WEECHAT_RC_OK
 
-def is_ip(ip):
-	"""Checks if 'ip' is a valid ip number."""
-	if ip.count('.') == 3:
-		L = ip.split('.')
-		try:
-			for n in L:
-				n = int(n)
-				if not (n >= 0 and n <= 255):
-					return False
-		except:
-			return False
-		return True
-	else:
-		return False
+def is_userhost(s):
+    """Returns whether or not the string s is user@host format"""
+    n = s.find('@')
+    if n > 0 and len(s) > n+1:
+        return True
+    else:
+        return False
 
-def is_host(host):
-	"""A valid host must have at least one dot an no slashes."""
-	# This is a very poor check
-	# I will fix it when it fails
-	assert host
-	if '/' in host \
-			or not host[0].isalnum() or not host[-1].isalnum():
-		return False
-	elif '.' in host:
-		return True
-	return False
+def is_ip(s):
+    """Returns whether or not a given string is an IPV4 address."""
+    import socket
+    try:
+        return bool(socket.inet_aton(s))
+    except socket.error:
+        return False
 
-def get_host_by_nick(buffer, nick):
+_valid_label = re.compile(r'^[a-z\d\-]+$', re.I)
+def is_host(s):
+    """
+    Checks if 's' is a valid hostname."""
+    if not s or len(s) > 255:
+        return False
+    if s[-1] == '.': # strip tailing dot
+        s = s[:-1]
+    for label in s.split('.'):
+        if not label or len(label) > 63 \
+                or label[0] == '-' or label[-1] == '-' \
+                or not _valid_label.search(label):
+            return False
+    return True
+
+def hex_to_ip(s):
+    """
+    '7f000001' => '127.0.0.1'"""
+    if not len(s) == 8:
+        return ''
+    try:
+        ip = map(lambda n: s[n:n+2], range(0, len(s), 2))
+        ip = map(lambda n: int(n, 16), ip)
+        return '.'.join(map(str, ip))
+    except:
+        return ''
+
+def get_userhost_from_nick(buffer, nick):
 	"""Return host of a given nick in buffer."""
 	channel = weechat.buffer_get_string(buffer, 'localvar_channel')
 	server = weechat.buffer_get_string(buffer, 'localvar_server')
@@ -282,11 +298,21 @@ def get_host_by_nick(buffer, nick):
 				while weechat.infolist_next(infolist):
 					name = weechat.infolist_string(infolist, 'name')
 					if nick == name:
-						host = weechat.infolist_string(infolist, 'host')
-						return host[host.find('@')+1:] # strip everything in front of '@'
+						return weechat.infolist_string(infolist, 'host')
 			finally:
 				weechat.infolist_free(infolist)
 	return ''
+
+def get_host_from_userhost(userhost):
+	user, host = userhost.split('@')
+	if is_host(host):
+		return host
+	else:
+		user = user[-8:] # only interested in the last 8 chars
+		ip = hex_to_ip(user)
+		if ip and is_ip(ip):
+			return ip
+	return host
 
 def sum_ip(ip):
 	"""Converts the ip number from dot-decimal notation to decimal."""
@@ -387,9 +413,15 @@ def cmd_country(data, buffer, args):
 					"using this script.", buffer=buffer)
 			return WEECHAT_RC_OK
 		#check if is a nick
-		host = get_host_by_nick(buffer, args)
-		if not host:
-			host = args
+		userhost = get_userhost_from_nick(buffer, args)
+		if not userhost:
+			ip = hex_to_ip(args)
+			if is_ip(ip):
+				host = ip
+			else:
+				host = args
+		else:
+			host = get_host_from_userhost(userhost)
 		print_country(host, buffer)
 	return WEECHAT_RC_OK
 
@@ -402,6 +434,7 @@ def whois_cb(data, signal, signal_data):
 	server = signal[:signal.find(',')]
 	#debug('%s | %s | %s' %(data, signal, signal_data))
 	buffer = weechat.buffer_search('irc', 'server.%s' %server)
+	host = get_host_from_userhost('%s@%s' %(user, host))
 	print_country(host, buffer, quiet=True, broken=True, nick=nick)
 	return WEECHAT_RC_OK
 
