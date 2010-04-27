@@ -401,7 +401,7 @@ _valid_label = re.compile(r'^[a-z\d\-]+$', re.I)
 def is_hostname(s):
     """
     Checks if 's' is a valid hostname."""
-    if len(s) > 255:
+    if not s or len(s) > 255:
         return False
     if s[-1] == '.': # strip tailing dot
         s = s[:-1]
