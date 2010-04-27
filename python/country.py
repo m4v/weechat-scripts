@@ -310,9 +310,7 @@ def get_userhost_from_nick(buffer, nick):
 
 def get_host_from_userhost(userhost):
     user, host = userhost.split('@')
-    if is_host(host):
-        return host
-    else:
+    if not is_host(host):
         user = user[-8:] # only interested in the last 8 chars
         ip = hex_to_ip(user)
         if ip and is_ip(ip):
