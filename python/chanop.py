@@ -397,6 +397,21 @@ def is_ip(s):
     except socket.error:
         return False
 
+_valid_label = re.compile(r'^[a-z\d\-]+$', re.I)
+def is_hostname(s):
+    """
+    Checks if 's' is a valid hostname."""
+    if len(s) > 255:
+        return False
+    if s[-1] == '.': # strip tailing dot
+        s = s[:-1]
+    for label in s.split('.'):
+        if not label or len(label) > 63 \
+                or label[0] == '-' or label[-1] == '-' \
+                or not _valid_label.search(label):
+            return False
+    return True
+
 _regexp_cache = {}
 def hostmask_pattern_match(pattern, strings):
     if is_hostmask(pattern):
@@ -1464,10 +1479,11 @@ class Ban(CommandNeedsOp):
             return hostmask
         elif 'webchat' in self.banmask:
             user = get_user(hostmask, trim=True)
-            if is_ip(hex_to_ip(user)):
+            host = get_host(hostmask)
+            if not is_hostname(host) and is_ip(hex_to_ip(user)):
                 return '*!%s@*' %get_user(hostmask)
             else:
-                return '*!*@%s' %get_host(hostmask)
+                return '*!*@%s' %host
         nick = user = host = '*'
         if 'nick' in self.banmask:
             nick = get_nick(hostmask)
