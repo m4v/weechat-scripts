@@ -235,6 +235,7 @@ class ChanStatDB(dict):
         return dict.__getitem__(self, key)
 
     def initchan(self, key, *args):
+        key = tuple(map(str.lower, key))
         dict.__setitem__(self, key, Channel(*args))
 
     def iterchan(self):
@@ -283,7 +284,7 @@ def update_user_count(server=None, channel=None):
         channel_infolist = weechat.infolist_get('irc_channel', '', server)
         while weechat.infolist_next(channel_infolist):
             if channel:
-                if weechat.infolist_string(channel_infolist, 'name') == channel:
+                if weechat.infolist_string(channel_infolist, 'name').lower() == channel:
                     channel_stats[server, channel] = weechat.infolist_integer(channel_infolist, 'nicks_count')
                     break
             else:
