@@ -61,7 +61,7 @@ settings = {
 ### Messages ###
 def debug(s, prefix='', buffer=None):
     """Debug msg"""
-    if not weechat.config_get_plugin('debug'): return
+    #if not weechat.config_get_plugin('debug'): return
     if buffer is None:
         buffer_name = 'DEBUG_' + SCRIPT_NAME
         buffer = weechat.buffer_search('python', buffer_name)
@@ -140,10 +140,21 @@ def cmd_completion(data, buffer, args):
 ### Completion ###
 def completion_replacer(data, completion_item, buffer, completion):
     global replace_table
+    pos = weechat.buffer_get_integer(buffer, 'input_pos')
     input = weechat.buffer_get_string(buffer, 'input')
-    input, space, last_word = input.rpartition(' ')
-    if last_word in replace_table:
-        weechat.buffer_set(buffer, 'input', '%s%s%s ' %(input, space, replace_table[last_word]))
+    #debug('%r %s %s' %(input, len(input), pos))
+    if pos > 0 and (pos == len(input) or input[pos] == ' '):
+        n = input.rfind(' ', 0, pos)
+        word = input[n+1:pos]
+        #debug(word)
+        if word in replace_table:
+            replace = replace_table[word]
+            n = len(word)
+            if pos >= len(input.strip()):
+                # cursor is in the end of line, append a space
+                replace += ' '
+            weechat.buffer_set(buffer, 'input', '%s%s%s' %(input[:pos-n], replace, input[pos:]))
+            weechat.buffer_set(buffer, 'input_pos', str(pos - n + len(replace)))
     return WEECHAT_RC_OK
 
 def completion_keys(data, completion_item, buffer, completion):
@@ -163,7 +174,7 @@ if __name__ == '__main__' and import_ok and \
     color_reset   = weechat.color('reset')
     
     # pretty [SCRIPT_NAME]
-    script_nick = '%s[%s%s%s]%s' %(color_delimiter, color_script_nick, SCRIPT_NAME, color_delimiter,
+    script_nick = '%s[%s%s%s]%s' %(color_delimiter, color_script_nick, 'cmpl', color_delimiter,
             color_reset)
 
     # settings
@@ -184,9 +195,8 @@ add: adds a new completion, <word> => <text>.
 del: deletes a completion.
 Without arguments it displays current completions.
 
-<word> will be replaced by <text> when pressing tab,
-note that only the last word in input line is completed,
-not where the cursor is or in all matching words.
+<word> will be replaced by <text> when pressing tab, where <word>
+is any word behind the cursor.
 
 Setup:
 For this script to work, you must add the template
