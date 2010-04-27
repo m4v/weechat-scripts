@@ -174,7 +174,7 @@ SCRIPT_DESC    = "Helper script for IRC operators"
 ### default settings ###
 settings = {
 'op_command'            :'/msg chanserv op $channel $nick',
-'deop_command'          :'/msg chanserv deop $channel $nick',
+'deop_command'          :'/deop',
 'autodeop'              :'on',
 'autodeop_delay'        :'180',
 'default_banmask'       :'host',
