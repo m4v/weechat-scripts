@@ -224,6 +224,7 @@ class ChanStatDB(CaseInsensibleDict):
     def __setitem__(self, key, value):
         if not value:
             return
+        debug(' ** stats update for %s' %key[1])
         _now = now()
         avrg = 0
         if key in self:
@@ -311,6 +312,7 @@ def load_database():
         reader = csv.reader(open(filename, 'rb'))
     except IOError:
         return
+    channel_stats.clear()
     for row in reader:
         key = tuple(row[0:2])
         values = row[2:-1]
@@ -321,24 +323,27 @@ def load_database():
         channel_stats.initchan(key, *values)
 
 def update_user_count(server=None, channel=None):
-    debug(' ** stats update for %s' %channel)
+    if isinstance(channel, str):
+        channel = set((channel, ))
+    elif channel:
+        channel = set(channel)
+
     def update_channel(server, channel=None):
         channel_infolist = weechat.infolist_get('irc_channel', '', server)
         while weechat.infolist_next(channel_infolist):
+            _channel = weechat.infolist_string(channel_infolist, 'name')
             if channel:
-                if weechat.infolist_string(channel_infolist, 'name').lower() == channel:
-                    channel_stats[server, channel] = weechat.infolist_integer(channel_infolist, 'nicks_count')
-                    break
-            else:
-                _channel = weechat.infolist_string(channel_infolist, 'name')
-                channel_stats[server, _channel] = weechat.infolist_integer(channel_infolist, 'nicks_count')
+                _channel = caseInsensibleKey(_channel)
+                if _channel not in channel:
+                    continue
+            channel_stats[server, _channel] = weechat.infolist_integer(channel_infolist, 'nicks_count')
         weechat.infolist_free(channel_infolist)
 
     if not server:
         server_infolist = weechat.infolist_get('irc_server', '', '')
         while weechat.infolist_next(server_infolist):
             server = weechat.infolist_string(server_infolist, 'name')
-            update_channel(server, channel)
+            update_channel(server)
         weechat.infolist_free(server_infolist)
     else:
         update_channel(server, channel)
@@ -373,7 +378,7 @@ def time_elapsed(elapsed, ret=None, level=2):
     return ret
 
 channel_peak_hooks = CaseInsensibleDict()
-msg_queue_timeout = 10
+msg_queue_timeout = 15
 def new_channel_peak(key, count, time=0):
     if not get_config_boolean('show_peaks'):
         return
@@ -504,7 +509,7 @@ class Queue(dict):
     def clear(self):
         _now = now()
         for key, time in self.items():
-            if (_now - time) > 600:
+            if (_now - time) > 30*60:
                 #debug('clearing domain %s from list (count: %s)' %(key, len(self)))
                 del self[key]
 
@@ -517,7 +522,7 @@ def join_cb(data, signal, signal_data):
     global netsplit
     if netsplit:
         debug('ignoring, netsplit')
-        if (now() - netsplit) > 5 * 60:
+        if (now() - netsplit) > 30*60: # wait 30 min
             netsplit = 0
         return WEECHAT_RC_OK
 
@@ -568,7 +573,7 @@ def quit_msg_is_split(s):
     return False
 
 update_channel_hook = CaseInsensibleDict()
-update_queue_timeout = 30
+update_queue_timeout = 120
 def add_update_user_hook(server, channel):
     key = (server, channel)
     if key in update_channel_hook:
@@ -586,9 +591,14 @@ def add_update_user_hook(server, channel):
             ','.join(key)), now())
 
 def update_user_count_cb(data, count):
-    key = tuple(data.split(',', 1))
-    update_user_count(*key)
-    del update_channel_hook[key]
+    server, channel = data.split(',', 1)
+    channels = [ chan for serv, chan in update_channel_hook if server == serv ]
+    if channels:
+        update_user_count(server, channels)
+        for chan in channels:
+            hook, when = update_channel_hook[server, chan]
+            weechat.unhook(hook)
+            del update_channel_hook[server, chan]
     return WEECHAT_RC_OK
 
 def script_load():
