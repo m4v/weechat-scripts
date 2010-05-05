@@ -115,8 +115,47 @@ def get_dir(filename):
         os.makedirs(basedir)
     return os.path.join(basedir, filename)
 
+
+class CaseInsensibleString(str):
+    def __init__(self, s=''):
+        self.lowered = s.lower()
+
+    def __eq__(self, s):
+        try:
+            return self.lowered == s.lower()
+        except:
+            return False
+
+    def __ne__(self, s):
+        return not self == s
+
+    def __hash__(self):
+        return hash(self.lowered)
+
+def caseInsensibleKey(k):
+    if isinstance(k, str):
+        return CaseInsensibleString(k)
+    elif isinstance(k, tuple):
+        return tuple([ caseInsensibleKey(v) for v in k ])
+    return k
+
+class CaseInsensibleDict(dict):
+    key = staticmethod(caseInsensibleKey)
+
+    def __setitem__(self, k, v):
+        dict.__setitem__(self, self.key(k), v)
+
+    def __getitem__(self, k):
+        return dict.__getitem__(self, self.key(k))
+
+    def __delitem__(self, k):
+        dict.__delitem__(self, self.key(k))
+
+    def __contains__(self, k):
+        return dict.__contains__(self, self.key(k))
+
+
 class Channel(object):
-    __slots__ = ('max', 'min', 'max_date', 'min_date', 'avrg_date', 'avrg_period', 'average')
     def __init__(self, max=None, min=None, max_date=None, min_date=None, avrg_date=None,
             avrg_period=None, average=None, count=0):
         if not max:
@@ -145,10 +184,13 @@ class Channel(object):
         return iter((self.max, self.min, self.max_date, self.min_date, self.avrg_date,
             self.avrg_period, self.average))
 
+    def __str__(self):
+        return 'Channel(max=%s, average=%s, min=%s)' %(self.max, self.average, self.min)
+
 
 class StatLog(object):
     def __init__(self):
-        self.writers = {}
+        self.writers = CaseInsensibleDict()
 
     @staticmethod
     def make_log(key):
@@ -166,7 +208,6 @@ class StatLog(object):
         writer.writerow(args)
 
     def get_reader(self, key):
-        key = tuple(map(str.lower, key))
         if key in self.writers:
             del self.writers[key]
         import csv
@@ -176,7 +217,7 @@ class StatLog(object):
         self.writers = {}
 
 
-class ChanStatDB(dict):
+class ChanStatDB(CaseInsensibleDict):
     def __init__(self):
         self.logger = StatLog()
 
@@ -185,7 +226,6 @@ class ChanStatDB(dict):
             return
         _now = now()
         avrg = 0
-        key = tuple(map(str.lower, key))
         if key in self:
             chan = self[key]
             if value > chan.max:
@@ -223,29 +263,31 @@ class ChanStatDB(dict):
                     avrg - chan.average))
                 chan.average = avrg
         else:
-            dict.__setitem__(self, key, Channel(count=value))
+            CaseInsensibleDict.__setitem__(self, key, Channel(count=value))
 
         if avrg:
             self.logger.log(key, _now, value, avrg)
         else:
             self.logger.log(key, _now, value)
 
-    def __getitem__(self, key):
-        key = tuple(map(str.lower, key))
-        return dict.__getitem__(self, key)
-
     def initchan(self, key, *args):
-        key = tuple(map(str.lower, key))
-        dict.__setitem__(self, key, Channel(*args))
+        CaseInsensibleDict.__setitem__(self, key, Channel(*args))
 
     def iterchan(self):
         def generator():
-            for key, chan in self.iteritems():
+            for key in self.keys():
+                chan = self[key]
                 row = list(key)
                 row.extend(chan)
                 yield row
 
         return generator()
+
+    def keys(self):
+        """Returns keys sorted"""
+        L = dict.keys(self)
+        L.sort()
+        return L
 
     def close(self):
         self.logger.close()
@@ -330,7 +372,7 @@ def time_elapsed(elapsed, ret=None, level=2):
     ret = time_elapsed(elapsed, ret, level)
     return ret
 
-channel_peak_hooks = {}
+channel_peak_hooks = CaseInsensibleDict()
 msg_queue_timeout = 10
 def new_channel_peak(key, count, time=0):
     if not get_config_boolean('show_peaks'):
@@ -350,19 +392,20 @@ def new_channel_peak(key, count, time=0):
 
     # hook it for show msg 10 min later
     channel_peak_hooks[key] = (weechat.hook_timer(60000 * msg_queue_timeout, 0, 1, 'new_channel_peak_cb',
-            '%s,%s,%sNew user peak: %s users %s' %(key[0], key[1], False or '' and weechat.color('green'), count,
-                elapsed)), time)
+            '%s,%s,New user peak: %s users %s' %(key[0], key[1], count, elapsed)), time)
 
 def new_channel_peak_cb(data, count):
     debug(data)
     server, channel, s = data.split(',', 2)
-    buffer = weechat.buffer_search('irc', '%s.%s' %(server, channel))
+    buffer = weechat.info_get('irc_buffer', '%s,%s' %(server, channel))
     if buffer:
-        weechat.prnt(buffer, s)
+        weechat.prnt(buffer, '%s%s' %(weechat.color('green'), s))
+    else:
+        debug('XX falied to get buffer: %s.%s' %(server, channel))
     del channel_peak_hooks[server, channel]
     return WEECHAT_RC_OK
 
-channel_low_hooks = {}
+channel_low_hooks = CaseInsensibleDict()
 def new_channel_low(key, count, time=0):
     if not get_config_boolean('show_lows'):
         return
@@ -381,15 +424,16 @@ def new_channel_low(key, count, time=0):
 
     # hook it for show msg 10 min later
     channel_low_hooks[key] = (weechat.hook_timer(60000 * msg_queue_timeout, 0, 1, 'new_channel_low_cb',
-            '%s,%s,%sNew user low: %s %s' %(key[0], key[1], False or '' and weechat.color('red'), count, elapsed)),
-            time)
+            '%s,%s,New user low: %s %s' %(key[0], key[1], count, elapsed)), time)
 
 def new_channel_low_cb(data, count):
     debug(data)
     server, channel, s = data.split(',', 2)
     buffer = weechat.buffer_search('irc', '%s.%s' %(server, channel))
     if buffer:
-        weechat.prnt(buffer, s)
+        weechat.prnt(buffer, '%s%s' %(weechat.color('red'), s))
+    else:
+        debug('XX falied to get buffer: %s.%s' %(server, channel))
     del channel_low_hooks[server, channel]
     return WEECHAT_RC_OK
 
@@ -405,8 +449,8 @@ def chanstat_cmd(data, buffer, args):
         load_database()
         say('Channel statistics loaded.')
         return WEECHAT_RC_OK
-    elif args == '--print':
-        prnt = weechat.command
+#    elif args == '--print':
+#        prnt = weechat.command
 
     channel = weechat.buffer_get_string(buffer, 'localvar_channel')
     server = weechat.buffer_get_string(buffer, 'localvar_server')
@@ -428,16 +472,16 @@ def chanstat_cmd(data, buffer, args):
         if low_time:
             low_time = ' (%s ago)' %low_time
         if chan.avrg_period > time_hour:
-            average = ' average: %s%.2f%s users (%s period)' %(False or '' and weechat.color('brown'), chan.average,
-                    False or '' and weechat.color('reset'), time_elapsed(chan.avrg_period, level=1))
+            average = ' average: %s%.2f%s users (%s period)' %(weechat.color('brown'), chan.average,
+                    weechat.color('reset'), time_elapsed(chan.avrg_period, level=1))
         else:
             average = ' (no average yet)'
         prnt(buffer,
                 'Statistics for %s%s%s, user peak: %s%s%s%s lowest: %s%s%s%s%s' %(
-            False or '' and weechat.color('white'), channel, False or '' and weechat.color('reset'),
-            False or '' and weechat.color('green'), chan.max, False or '' and weechat.color('reset'),
+            weechat.color('white'), channel, weechat.color('reset'),
+            weechat.color('green'), chan.max, weechat.color('reset'),
             peak_time,
-            False or '' and weechat.color('red'), chan.min, False or '' and weechat.color('reset'),
+            weechat.color('red'), chan.min, weechat.color('reset'),
             low_time, average))
 
         # clear any new peak or low msg in queue
@@ -479,7 +523,7 @@ def join_cb(data, signal, signal_data):
 
     server = signal[:signal.find(',')]
     signal_data = signal_data.split()
-    channel = signal_data[2].strip(':').lower()
+    channel = signal_data[2].strip(':')
     host = signal_data[0].strip(':')
     domain = '%s,%s' %(channel, host[host.find('@')+1:])
     nick = host[:host.find('!')]
@@ -523,7 +567,7 @@ def quit_msg_is_split(s):
             return True
     return False
 
-update_channel_hook = {}
+update_channel_hook = CaseInsensibleDict()
 update_queue_timeout = 30
 def add_update_user_hook(server, channel):
     key = (server, channel)
