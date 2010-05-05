@@ -68,22 +68,26 @@ time_day  = 86400
 time_year = 31536000
 
 ### messages
-def debug(s, prefix=''):
+def debug(s, args=(), prefix='', name_suffix='debug', level=1):
     """Debug msg"""
-    buffer = weechat.buffer_search('python', 'debug ' + SCRIPT_NAME)
+    l = weechat.config_get_plugin('debug')
+    if not (l and int(l) >= level): return
+    buffer_name = '%s_%s' %(SCRIPT_NAME, name_suffix)
+    buffer = weechat.buffer_search('python', buffer_name)
     if not buffer:
-        buffer = weechat.buffer_new('debug ' + SCRIPT_NAME, '', '', '', '')
+        buffer = weechat.buffer_new(buffer_name, '', '', '', '')
         weechat.buffer_set(buffer, 'nicklist', '0')
-        weechat.buffer_set(buffer, 'time_for_each_line', '0')
         weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
-    weechat.prnt(buffer, '%s\t%s' %(prefix, s))
+    weechat.prnt(buffer, '%s\t%s' %(prefix, s %args))
 
 def error(s, prefix=SCRIPT_NAME, buffer=''):
     """Error msg"""
-    weechat.prnt(buffer, '%s%s: %s' %(weechat.prefix('error'), prefix, s))
+    prefix = prefix or script_nick
+    weechat.prnt(buffer, '%s%s %s' %(weechat.prefix('error'), prefix, s))
 
-def say(s, prefix='', buffer=''):
+def say(s, prefix=None, buffer=''):
     """Normal msg"""
+    prefix = prefix or script_nick
     weechat.prnt(buffer, '%s\t%s' %(prefix, s))
 
 ### config and value validation
@@ -113,7 +117,7 @@ def get_dir(filename):
     basedir = weechat.config_get_plugin('path').replace('%h', weechat.info_get('weechat_dir', ''))
     if not os.path.isdir(basedir):
         os.makedirs(basedir)
-    return os.path.join(basedir, filename)
+    return os.path.join(basedir, filename.lower())
 
 
 class CaseInsensibleString(str):
@@ -222,20 +226,21 @@ class ChanStatDB(CaseInsensibleDict):
         self.logger = StatLog()
 
     def __setitem__(self, key, value):
-        if not value:
+        if not value or value < 3:
+            # channel needs a minimum 3 users
             return
-        debug(' ** stats update for %s' %key[1])
+        debug(' ** stats update for %s', args=key[1])
         _now = now()
         avrg = 0
         if key in self:
             chan = self[key]
             if value > chan.max:
-                debug('PEAK, %s: %s' %(key[1], value))
+                debug('PEAK, %s: %s', args=(key[1], value))
                 chan.max = value
                 new_channel_peak(key, value, chan.max_date)
                 chan.max_date = _now
             elif value < chan.min:
-                debug('LOW, %s: %s' %(key[1], value))
+                debug('LOW, %s: %s', args=(key[1], value))
                 chan.min = value
                 new_channel_low(key, value, chan.min_date)
                 chan.min_date = _now
@@ -260,7 +265,7 @@ class ChanStatDB(CaseInsensibleDict):
                     avrg = chan.max
                 elif avrg < chan.min:
                     avrg = chan.min
-                debug('avrg %s %.2f → %.2f (%s %.2f)' %(key[1], chan.average, avrg, diff,
+                debug('avrg %s %.2f → %.2f (%s %f)', args=(key[1], chan.average, avrg, diff,
                     avrg - chan.average))
                 chan.average = avrg
         else:
@@ -404,9 +409,9 @@ def new_channel_peak_cb(data, count):
     server, channel, s = data.split(',', 2)
     buffer = weechat.info_get('irc_buffer', '%s,%s' %(server, channel))
     if buffer:
-        weechat.prnt(buffer, '%s%s' %(weechat.color('green'), s))
+        say('%s%s' %(color_peak, s), buffer=buffer)
     else:
-        debug('XX falied to get buffer: %s.%s' %(server, channel))
+        debug('XX falied to get buffer: %s.%s', args=(server, channel))
     del channel_peak_hooks[server, channel]
     return WEECHAT_RC_OK
 
@@ -436,15 +441,14 @@ def new_channel_low_cb(data, count):
     server, channel, s = data.split(',', 2)
     buffer = weechat.buffer_search('irc', '%s.%s' %(server, channel))
     if buffer:
-        weechat.prnt(buffer, '%s%s' %(weechat.color('red'), s))
+        say('%s%s' %(color_low, s), buffer=buffer)
     else:
-        debug('XX falied to get buffer: %s.%s' %(server, channel))
+        debug('XX falied to get buffer: %s.%s', args=(server, channel))
     del channel_low_hooks[server, channel]
     return WEECHAT_RC_OK
 
 # chanstat command
 def chanstat_cmd(data, buffer, args):
-    prnt = weechat.prnt
     if args == '--save':
         write_database()
         channel_stats.close()
@@ -477,17 +481,16 @@ def chanstat_cmd(data, buffer, args):
         if low_time:
             low_time = ' (%s ago)' %low_time
         if chan.avrg_period > time_hour:
-            average = ' average: %s%.2f%s users (%s period)' %(weechat.color('brown'), chan.average,
-                    weechat.color('reset'), time_elapsed(chan.avrg_period, level=1))
+            average = ' average: %s%.2f%s users (%s period)' %(color_avg, chan.average,
+                    color_reset, time_elapsed(chan.avrg_period, level=1))
         else:
             average = ' (no average yet)'
-        prnt(buffer,
-                'Statistics for %s%s%s, user peak: %s%s%s%s lowest: %s%s%s%s%s' %(
-            weechat.color('white'), channel, weechat.color('reset'),
-            weechat.color('green'), chan.max, weechat.color('reset'),
+        say('Statistics for %s%s%s, user peak: %s%s%s%s lowest: %s%s%s%s%s' %(
+            color_bold, channel, color_reset,
+            color_peak, chan.max, color_reset,
             peak_time,
-            weechat.color('red'), chan.min, weechat.color('reset'),
-            low_time, average))
+            color_low, chan.min, color_reset,
+            low_time, average), buffer=buffer)
 
         # clear any new peak or low msg in queue
         if key in channel_peak_hooks:
@@ -501,7 +504,17 @@ def chanstat_cmd(data, buffer, args):
 
     return WEECHAT_RC_OK
 
+def cmd_debug(data, buffer, args):
+    dbg = lambda s, a: debug(s, args=a, name_suffix='dump')
+    dbg('\nStats DB: %s', len(channel_stats))
+    for key in channel_stats.keys():
+        dbg('%s %s - %s', (key[0], key[1], channel_stats[key]))
+
+    dbg('\nUsers: %s', len(domain_list))
+    return WEECHAT_RC_OK
+
 class Queue(dict):
+    """User queue, for ignore many joins from same host (clones)"""
     def __contains__(self, key):
         self.clear()
         return dict.__contains__(self, key)
@@ -509,7 +522,7 @@ class Queue(dict):
     def clear(self):
         _now = now()
         for key, time in self.items():
-            if (_now - time) > 30*60:
+            if (_now - time) > 60:
                 #debug('clearing domain %s from list (count: %s)' %(key, len(self)))
                 del self[key]
 
@@ -531,18 +544,12 @@ def join_cb(data, signal, signal_data):
     channel = signal_data[2].strip(':')
     host = signal_data[0].strip(':')
     domain = '%s,%s' %(channel, host[host.find('@')+1:])
-    nick = host[:host.find('!')]
-    our_nick = weechat.info_get('irc_nick', server)
-    if nick == our_nick:
-        # ignore our own join msgs
-        debug('ingnoring ourselves')
-        return WEECHAT_RC_OK
-    elif domain in domain_list:
-        debug('ignoring %s' %domain)
+    if domain in domain_list:
+        debug('ignoring %s', args=domain)
         return WEECHAT_RC_OK
     else:
         domain_list[domain] = now()
-    debug(' -- ping %s (%s)' %(channel,signal[-4:]))
+    debug(' -- ping %s (%s)', args=(channel,signal[-4:]))
     add_update_user_hook(server, channel)
     return WEECHAT_RC_OK
 
@@ -564,7 +571,7 @@ def quit_cb(data, signal, signal_data):
 
 def quit_msg_is_split(s):
     #if 'peer' in s: return True
-    if s.count(' ') is 1:
+    if s.count(' ') == 1:
         sp = s.find(' ')
         d1 = s.find('.')
         d2 = s.rfind('.')
@@ -579,12 +586,12 @@ def add_update_user_hook(server, channel):
     if key in update_channel_hook:
         hook, when = update_channel_hook[key]
         if (now() - when) > update_queue_timeout//2:
-            debug(' vv rescheduling %s' %key[1])
+            debug(' vv rescheduling %s', args=key[1])
             weechat.unhook(hook)
         else:
             return
     else:
-        debug(' >> scheduling %s' %key[1])
+        debug(' >> scheduling %s', args=key[1])
 
     # we schedule the channel check for later so we can filter quick joins/parts and netsplits
     update_channel_hook[key] = (weechat.hook_timer(update_queue_timeout * 1000, 0, 1, 'update_user_count_cb',
@@ -621,6 +628,19 @@ settings = {
 if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
         SCRIPT_DESC, 'script_unload', ''):
+    
+    # colors
+    color_delimiter = weechat.color('chat_delimiters')
+    color_chat_nick = weechat.color('chat_nick')
+    color_reset     = weechat.color('reset')
+    color_peak      = weechat.color('green')
+    color_low       = weechat.color('red')
+    color_avg       = weechat.color('brown')
+    color_bold      = weechat.color('white')
+
+    # pretty [chanop]
+    script_nick = '%s[%s%s%s]%s' %(color_delimiter, color_chat_nick, SCRIPT_NAME, color_delimiter,
+            color_reset)
 
     for opt, val in settings.iteritems():
 		if not weechat.config_is_set_plugin(opt):
@@ -636,5 +656,7 @@ if __name__ == '__main__' and import_ok and \
             "Displays channel peak, lowest and average users for current channel.\n"
             "  --save: forces saving the stats database.\n"
             " --print: sends /chanstat output to the current channel.", '--save|--print', 'chanstat_cmd', '')
+
+    #weechat.hook_command('chanstat_debug', '', '', '', '', 'cmd_debug', '')
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
