@@ -134,6 +134,7 @@ def string_country(country, code):
 
 def string_time(dt):
     """Format for local time info string."""
+    if not dt: return '--'
     color_delimiter = weechat.color('chat_delimiters')
     color_chat = weechat.color('chat')
     date = dt.strftime('%x %X %Z')
@@ -397,9 +398,12 @@ def print_country(host, buffer, quiet=False, broken=False, nick=''):
 ### timezone
 def get_country_datetime(code):
     """Get datetime object with country's timezone."""
-    tzname = pytz.country_timezones(code)[0]
-    tz = pytz.timezone(tzname)
-    return datetime.datetime.now(tz)
+    try:
+        tzname = pytz.country_timezones(code)[0]
+        tz = pytz.timezone(tzname)
+        return datetime.datetime.now(tz)
+    except:
+        return None
 
 ### commands
 def cmd_country(data, buffer, args):
