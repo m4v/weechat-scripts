@@ -464,6 +464,8 @@ def get_user(s, trim=False):
                 return s[1:]
             elif len(s) > 2 and s[1] == '=':
                 return s[2:]
+            else:
+                return s
         else:
             return s
     return ''
@@ -1806,7 +1808,7 @@ def server_init(server):
     if channels:
         chanop_channels.update([ (server, channel) for channel in channels ])
         fetch_bans = get_config_boolean('fetch_bans')
-        for channels in channels:
+        for channel in channels:
             userCache.generate_cache(server, channel)
             if fetch_bans:
                 for mode in supported_modes(server):
@@ -2095,7 +2097,7 @@ def hosts_cmpl(users, data, completion_item, buffer, completion):
 @cmpl_get_irc_users
 def users_cmpl(users, data, completion_item, buffer, completion):
     for hostmask in users.itervalues():
-        user = get_user(hostmask, trim=True)
+        user = get_user(hostmask)
         weechat.hook_completion_list_add(completion, user, 0, weechat.WEECHAT_LIST_POS_SORT)
     return WEECHAT_RC_OK
 
@@ -2183,8 +2185,8 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_timer(30*60*1000, 0, 0, 'garbage_collector_cb', '')
 
     # debug commands
-    #weechat.hook_command('ocaches', '', '', '', '', 'debug_print_cache', '')
-    #weechat.hook_command('ocollect', '', '', '', '', 'debug_garbage_collector', '')
+    weechat.hook_command('ocaches', '', '', '', '', 'debug_print_cache', '')
+    weechat.hook_command('ocollect', '', '', '', '', 'debug_garbage_collector', '')
     #weechat.hook_command('otime', '', '', '', '', 'debug_print_time_avg', '')
 
 
