@@ -27,8 +27,12 @@
 #
 #
 #   Settings:
-#   * plugins.var.python.chanstat.database:
-#     path where to store stats, deault '%h/chanstat'
+#   * plugins.var.python.chanstat.path:
+#     path where to store stat files, deault '%h/chanstat'
+#
+#   * plugins.var.python.chanstat.averge_period:
+#     Period of time for calculate the average stats. This means the avegare will be calculated with
+#     the users present in the last x days. Default is 30 days.
 #
 #   * plugins.var.python.chanstat.show_peaks:
 #     If 'on' it will display a message when there's a user peak in any channel.
@@ -284,10 +288,10 @@ class ChanStatDB(CaseInsensibleDict):
         else:
             CaseInsensibleDict.__setitem__(self, key, Channel(count=value))
 
-        if avrg:
-            self.logger.log(key, _now, value, avrg)
-        else:
-            self.logger.log(key, _now, value)
+        #if avrg:
+        #    self.logger.log(key, _now, value, avrg)
+        #else:
+        #    self.logger.log(key, _now, value)
 
     def initchan(self, key, *args):
         CaseInsensibleDict.__setitem__(self, key, Channel(*args))
