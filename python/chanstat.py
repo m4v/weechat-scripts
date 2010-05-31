@@ -28,7 +28,7 @@
 #
 #   Settings:
 #   * plugins.var.python.chanstat.database:
-#     path and filename where to store stats, deault '%h/chanstat.csv'
+#     path where to store stats, deault '%h/chanstat'
 #
 #   * plugins.var.python.chanstat.show_peaks:
 #     If 'on' it will display a message when there's a user peak in any channel.
@@ -165,7 +165,7 @@ class Channel(object):
         if not max:
             max = count
         if not min:
-            min = count
+            min = 0
         if not average:
             average = float(count)
         if not max_date:
@@ -189,7 +189,7 @@ class Channel(object):
             self.avrg_period, self.average))
 
     def __str__(self):
-        return 'Channel(max=%s, average=%s, min=%s)' %(self.max, self.average, self.min)
+        return 'Channel(max=%s, average=%s, min_delta=%s)' %(self.max, self.average, self.min)
 
 
 class StatLog(object):
@@ -226,8 +226,7 @@ class ChanStatDB(CaseInsensibleDict):
         self.logger = StatLog()
 
     def __setitem__(self, key, value):
-        if not value or value < 3:
-            # channel needs a minimum 3 users
+        if not value:
             return
         debug(' ** stats update for %s', args=key[1])
         _now = now()
@@ -239,12 +238,15 @@ class ChanStatDB(CaseInsensibleDict):
                 chan.max = value
                 new_channel_peak(key, value, chan.max_date)
                 chan.max_date = _now
-            elif value < chan.min:
+            elif (chan.max - value) > chan.min:
+                # we save the difference between max and min rather the min absolute value, because
+                # the minimum min value for a channel would be 1, and that's isn't interesting.
+                min_delta = chan.max - value
                 debug('LOW, %s: %s', args=(key[1], value))
-                chan.min = value
+                chan.min = min_delta
                 new_channel_low(key, value, chan.min_date)
                 chan.min_date = _now
-            # calc average aproximation
+            # calculate average aproximation
             diff = _now - chan.avrg_date
             #period = 30 * time_day
             period = get_config_int('average_period') * time_day
@@ -255,18 +257,29 @@ class ChanStatDB(CaseInsensibleDict):
             if avrg_period > period:
                 avrg_period = period
             if diff > avrg_period // 1000 and diff > 600:
-                # calc average after 1000th part of the period.
+                # calc average after 1000th part of the period (10 min minimum)
+                max = period // 100
+                if diff > max:
+                    # too much time have passed since last check, average will be skewed by current
+                    # user count, so we reduce the average period.
+                    excess = diff - max
+                    debug('avrg period correction %s e:%.4f%%', args=(key[1],
+                        excess*100.0/avrg_period))
+                    diff = max
+                    avrg_period -= excess
+                    if avrg_period < diff:
+                        avrg_period = diff
                 avrg = chan.average
                 avrg = (avrg * (avrg_period - diff) + value * diff) / avrg_period
                 chan.avrg_date = _now
                 chan.avrg_period = avrg_period
-                # make sure avrg is between max and min
+                # make sure avrg is between max and 1
                 if avrg > chan.max:
                     avrg = chan.max
-                elif avrg < chan.min:
-                    avrg = chan.min
-                debug('avrg %s %.2f → %.2f (%s %f)', args=(key[1], chan.average, avrg, diff,
-                    avrg - chan.average))
+                elif avrg < 1:
+                    avrg = 1
+                debug('avrg %s %.2f → %.2f (%.4f%% %.4f)', args=(key[1], chan.average, avrg,
+                    diff*100.0/avrg_period, avrg - chan.average))
                 chan.average = avrg
         else:
             CaseInsensibleDict.__setitem__(self, key, Channel(count=value))
@@ -485,11 +498,11 @@ def chanstat_cmd(data, buffer, args):
                     color_reset, time_elapsed(chan.avrg_period, level=1))
         else:
             average = ' (no average yet)'
-        say('Statistics for %s%s%s, user peak: %s%s%s%s lowest: %s%s%s%s%s' %(
+        say('%s%s%s user peak: %s%s%s%s lowest: %s%s%s%s%s' %(
             color_bold, channel, color_reset,
             color_peak, chan.max, color_reset,
             peak_time,
-            color_low, chan.min, color_reset,
+            color_low, chan.max - chan.min, color_reset,
             low_time, average), buffer=buffer)
 
         # clear any new peak or low msg in queue
@@ -500,7 +513,7 @@ def chanstat_cmd(data, buffer, args):
             weechat.unhook(channel_low_hooks[key][0])
             del channel_low_hooks[key]
     except KeyError:
-        say('No statistics available', buffer=buffer)
+        say('No statistics available.', buffer=buffer)
 
     return WEECHAT_RC_OK
 
@@ -545,7 +558,7 @@ def join_cb(data, signal, signal_data):
     host = signal_data[0].strip(':')
     domain = '%s,%s' %(channel, host[host.find('@')+1:])
     if domain in domain_list:
-        debug('ignoring %s', args=domain)
+        #debug('ignoring %s', args=domain)
         return WEECHAT_RC_OK
     else:
         domain_list[domain] = now()
@@ -652,11 +665,13 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_signal('*,irc_in2_part', 'join_cb', '')
     weechat.hook_signal('*,irc_in2_quit', 'quit_cb', '')
 
-    weechat.hook_command('chanstat', 'Display channel statistics', '[--save | --print]',
+    weechat.hook_command('chanstat', 'Display channel statistics', '[--save | --load]',
             "Displays channel peak, lowest and average users for current channel.\n"
             "  --save: forces saving the stats database.\n"
-            " --print: sends /chanstat output to the current channel.", '--save|--print', 'chanstat_cmd', '')
+            "  --load: forces loading the stats database.\n",
+            #" --print: sends /chanstat output to the current channel.",
+            '--save|--load', 'chanstat_cmd', '')
 
-    #weechat.hook_command('chanstat_debug', '', '', '', '', 'cmd_debug', '')
+    weechat.hook_command('chanstat_debug', '', '', '', '', 'cmd_debug', '')
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
