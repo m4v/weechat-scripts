@@ -44,14 +44,14 @@
 #
 #
 #   History:
-#   2009-11-21
+#   2010-06-08
 #   version 0.1: initial release.
 #
 ###
 
 SCRIPT_NAME    = "chanstat"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.1-dev"
+SCRIPT_VERSION = "0.1"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Channel statistics"
 
@@ -669,10 +669,10 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_signal('*,irc_in2_part', 'join_cb', '')
     weechat.hook_signal('*,irc_in2_quit', 'quit_cb', '')
 
-    weechat.hook_command('chanstat', 'Display channel statistics', '[--save | --load]',
+    weechat.hook_command('chanstat', "Display channel's statistics.", '[--save | --load]',
             "Displays channel peak, lowest and average users for current channel.\n"
             "  --save: forces saving the stats database.\n"
-            "  --load: forces loading the stats database.\n",
+            "  --load: forces loading the stats database (Overwriting actual values).\n",
             #" --print: sends /chanstat output to the current channel.",
             '--save|--load', 'chanstat_cmd', '')
 
