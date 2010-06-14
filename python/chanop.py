@@ -734,14 +734,13 @@ class CommandQueue(object):
             self.channel = channel
 
         def __call__(self):
-            if not self.channel:
+            if not self.channel or not weechat.info_get('irc_is_channel', self.channel):
                 return True
+            debug('adding %s to the tracked channel list' %self.channel)
             config = 'channels.%s' %self.server
-            channels = get_config_list(config)
-            if not channels:
-                weechat.config_set_plugin(config, self.channel)
-            elif self.channel not in channels:
-                channels.append(self.channel)
+            channels = CaseInsensibleSet(get_config_list(config))
+            if self.channel not in channels:
+                channels.add(self.channel)
                 value = ','.join(channels)
                 weechat.config_set_plugin(config, value)
             return True
@@ -1043,7 +1042,7 @@ def caseInsensibleKey(k):
     if isinstance(k, str):
         return CaseInsensibleString(k)
     elif isinstance(k, tuple):
-        return tuple([ caseInsensibleKey(v) for v in k ])
+        return tuple(map(caseInsensibleKey, k))
     return k
 
 
@@ -1072,6 +1071,9 @@ class CaseInsensibleSet(set):
 
     def __contains__(self, v):
         return set.__contains__(self, self.normalize(v))
+
+    def update(self, L):
+        set.update(self, map(self.normalize, L))
 
     def add(self, v):
         set.add(self, self.normalize(v))
@@ -1320,10 +1322,6 @@ class UserCache(ServerChannelDict):
             return self[server, channel]
         except KeyError:
             return self.generate_cache(server, channel)
-
-
-        for users in self.itervalues():
-            users.purge()
 
     def hostFromNick(self, nick, server, channel=None):
         """Returns hostmask of nick, searching in all or one channel"""
