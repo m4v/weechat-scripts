@@ -746,34 +746,6 @@ class CommandQueue(object):
             return True
 
 
-    class DisableAntiFlood(Message):
-        def __init__(self, cmd, instance=None, **kwargs):
-            assert instance
-            self.commandQueueInstance = instance
-
-        def __call__(self):
-            """Chanop sends one message per second, except some cases (like bankicks) where it sends
-            them without delay. WeeChat's antiflood interferes with this, so we have to disable it
-            temporally."""
-            opt_low = weechat.config_get('irc.network.anti_flood_prio_low')
-            opt_high = weechat.config_get('irc.network.anti_flood_prio_high')
-            value_low = weechat.config_integer(opt_low)
-            value_high = weechat.config_integer(opt_high)
-            #debug('disabling antiflood')
-            wait = self.commandQueueInstance.wait + 1
-            if value_low:
-                weechat.config_option_set(opt_low, '0', 0)
-                # set hook for re-enable antiflood
-                weechat.hook_timer(wait*1000, 0, 1, 'enable_anti_flood_cb', '%s,%s' %(opt_low,
-                    value_low))
-            if value_high:
-                weechat.config_option_set(opt_high, '0', 0)
-                # set hook for re-enable antiflood
-                weechat.hook_timer((wait+1)*1000, 0, 1, 'enable_anti_flood_cb', '%s,%s' %(opt_high,
-                    value_high))
-            return True
-
-
     def queue(self, cmd, type='Normal', wait=1, **kwargs):
         #debug('queue: wait %s self.wait %s' %(wait, self.wait))
         pack = getattr(self, type)(cmd, wait=self.wait, **kwargs)
@@ -828,12 +800,6 @@ def queue_timeout_cb(channel, count):
     weechat.unhook(hook_signal)
     hook_signal = hook_timeout = None
     weechat_queue.clear()
-    return WEECHAT_RC_OK
-
-def enable_anti_flood_cb(data, count):
-    #debug('enabling antiflood: %s' %data)
-    option, value = data.split(',')
-    weechat.config_option_set(option, value, 0)
     return WEECHAT_RC_OK
 
 
@@ -956,7 +922,6 @@ class CommandChanop(Command):
             self.queue(self.replace_vars(value), type='WaitForOp', server=self.server,
                     channel=self.channel, nick=self.nick)
         self.queue('', type='AddChannel', wait=0, server=self.server, channel=self.channel)
-        self.queue('', type='DisableAntiFlood', wait=0, instance=weechat_queue)
         return op
 
     def drop_op(self):
