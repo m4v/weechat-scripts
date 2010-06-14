@@ -1460,13 +1460,16 @@ class Ban(CommandNeedsOp):
         return get_config_banmask(get_function=self.get_config)
 
     def make_banmask(self, hostmask):
-        assert self.banmask # really, if there isn't any banmask by now there's something wrong
+        assert self.banmask
         if 'exact' in self.banmask:
             return hostmask
         elif 'webchat' in self.banmask:
             user = get_user(hostmask, trim=True)
+            decoded_ip = hex_to_ip(user)
             host = get_host(hostmask)
-            if not is_hostname(host) and is_ip(hex_to_ip(user)):
+            if not is_hostname(host) \
+                    and is_ip(decoded_ip) \
+                    and decoded_ip not in host:
                 return '*!%s@*' %get_user(hostmask)
             else:
                 return '*!*@%s' %host
