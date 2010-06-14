@@ -21,14 +21,16 @@
 #
 #   Inspired by auto_bleh.pl (irssi) and chanserv.py (xchat) scripts
 #
-#   Networks like Freenode and some channels encourage operators to not stay permanently with +o
-#   privileges and only use it when needed. This script works along those lines, requesting op,
-#   kick/ban/etc and deop automatically with a single command.
-#   Still this script is very configurable and its behaviour can be configured in a per server or per
-#   channel basis so it can fit most needs without changing its code.
+#   Networks like Freenode and some channels encourage operators to not stay
+#   permanently with +o privileges and only use it when needed. This script
+#   works along those lines, requesting op, kick/ban/etc and deop
+#   automatically with a single command.
+#   Still this script is very configurable and its behaviour can be configured
+#   in a per server or per channel basis so it can fit most needs without
+#   changing its code.
 #
-#   Features several completions for ban/mute masks and a memory for channel masks and users (so
-#   users that parted are still bannable).
+#   Features several completions for ban/mute masks and a memory for channel
+#   masks and users (so users that parted are still bannable).
 #
 #   Commands (see detailed help with /help in WeeChat):
 #   *      /oop: Request op
@@ -47,8 +49,9 @@
 #
 #
 #   Settings:
-#   Most configs (unless noted otherwise) can be defined for a server or a channel in particular, so
-#   it is possible to request op in different networks, stay always op'ed in one channel while
+#   Most configs (unless noted otherwise) can be defined for a server or a
+#   channel in particular, so it is possible to request op in different
+#   networks, stay always op'ed in one channel while
 #   auto-deop in another.
 #
 #   For define the option 'option' in server 'server_name' use:
@@ -61,13 +64,15 @@
 #     is a /msg to a bot, like chanserv in freenode or Q in quakenet.
 #     It accepts the special vars $server, $channel and $nick
 #
-#     By default it ask op to chanserv, if your network doesn't use chanserv, then you must change
-#     it.
+#     By default it ask op to chanserv, if your network doesn't use chanserv,
+#     then you must change it.
 #
 #     Examples:
-#     /set plugins.var.python.chanop.op_command "/msg chanserv op $channel $nick"
+#     /set plugins.var.python.chanop.op_command
+#          "/msg chanserv op $channel $nick"
 #     (globally for all servers, like freenode and oftc)
-#     /set plugins.var.python.chanop.op_command.quakenet "/msg q op $channel $nick"
+#     /set plugins.var.python.chanop.op_command.quakenet
+#          "/msg q op $channel $nick"
 #     (for quakenet only)
 #
 #   * plugins.var.python.chanop.deop_command:
@@ -76,30 +81,34 @@
 #
 #   * plugins.var.python.chanop.autodeop:
 #     Enables auto-deop'ing after using any of the ban or kick commands.
-#     Note that if you got op manually (like with /oop) then the script won't deop you
+#     Note that if you got op manually (like with /oop) then the script won't
+#     deop you.
 #     Valid values 'on', 'off'
 #
 #   * plugins.var.python.chanop.autodeop_delay:
-#     Time it must pass (without using any commands) before auto-deop, in seconds.
+#     Time it must pass (without using any commands) before auto-deop, in
+#     seconds.
 #     Using zero causes to deop immediately.
 #
 #   * plugins.var.python.chanop.default_banmask:
-#     List of keywords separated by comas. Defines default banmask, when using /oban, /obankick or
-#     /omute
-#     You can use several keywords for build a banmask, each keyword defines how the banmask will be
-#     generated for a given hostmask, see /help oban
+#     List of keywords separated by comas. Defines default banmask, when using
+#     /oban, /obankick or /omute
+#     You can use several keywords for build a banmask, each keyword defines how
+#     the banmask will be generated for a given hostmask, see /help oban.
 #     Valid keywords are: nick, user, host, exact and webchat
 #
 #     Examples:
-#     /set plugins.var.python.chanop.default_banmask host (bans with *!*@host)
-#     /set plugins.var.python.chanop.default_banmask host,user (bans with *!user@host)
+#     /set plugins.var.python.chanop.default_banmask host
+#     (bans with *!*@host)
+#     /set plugins.var.python.chanop.default_banmask host,user
+#     (bans with *!user@host)
 #
 #   * plugins.var.python.chanop.kick_reason:
 #     Default kick reason if none was given in the command.
 #
 #   * plugins.var.python.chanop.enable_remove:
-#     If enabled, it will use "/quote remove" command instead of /kick, enable it only in
-#     networks that support it, like freenode.
+#     If enabled, it will use "/quote remove" command instead of /kick, enable
+#     it only in networks that support it, like freenode.
 #     Valid values 'on', 'off'
 #
 #   * plugins.var.python.chanop.display_affected:
@@ -142,14 +151,14 @@
 #   History:
 #   2010-
 #   version 0.2: major updates
-#   * fixed mutes for ircd-seven
+#   * fixed mutes for ircd-seven (freenode)
 #   * added commands: /ovoice /odevoice /ounmute /omode /olist
+#   * /okban renamed to /obankick because is too easy to try to /okban
+#     somebody due to tab fail.
 #   * config options removed:
 #     - merge_bans: replaced by 'modes' option
 #     - enable_mute: replaced by 'chanmodes' option
-#   * /okban renamed to /obankick because is too easy to try /okick and execute /okban due
-#     to tab fail.
-#   * removed the option for invert bankick order and fixed it to "ban, then kick".
+#     - invert_kickban_order: now is fixed to "ban, then kick"
 #
 #   2009-11-9
 #   version 0.1.1: fixes
@@ -220,8 +229,12 @@ def print_affected_users(buffer, *hostmasks):
     """Print a list of users, max 8 hostmasks"""
     def format_user(hostmask):
         nick, host = hostmask.split('!', 1)
-        return '%s%s%s(%s%s%s)' %(color_chat_nick, nick, color_delimiter, color_chat_host,
-                host, color_delimiter)
+        return '%s%s%s(%s%s%s)' %(color_chat_nick,
+                                  nick,
+                                  color_delimiter,
+                                  color_chat_host,
+                                  host,
+                                  color_delimiter)
 
     max = 8
     count = len(hostmasks)
@@ -356,7 +369,7 @@ def get_config_banmask(config='default_banmask', get_function=None):
         value = get_function(config)
     else:
         value = weechat.config_get_plugin(config)
-    values = value.split(',')
+    values = value.lower().split(',')
     for value in values:
         if value not in valid_banmask:
             default = settings[config]
@@ -398,6 +411,7 @@ _valid_label = re.compile(r'^[a-z\d\-]+$', re.I)
 def is_hostname(s):
     """
     Checks if 's' is a valid hostname."""
+    # I did like a simpler method, I don't think I need to be this strict
     if not s or len(s) > 255:
         return False
     if s[-1] == '.': # strip tailing dot
@@ -409,14 +423,15 @@ def is_hostname(s):
             return False
     return True
 
-_regexp_cache = {}
 def hostmask_pattern_match(pattern, strings):
     if is_hostmask(pattern):
         return pattern_match(pattern, strings)
     return []
 
+_regexp_cache = {}
 def pattern_match(pattern, strings):
-    # we will take the trouble of using regexps, since they match faster than fnmatch once compiled
+    # we will take the trouble of using regexps, since they
+    # match faster than fnmatch once compiled
     if pattern in _regexp_cache:
         regexp = _regexp_cache[pattern]
     else:
@@ -455,9 +470,10 @@ def get_user(s, trim=False):
     if n > 0 and m > 2 and m > n:
         s = s[n+1:m]
         if trim:
+            # remove the stuff not part of the username.
             if s[0] == '~':
                 return s[1:]
-            elif len(s) > 2 and s[1] == '=':
+            elif s[:2] in ('i=', 'n='):
                 return s[2:]
             else:
                 return s
@@ -650,7 +666,9 @@ class Command(object):
 
 
 ### Command queue classes ###
-# TODO I need to refactor this
+# TODO I need to refactor all this, WeeChat sends messages every one or two
+# seconds, so all this code for queueing and timing commands is utterly useless.
+
 class Message(object):
     """Class that stores the command for scheduling in CommandQueue."""
     def __init__(self, cmd, buffer='', wait=0):
@@ -1108,7 +1126,7 @@ class MaskList(CaseInsensibleDict):
 class MaskCache(ServerChannelDict):
     """Keeps a list of our bans for quick look up."""
     # DONT reassign these lists, should be shared across MaskCache instances
-    hook_queue = [] # use deque object
+    hook_queue = []
     hook_fetch = []
 
     def __init__(self, mode='b'):
@@ -1180,8 +1198,9 @@ class MaskCache(ServerChannelDict):
             # only need to hook once
             self.hook_fetch.append(weechat.hook_modifier('irc_in_367', 'masklist_add_cb', ''))
             self.hook_fetch.append(weechat.hook_modifier('irc_in_368', 'masklist_end_cb', ''))
-        # The server will send all messages together sequentially, so is easy to tell for which channel
-        # and mode the mask is if we keep a queue list in self.hook_queue
+        # The server will send all messages together sequentially, so is easy to
+        # tell for which channel and mode the mask is if we keep a queue list in
+        # self.hook_queue
         key = (server, channel, self.mode)
         if key in self.hook_queue:
             # already in queue
@@ -1301,17 +1320,19 @@ userCache = UserCache()
 class Op(CommandChanop):
     help = ("Request operator privileges.", "",
             """
-            The command used for ask op is defined globally in plugins.var.python.%(name)s.op_command,
-            it can be defined per server or per channel in:
+            The command used for ask op is defined globally in
+            plugins.var.python.%(name)s.op_command, it can be defined per server
+            or per channel in:
               plugins.var.python.%(name)s.op_command.server_name
-              plugins.var.python.%(name)s.op_command.server_name.#channel_name""" %{'name':SCRIPT_NAME})
+              plugins.var.python.%(name)s.op_command.server_name.#channel_name"""\
+                      %{'name':SCRIPT_NAME})
     command = 'oop'
 
     def execute(self):
         op = self.get_op()
         if op is True and self.buffer in deop_hook:
-            # /oop was called before auto-deoping, we assume that the user wants to stay opped
-            # permanently
+            # /oop was called before auto-deoping, we assume that the user wants
+            # to stay opped permanently
             hook = deop_hook[self.buffer]
             weechat.unhook(hook)
             del deop_hook[self.buffer]
@@ -1350,9 +1371,9 @@ class MultiKick(Kick):
     help = ("Kick one or more nicks.",
             "<nick> [<nick> ..] [:] [<reason>]",
             """
-            Note: Is not needed, but use ':' as a separator between nicks and the reason.
-                  Otherwise, if there's a nick in the channel matching the first word in
-                  reason it will be kicked.""")
+            Note: Is not needed, but use ':' as a separator between nicks and
+            the reason. Otherwise, if there's a nick in the channel matching the
+            first word in reason it will be kicked.""")
     completion = '%(nicks)|%*'
 
     def execute_op(self, args=None):
@@ -1380,19 +1401,22 @@ class MultiKick(Kick):
 
 class Ban(CommandNeedsOp):
     help = ("Ban user or hostmask.",
-            "<nick|banmask> [<nick|banmask> ..] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]",
+            "<nick|banmask> [<nick|banmask> ..] [ [--host] [--user] [--nick] | --exact | --webchat ]",
             """
             Banmask options:
-                -h --host: Use *!*@hostname banmask
-                -n --nick: Use nick!*@* banmask
-                -u --user: Use *!user@* banmask
-                -e --exact: Use exact hostmask, same as using --nick --user --host
-                            simultaneously.
+                -h  --host: Ban by hostname (*!*@host)
+                -n  --nick: Ban by nick     (nick!*@*)
+                -u  --user: Ban by username (*!user@*)
+                -e --exact: Use exact hostmask.
+                -w --webchat: Like --host, but a bit more smarter against
+                              webchat's users, it will ban by username if
+                              hostname isn't valid and username is a hexed ip.
 
             If no banmask options are supplied, configured defaults are used.
 
             Example:
-            /oban somebody --user --host : will use a *!user@hostname banmask.""")
+            /oban somebody --user --host
+              will ban with *!user@hostname mask.""")
     command = 'oban'
     completion = '%(chanop_nicks)|%(chanop_ban_mask)|%*'
     masklist = banlist
@@ -1497,9 +1521,12 @@ class UnBan(Ban):
     help = ("Remove bans.",
             "<nick|banmask> [<nick|banmask> ..]",
             """
-            Note: Unbaning with <nick> is not very useful at the momment, only the bans known by the
-                  script (bans that were applied with this script) will be removed and only *if*
-                  <nick> is present in the channel.""")
+            Autocompletion will complete with channel's currently set masks. You
+            can also use a pattern for autocomplete any matching masks.
+
+            Example:
+            /ounban *192.168*<tab>
+              Will autocomplete with all masks matching *192.168*""")
     command = 'ounban'
     completion = '%(chanop_nicks)|%(chanop_unban_mask)|%*'
     _prefix = '-'
@@ -1533,11 +1560,10 @@ class Mute(Ban):
     help = ("Silence user or hostmask.",
             Ban.help[1],
             """
-            Use /ounban <nick> for remove the mute.
-
-            Note: This command is disabled by default and should be enabled for networks that
-                  support "/mode +q hostmask", use:
-                  /set plugins.var.python.%s.enable_mute.your_server_name on""" %SCRIPT_NAME)
+            This command is only for networks that support channel mode 'q',
+            You can disable it by removing 'q' from your server channelmodes
+            option:
+              /set plugins.var.python.%s.chanmodes.server_name b""" %SCRIPT_NAME)
     command = 'omute'
     completion = '%(chanop_nicks)|%(chanop_ban_mask)|%*'
     _mode = 'q'
@@ -1552,9 +1578,9 @@ class UnMute(UnBan):
 
 
 class BanKick(Ban, Kick):
-    help = ("Kickban nick.",
-            "<nick> [<reason>] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]",
-            "Combines /okick and /oban commands.")
+    help = ("Bankicks nick.",
+            "<nick> [<reason>] [ [--host] [--user] [--nick] | --exact | --webchat ]",
+            "Combines /oban and /okick commands.")
     command = 'obankick'
     completion = '%(chanop_nicks)'
 
@@ -1573,8 +1599,8 @@ class BanKick(Ban, Kick):
 
 
 class MultiBanKick(BanKick):
-    help = ("Kickban one or more nicks.",
-            "<nick> [<nick> ..] [:] [<reason>] [(-h|--host)] [(-u|--user)] [(-n|--nick)] [(-e|--exact)]",
+    help = ("Bankicks one or more nicks.",
+            "<nick> [<nick> ..] [:] [<reason>] [ [--host)] [--user] [--nick] | --exact | --webchat ]",
             BanKick.help[2])
     completion = '%(chanop_nicks)|%*'
 
@@ -1731,8 +1757,10 @@ class ShowBans(CommandChanop):
                 self.prnt_ban(ban.mask, op, ban.date, ban.hostmask)
         else:
             self.prnt('Not known %s for %s.%s' %(self.type, key[0], key[1]))
-        self.set_title('List of %s known by chanop in %s.%s (total: %s)' %(self.type, key[0],
-            key[1], mask_count))
+        self.set_title('List of %s known by chanop in %s.%s (total: %s)' %(self.type,
+                                                                           key[0],
+                                                                           key[1],
+                                                                           mask_count))
 
 
 #########################
@@ -2041,7 +2069,8 @@ def nicks_cmpl(users, data, completion_item, buffer, completion):
 @cmpl_get_irc_users
 def hosts_cmpl(users, data, completion_item, buffer, completion):
     for hostmask in users.itervalues():
-        weechat.hook_completion_list_add(completion, get_host(hostmask), 0, weechat.WEECHAT_LIST_POS_SORT)
+        weechat.hook_completion_list_add(completion, get_host(hostmask), 0,
+                weechat.WEECHAT_LIST_POS_SORT)
     return WEECHAT_RC_OK
 
 @cmpl_get_irc_users
@@ -2066,14 +2095,17 @@ if __name__ == '__main__' and import_ok and \
     color_reset     = weechat.color('reset')
 
     # pretty [chanop]
-    script_nick = '%s[%s%s%s]%s' %(color_delimiter, color_chat_nick, SCRIPT_NAME, color_delimiter,
-            color_reset)
+    script_nick = '%s[%s%s%s]%s' %(color_delimiter,
+                                   color_chat_nick,
+                                   SCRIPT_NAME,
+                                   color_delimiter,
+                                   color_reset)
 
     # valid nick, use weechat's api if available
     version = weechat.info_get('version_number', '')
     if not version or version < 0x30200:
-        _nickchars = r'[]\`_^{|}'
-        _nickRe = re.compile(r'^[A-Za-z%s][-0-9A-Za-z%s]*$' %(re.escape(_nickchars), re.escape(_nickchars)))
+        _nickchars = re.escape(r'[]\`_^{|}')
+        _nickRe = re.compile(r'^[A-Za-z%s][-0-9A-Za-z%s]*$' %(_nickchars, _nickchars))
         is_nick = lambda s: bool(_nickRe.match(s))
     else:
         is_nick = lambda s: weechat.info_get('irc_is_nick', s)
@@ -2109,7 +2141,7 @@ if __name__ == '__main__' and import_ok and \
     Mode().hook()
     Voice().hook()
     DeVoice().hook()
-    
+
     weechat.hook_command('osync', '', '', '', '', 'cmd_sync', '')
 
     weechat.hook_config('plugins.var.python.%s.enable_multi_kick' %SCRIPT_NAME,
