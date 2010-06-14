@@ -102,10 +102,6 @@
 #     networks that support it, like freenode.
 #     Valid values 'on', 'off'
 #
-#   * plugins.var.python.chanop.invert_bankick_order:
-#     /obankick bans first, then kicks, this inverts the order.
-#     Valid values 'on', 'off'
-#
 #   * plugins.var.python.chanop.display_affected:
 #
 #
@@ -153,7 +149,7 @@
 #     - enable_mute: replaced by 'chanmodes' option
 #   * /okban renamed to /obankick because is too easy to try /okick and execute /okban due
 #     to tab fail.
-#   * inverted bankick order for keep consistent with the name, now it bans first.
+#   * removed the option for invert bankick order and fixed it to "ban, then kick".
 #
 #   2009-11-9
 #   version 0.1.1: fixes
@@ -181,7 +177,6 @@ settings = {
 'enable_remove'         :'off',
 'kick_reason'           :'kthxbye!',
 'enable_multi_kick'     :'off',
-'invert_bankick_order'  :'off',
 'display_affected'      :'off', # FIXME make configurable per channel
 'chanmodes'             :'bq',
 'modes'                 :'4',
@@ -1570,12 +1565,8 @@ class BanKick(Ban, Kick):
             if not reason:
                 reason = self.get_config('kick_reason')
             banmask = self.make_banmask(hostmask)
-            if self.get_config_boolean('invert_bankick_order'):
-                self.kick(nick, reason, wait=0)
-                self.ban(banmask)
-            else:
-                self.ban(banmask, wait=0)
-                self.kick(nick, reason)
+            self.ban(banmask, wait=0)
+            self.kick(nick, reason)
         else:
             say("Sorry, found nothing to bankick.", buffer=self.buffer)
             self.queue_clear()
@@ -1603,12 +1594,8 @@ class MultiBanKick(BanKick):
                 hostmask = self.get_host(nick)
                 if hostmask:
                     banmask = self.make_banmask(hostmask)
-                    if self.get_config_boolean('invert_bankick_order'):
-                        self.kick(nick, reason, wait=0)
-                        self.ban(banmask)
-                    else:
-                        self.ban(banmask, wait=0)
-                        self.kick(nick, reason)
+                    self.ban(banmask, wait=0)
+                    self.kick(nick, reason)
         else:
             say("Sorry, found nothing to bankick.", buffer=self.buffer)
             self.queue_clear()
