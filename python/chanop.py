@@ -1594,7 +1594,7 @@ class BanKick(Ban, Kick):
             if not reason:
                 reason = self.get_config('kick_reason')
             banmask = self.make_banmask(hostmask)
-            self.ban(banmask, wait=0)
+            self.ban(banmask)
             self.kick(nick, reason)
         else:
             say("Sorry, found nothing to bankick.", buffer=self.buffer)
@@ -1623,7 +1623,7 @@ class MultiBanKick(BanKick):
                 hostmask = self.get_host(nick)
                 if hostmask:
                     banmask = self.make_banmask(hostmask)
-                    self.ban(banmask, wait=0)
+                    self.ban(banmask)
                     self.kick(nick, reason)
         else:
             say("Sorry, found nothing to bankick.", buffer=self.buffer)
