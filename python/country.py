@@ -268,7 +268,7 @@ def is_ip(s):
     except socket.error:
         return False
 
-_valid_label = re.compile(r'^[a-z\d\-]+$', re.I)
+_valid_label = re.compile(r'^([\da-z]|[\da-z][-\da-z]*[\da-z])$', re.I)
 def is_host(s):
     """
     Checks if 's' is a valid hostname."""
@@ -278,7 +278,6 @@ def is_host(s):
         s = s[:-1]
     for label in s.split('.'):
         if not label or len(label) > 63 \
-                or label[0] == '-' or label[-1] == '-' \
                 or not _valid_label.search(label):
             return False
     return True
