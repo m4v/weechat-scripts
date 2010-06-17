@@ -19,7 +19,7 @@
 ###
 #   Helper script for IRC operators
 #
-#   Inspired by auto_bleh.pl (irssi) and chanserv.py (xchat) scripts
+#   Inspired by auto_bleh.pl (irssi) and chanserv.py (xchat) scripts.
 #
 #   Networks like Freenode and some channels encourage operators to not stay
 #   permanently with +o privileges and only use it when needed. This script
@@ -83,12 +83,12 @@
 #     Enables auto-deop'ing after using any of the ban or kick commands.
 #     Note that if you got op manually (like with /oop) then the script won't
 #     deop you.
-#     Valid values 'on', 'off'
+#     Valid values: 'on', 'off' Default: 'on'
 #
 #   * plugins.var.python.chanop.autodeop_delay:
 #     Time it must pass (without using any commands) before auto-deop, in
-#     seconds.
-#     Using zero causes to deop immediately.
+#     seconds. Using zero causes to deop immediately.
+#     Default: 180
 #
 #   * plugins.var.python.chanop.default_banmask:
 #     List of keywords separated by comas. Defines default banmask, when using
@@ -96,6 +96,7 @@
 #     You can use several keywords for build a banmask, each keyword defines how
 #     the banmask will be generated for a given hostmask, see /help oban.
 #     Valid keywords are: nick, user, host, exact and webchat
+#     Default: 'host'
 #
 #     Examples:
 #     /set plugins.var.python.chanop.default_banmask host
@@ -109,20 +110,47 @@
 #   * plugins.var.python.chanop.enable_remove:
 #     If enabled, it will use "/quote remove" command instead of /kick, enable
 #     it only in networks that support it, like freenode.
-#     Valid values 'on', 'off'
+#     Valid values: 'on', 'off' Default: 'off'
 #
 #   * plugins.var.python.chanop.display_affected:
+#     Whenever a new ban is set, chanop will show the users affected by it.
+#     This is intended for help operators to see if their ban is too wide or
+#     point out clones.
+#     Valid values: 'on', 'off' Default: 'off'
 #
 #
-#   The following configs can't be defined per channel.
-#
-#   * plugins.var.python.chanop.channels:
-#
-#   * plugins.var.python.chanop.fetch_bans:
-#
-#   * plugins.var.python.chanop.modes:
+#   The following configs can't be defined per channel, only per server.
 #
 #   * plugins.var.python.chanop.chanmodes:
+#     Indicates to chanop the channel modes supported by server, all servers support
+#     'b' channel modes which are typical bans, but there are others such as 'q'
+#     (mutes), 'e' (ban exceptions) and 'I' (invite exceptions).
+#     Chanop currently only understands 'b' and 'q' modes, so suitable values for
+#     this config are only 'bq' or 'b'.
+#     If you wish to use mutes in networks such as freenode you need to add 'q'
+#     in the config value.
+#     Default: 'b'
+#
+#     Warning: Enabling 'q' in networks that don't support it, such as quakenet,
+#     might lead to some nasty change of modes when you use /omute command.
+#
+#     Examples:
+#     /set plugins.var.python.chanop.chanmodes.freenode bq
+#     (freenode only)
+#     /set plugins.var.python.chanop.chanmodes bq
+#     (all servers)
+#
+#   * plugins.var.python.chanop.modes:
+#     Indicates to chanop the maximum number of modes per command that the server
+#     supports. This has the effect of setting several bans (up to the value set
+#     here) with a single command. On freenode is 4 while on other networks like
+#     quakenet is 6.
+#     Default: 4
+#
+#   * plugins.var.python.chanop.channels:
+#     Indicates to chanop which channels should keep track of users and masks.
+#     This config is automatically updated when you use any command that needs op,
+#     so manual setting shouldn't be needed.
 #
 #
 #   The following configs are global and can't be defined per server or channel.
@@ -133,7 +161,7 @@
 #     you're not careful when writting the kick reason.
 #
 #     This also applies to /obankick command, multiple bankicks would be enabled.
-#     Valid values 'on', 'off'
+#     Valid values: 'on', 'off' Default: 'off'
 #
 #
 #  TODO
@@ -143,13 +171,15 @@
 #  * save ban.mask and ban.hostmask across reloads
 #  * allow to override mute command (for quiet with ChanServ)
 #  * rewrite the queue message stuff
-#  * support for bans with channel forward
-#  * support for extbans (?)
 #  * multiple-channel ban (?)
+#  * freenode:
+#   * support for bans with channel forward
+#   * support for extbans (?)
 #
 #   release TODO
 #   complete help
 #   complete history
+#   add completers help
 #
 #
 #   History:
@@ -157,6 +187,8 @@
 #   version 0.2: major updates
 #   * fixed mutes for ircd-seven (freenode)
 #   * added commands: /ovoice /odevoice /ounmute /omode /olist
+#   * autocompletion for /ounban and /ounmute commands.
+#   * autocompletion for /oban and /omute commands.
 #   * /okban renamed to /obankick because is too easy to try to /okban
 #     somebody due to tab fail.
 #   * config options removed:
@@ -190,8 +222,8 @@ settings = {
 'enable_remove'         :'off',
 'kick_reason'           :'kthxbye!',
 'enable_multi_kick'     :'off',
-'display_affected'      :'off', # FIXME make configurable per channel
-'chanmodes'             :'bq',
+'display_affected'      :'off',
+'chanmodes'             :'b',
 'modes'                 :'4',
 #'fetch_bans'            :'off', # FIXME make per server
 }
@@ -256,11 +288,12 @@ def debug(s, prefix='', buffer_name=None):
 ##############
 ### Config ###
 
-# TODO to make a class for this
+# TODO Need to refactor all this too
+
 boolDict = {'on':True, 'off':False}
-def get_config_boolean(config, get_function=None):
+def get_config_boolean(config, get_function=None, **kwargs):
     if get_function and callable(get_function):
-        value = get_function(config)
+        value = get_function(config, **kwargs)
     else:
         value = weechat.config_get_plugin(config)
     try:
@@ -306,6 +339,19 @@ def get_config_list(config):
         return value.split(',')
     else:
         return []
+
+def get_config_specific(config, server='', channel=''):
+    """Gets config defined for either server or channel."""
+    value = None
+    if server and channel:
+        string = '%s.%s.%s' %(config, server, channel)
+        value = weechat.config_get_plugin(string)
+    if server and not value:
+        string = '%s.%s' %(config, server)
+        value = weechat.config_get_plugin(string)
+    if not value:
+        value = weechat.config_get_plugin(config)
+    return value
 
 
 #############
@@ -1135,14 +1181,7 @@ class CommandChanop(Command):
             return s
 
     def get_config(self, config):
-        string = '%s.%s.%s' %(config, self.server, self.channel)
-        value = weechat.config_get_plugin(string)
-        if not value:
-            string = '%s.%s' %(config, self.server)
-            value = weechat.config_get_plugin(string)
-            if not value:
-                value = weechat.config_get_plugin(config)
-        return value
+        return get_config_specific(config, self.server, self.channel)
 
     def get_config_boolean(self, config):
         return get_config_boolean(config, self.get_config)
@@ -1482,6 +1521,9 @@ class Ban(CommandNeedsOp):
         else:
             mode = self._mode
         max_modes = self.get_config_int('modes')
+        # max_modes can't be 0
+        if not max_modes:
+            max_modes = 1
         for n in range(0, len(banmasks), max_modes):
             slice = banmasks[n:n+max_modes]
             bans = ' '.join(slice)
@@ -1756,7 +1798,7 @@ class Sync(Command):
             """)
 #              -tracked: Updates for all tracked channels instead of current.
 #                        Tracked channels are those listed on config option
-#                        plugins.var.python.%(name)s.<servername>.channels
+#                        plugins.var.python.%(name)s.channels.<servername>
 #            """ %{'name':SCRIPT_NAME})
 
     command = 'osync'
@@ -1907,7 +1949,8 @@ def mode_cb(server, channel, nick, data, signal, signal_data):
                 masklist.add(server, channel, mask, operator=op, hostmask=hostmask)
             elif action == '-':
                 masklist.remove(server, channel, mask)
-        if affected_users and get_config_boolean('display_affected'):
+        if affected_users and get_config_boolean('display_affected',
+                get_function=get_config_specific, server=server, channel=channel):
             buffer = weechat.buffer_search('irc', '%s.%s' %key)
             print_affected_users(buffer, *set(affected_users))
     return WEECHAT_RC_OK
