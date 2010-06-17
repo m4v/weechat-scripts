@@ -147,10 +147,10 @@
 #     quakenet is 6.
 #     Default: 4
 #
-#   * plugins.var.python.chanop.channels:
-#     Indicates to chanop which channels should keep track of users and masks.
-#     This config is automatically updated when you use any command that needs op,
-#     so manual setting shouldn't be needed.
+#   * plugins.var.python.chanop.watchlist:
+#     Indicates to chanop which channels should watch and keep track of users and
+#     masks. This config is automatically updated when you use any command that needs
+#     op, so manual setting shouldn't be needed.
 #
 #
 #   The following configs are global and can't be defined per server or channel.
@@ -784,8 +784,8 @@ class CommandQueue(object):
         def __call__(self):
             if not self.channel or not weechat.info_get('irc_is_channel', self.channel):
                 return True
-            debug('adding %s to the tracked channel list' %self.channel)
-            config = 'channels.%s' %self.server
+            debug('adding %s to the watchlist' %self.channel)
+            config = 'watchlist.%s' %self.server
             channels = CaseInsensibleSet(get_config_list(config))
             if self.channel not in channels:
                 channels.add(self.channel)
@@ -923,7 +923,7 @@ class ServerChannelDict(CaseInsensibleDict):
     def purge(self):
         for key in self.keys():
             if not is_tracked(*key):
-                debug('Removing not tracked %s.%s list (%s items)' %(key[0], key[1], len(self[key])))
+                debug('Removing %s.%s list, not in watchlist. (%s items)' %(key[0], key[1], len(self[key])))
                 del self[key]
         for data in self.itervalues():
             data.purge()
@@ -1842,14 +1842,19 @@ class Sync(Command):
             userCache.generate_cache(server, channel)
             for mode in supported_modes(server):
                 maskModes[mode].fetch(server, channel)
-        self.args = None # fetch for many channels disabled
+
+        server = weechat.buffer_get_string(self.buffer, 'localvar_server')
+        channel = weechat.buffer_get_string(self.buffer, 'localvar_channel')
+        sync(server, channel)
+        return
+        # this is disabled for now.
         if self.args == '-tracked':
             infolist = Infolist('irc_server')
             items = []
             while infolist.next():
                 if infolist['is_connected']:
                     server = infolist['name']
-                    channels = get_config_list('channels.%s' %server)
+                    channels = get_config_list('watchlist.%s' %server)
                     if channels:
                         items.extend([(server, channel) for channel in channels ])
             for item in items:
@@ -1857,9 +1862,7 @@ class Sync(Command):
         elif self.args:
             error('Wrong arguments for %s' %self.command)
         else:
-            server = weechat.buffer_get_string(self.buffer, 'localvar_server')
-            channel = weechat.buffer_get_string(self.buffer, 'localvar_channel')
-            sync(server, channel)
+            pass
 
 
 ########################
@@ -1898,7 +1901,7 @@ def chanop_init():
 
 def server_init(server):
     global chanop_channels
-    channels = get_config_list('channels.%s' %server)
+    channels = get_config_list('watchlist.%s' %server)
     if channels:
         chanop_channels.update([ (server, channel) for channel in channels ])
         fetch_bans = False#get_config_boolean('fetch_bans')
@@ -1909,7 +1912,7 @@ def server_init(server):
                     maskModes[mode].fetch(server, channel)
 
 def is_tracked(server, channel):
-    """Check if a server channel pair should be tracked by script"""
+    """Check if a server channel pair is in watchlist"""
     global chanop_channels
     return (server, channel) in chanop_channels
 
@@ -2034,8 +2037,8 @@ def nick_cb(keys, nick, data, signal, signal_data):
 # Garbage collector
 def garbage_collector_cb(data, counter):
     """
-    This takes care of purging users and masks from untracked channels, and expired
-    users that parted.
+    This takes care of purging users and masks from channels not in watchlist, and
+    expired users that parted.
     """
     for masklist in maskModes.itervalues():
         masklist.purge()
@@ -2070,7 +2073,7 @@ def enable_multi_kick_conf_cb(data, config, value):
     cmd_bankick.hook()
     return WEECHAT_RC_OK
 
-def update_chanop_channels_cb(data, config, value):
+def update_chanop_watchlist_cb(data, config, value):
     #debug('CONFIG: %s' %(' '.join((data, config, value))))
     global chanop_channels
     server = config[config.rfind('.')+1:]
@@ -2263,8 +2266,8 @@ if __name__ == '__main__' and import_ok and \
 
     weechat.hook_config('plugins.var.python.%s.enable_multi_kick' %SCRIPT_NAME,
             'enable_multi_kick_conf_cb', '')
-    weechat.hook_config('plugins.var.python.%s.channels.*' %SCRIPT_NAME,
-            'update_chanop_channels_cb', '')
+    weechat.hook_config('plugins.var.python.%s.watchlist.*' %SCRIPT_NAME,
+            'update_chanop_watchlist_cb', '')
 
     weechat.hook_completion('chanop_unban_mask', 'channelmode b masks', 'unban_mask_cmpl', 'b')
     weechat.hook_completion('chanop_unmute_mask', 'channelmode q masks', 'unban_mask_cmpl', 'q')
