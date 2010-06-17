@@ -164,6 +164,34 @@
 #     Valid values: 'on', 'off' Default: 'off'
 #
 #
+#   Completions:
+#     Chanop has several completions, documented here. Some aren't used by the script
+#     itself, but can be used in aliases with custom completions.
+#
+#   * chanop_unban_mask (used in /ounban)
+#     Autocompletes with banmasks set in current channel, requesting them if needed.
+#     Supports patterns for autocomplete several masks: *<tab> for all bans, or
+#     *192.168*<tab> for bans with '192.168' string.
+#
+#   * chanop_unmute_mask (used in /ounmute)
+#     Same as chanop_unban_mask, but with masks for q channel mode.
+#
+#   * chanop_ban_mask (used in /oban and /omute)
+#     Given a partial IRC hostmask, it will try to complete with hostmasks of current
+#     users: *!*@192<tab> will try to complete with matching users, like
+#     *!*@192.168.0.1
+#
+#   * chanop_nicks (used in most commands)
+#     Autocompletes nicks, same as WeeChat's completer, but using chanop's user
+#     cache, so nicks from users that parted the channel will be still be completed.
+#
+#   * chanop_users (not used)
+#     Same as chanop_nicks, but with the usename part of the hostmask.
+#
+#   * chanop_hosts (not used)
+#     Same as chanop_nicks, but with the host part of the hostmask.
+#
+#
 #  TODO
 #  * use dedicated config file like in urlgrab.py
 #   (win free config value validation by WeeChat)
@@ -176,21 +204,19 @@
 #   * support for bans with channel forward
 #   * support for extbans (?)
 #
-#   release TODO
-#   complete help
-#   complete history
-#   add completers help
-#
 #
 #   History:
 #   2010-
 #   version 0.2: major updates
 #   * fixed mutes for ircd-seven (freenode)
-#   * added commands: /ovoice /odevoice /ounmute /omode /olist
-#   * autocompletion for /ounban and /ounmute commands.
-#   * autocompletion for /oban and /omute commands.
+#   * added commands: /ovoice /odevoice /ounmute /omode /olist /osync
+#   * autocompletion for bans set on a channel.
+#   * autocompletion for new bans.
+#   * implemented user and banmask cache.
 #   * /okban renamed to /obankick because is too easy to try to /okban
 #     somebody due to tab fail.
+#   * added display_affected feature.
+#   * added --webchat ban option.
 #   * config options removed:
 #     - merge_bans: replaced by 'modes' option
 #     - enable_mute: replaced by 'chanmodes' option
@@ -1331,8 +1357,8 @@ class Op(CommandChanop):
             The command used for ask op is defined globally in
             plugins.var.python.%(name)s.op_command, it can be defined per server
             or per channel in:
-              plugins.var.python.%(name)s.op_command.server_name
-              plugins.var.python.%(name)s.op_command.server_name.#channel_name"""\
+              plugins.var.python.%(name)s.op_command.servername
+              plugins.var.python.%(name)s.op_command.servername.#channelname"""\
                       %{'name':SCRIPT_NAME})
     command = 'oop'
 
@@ -1409,22 +1435,24 @@ class MultiKick(Kick):
 
 class Ban(CommandNeedsOp):
     help = ("Ban user or hostmask.",
-            "<nick|banmask> [<nick|banmask> ..] [ [--host] [--user] [--nick] | --exact | --webchat ]",
+            "<nick|mask> [<nick|mask> ..] [ [--host] [--user] [--nick] | --exact | --webchat ]",
             """
-            Banmask options:
-                -h  --host: Ban by hostname (*!*@host)
-                -n  --nick: Ban by nick     (nick!*@*)
-                -u  --user: Ban by username (*!user@*)
-                -e --exact: Use exact hostmask.
-                -w --webchat: Like --host, but a bit more smarter against
-                              webchat's users, it will ban by username if
-                              hostname isn't valid and username is a hexed ip.
+            Mask options:
+             -h  --host: Match hostname (*!*@host)
+             -n  --nick: Match nick     (nick!*@*)
+             -u  --user: Match username (*!user@*)
+             -e --exact: Use exact hostmask. Can't be combined with other options.
+             -w --webchat: Like --host, but a bit more smarter against webchat's
+                           users, it will match username if hostname isn't valid and
+                           username is a hexed ip. Can't be combined with other
+                           options.
 
-            If no banmask options are supplied, configured defaults are used.
+            If no mask options are supplied, configured defaults are used.
 
             Example:
             /oban somebody --user --host
-              will ban with *!user@hostname mask.""")
+              will ban with *!user@hostname mask.
+            """)
     command = 'oban'
     completion = '%(chanop_nicks)|%(chanop_ban_mask)|%*'
     masklist = banlist
@@ -1532,16 +1560,16 @@ class Ban(CommandNeedsOp):
 
 
 class UnBan(Ban):
+    command = 'ounban'
     help = ("Remove bans.",
-            "<nick|banmask> [<nick|banmask> ..]",
+            "<nick|mask> [<nick|mask> ..]",
             """
-            Autocompletion will complete with channel's currently set masks. You
-            can also use a pattern for autocomplete any matching masks.
+            Autocompletion will complete with channel's bans. Patterns allowed for
+            autocomplete any matching bans.
 
             Example:
-            /ounban *192.168*<tab>
-              Will autocomplete with all masks matching *192.168*""")
-    command = 'ounban'
+            /%(cmd)s *192.168*<tab>
+              Will autocomplete with all bans matching *192.168*""" %{'cmd':command})
     completion = '%(chanop_nicks)|%(chanop_unban_mask)|%*'
     _prefix = '-'
 
@@ -1577,7 +1605,7 @@ class Mute(Ban):
             This command is only for networks that support channel mode 'q',
             You can disable it by removing 'q' from your server channelmodes
             option:
-              /set plugins.var.python.%s.chanmodes.server_name b""" %SCRIPT_NAME)
+              /set plugins.var.python.%s.chanmodes.servername b""" %SCRIPT_NAME)
     command = 'omute'
     completion = '%(chanop_nicks)|%(chanop_ban_mask)|%*'
     _mode = 'q'
@@ -1586,6 +1614,9 @@ class Mute(Ban):
 
 class UnMute(UnBan):
     command = 'ounmute'
+    help = ("Remove mutes.",
+            UnBan.help[1],
+            UnBan.help[2].replace('bans', 'mutes').replace(UnBan.command, command))
     completion = '%(chanop_nicks)|%(chanop_unmute_mask)|%*'
     _mode = 'q'
     masklist = mutelist
@@ -1687,6 +1718,8 @@ class Mode(CommandNeedsOp):
 
 class ShowBans(CommandChanop):
     command = 'olist'
+    help = ("Lists bans or mutes in cache.",
+            "(bans|mutes) [channel]","")
     completion = 'bans|mutes %(irc_server_channels)'
     showbuffer = ''
 
@@ -2000,6 +2033,10 @@ def nick_cb(keys, nick, data, signal, signal_data):
 
 # Garbage collector
 def garbage_collector_cb(data, counter):
+    """
+    This takes care of purging users and masks from untracked channels, and expired
+    users that parted.
+    """
     for masklist in maskModes.itervalues():
         masklist.purge()
 
@@ -2229,12 +2266,12 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_config('plugins.var.python.%s.channels.*' %SCRIPT_NAME,
             'update_chanop_channels_cb', '')
 
-    weechat.hook_completion('chanop_unban_mask', '', 'unban_mask_cmpl', 'b')
-    weechat.hook_completion('chanop_unmute_mask', '', 'unban_mask_cmpl', 'q')
-    weechat.hook_completion('chanop_ban_mask', '', 'ban_mask_cmpl', '')
-    weechat.hook_completion('chanop_nicks', '', 'nicks_cmpl', '')
-    weechat.hook_completion('chanop_users', '', 'users_cmpl', '')
-    weechat.hook_completion('chanop_hosts', '', 'hosts_cmpl', '')
+    weechat.hook_completion('chanop_unban_mask', 'channelmode b masks', 'unban_mask_cmpl', 'b')
+    weechat.hook_completion('chanop_unmute_mask', 'channelmode q masks', 'unban_mask_cmpl', 'q')
+    weechat.hook_completion('chanop_ban_mask', 'completes partial mask', 'ban_mask_cmpl', '')
+    weechat.hook_completion('chanop_nicks', 'nicks in cache', 'nicks_cmpl', '')
+    weechat.hook_completion('chanop_users', 'usernames in cache', 'users_cmpl', '')
+    weechat.hook_completion('chanop_hosts', 'hostnames in cache', 'hosts_cmpl', '')
 
     weechat.hook_signal('*,irc_in_join', 'join_cb', '')
     weechat.hook_signal('*,irc_in_part', 'part_cb', '')
@@ -2244,6 +2281,7 @@ if __name__ == '__main__' and import_ok and \
 
     weechat.hook_signal('irc_server_connected', 'connected_cb', '')
 
+    # run our cleaner function every 30 min.
     weechat.hook_timer(30*60*1000, 0, 0, 'garbage_collector_cb', '')
 
     # debug commands
