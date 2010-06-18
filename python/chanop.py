@@ -249,8 +249,6 @@ settings = {
 'kick_reason'           :'kthxbye!',
 'enable_multi_kick'     :'off',
 'display_affected'      :'off',
-'chanmodes'             :'b',
-'modes'                 :'4',
 #'fetch_bans'            :'off', # FIXME make per server
 }
 
@@ -536,20 +534,6 @@ def hex_to_ip(s):
         return '.'.join(map(str, ip))
     except:
         return ''
-
-def supported_modes(server, mode=None):
-    """
-    Checks if server supports a specific chanmode. If <mode> is None returns all modes supported
-    by server."""
-    modes = weechat.config_get_plugin('chanmodes.%s' %server)
-    if not modes:
-        modes = weechat.config_get_plugin('chanmodes')
-    if not modes:
-        modes = 'b'
-    if mode:
-        return mode in modes
-    else:
-        return modes
 
 def irc_buffer(buffer):
     """Returns pair (server, channel) or None if buffer isn't an irc channel"""
@@ -1548,9 +1532,17 @@ class Ban(CommandNeedsOp):
             mode = 'b'
         else:
             mode = self._mode
-        max_modes = self.get_config_int('modes')
-        # max_modes can't be 0
+        # TODO refactor this
+        if self.server in isupport:
+            max_modes = isupport[server].get('MODES')
+        else:
+            max_modes = weechat.config_get_plugin('modes.%s' %self.server)
+        try:
+            max_modes = int(max_modes)
+        except TypeError:
+            max_modes = 1
         if not max_modes:
+            # max_modes can't be 0
             max_modes = 1
         for n in range(0, len(banmasks), max_modes):
             slice = banmasks[n:n+max_modes]
@@ -1910,6 +1902,11 @@ def server_init(server):
             if fetch_bans:
                 for mode in supported_modes(server):
                     maskModes[mode].fetch(server, channel)
+    config = 'chanmodes.%s' %server
+    if not weechat.config_get_plugin(config):
+        # request server version.
+        buffer = weechat.buffer_search('irc', 'server.%s' %server)
+        weechat.command(buffer, '/VERSION')
 
 def is_tracked(server, channel):
     """Check if a server channel pair is in watchlist"""
@@ -1919,6 +1916,51 @@ def is_tracked(server, channel):
 def connected_cb(data, signal, signal_data):
     #debug('CONNECTED: %s' %' '.join((data, signal, signal_data)))
     server_init(signal_data)
+    return WEECHAT_RC_OK
+
+# TODO refactor this
+def supported_modes(server, mode=None):
+    """
+    Checks if server supports a specific chanmode. If <mode> is None returns all modes supported
+    by server."""
+    if server in isupport:
+        modes = isupport[server].get('CHANMODES')
+        if modes:
+            modes = modes[0] # we only want the modes that use hostmasks
+    else:
+        modes = weechat.config_get_plugin('chanmodes.%s' %server)
+    if not modes:
+        modes = 'b'
+    if mode:
+        return mode in modes
+    else:
+        return modes
+
+isupport = {}
+def isupport_cb(data, signal, signal_data):
+    data = signal_data.split(' ', 3)[-1]
+    data, s, s = data.rpartition(' :')
+    data = data.split()
+    server = signal.partition(',')[0]
+    d = {}
+    debug(data)
+    for s in data:
+        if '=' in s:
+            k, v = s.split('=')
+        else:
+            k, v = s, True
+        if k == 'CHANMODES':
+            v = tuple(v.split(','))
+            config = 'chanmodes.%s' %server
+            weechat.config_set_plugin(config, v[0])
+        elif k == 'MODES':
+            config = 'modes.%s' %server
+            weechat.config_set_plugin(config, v)
+        d[k] = v
+    if server in isupport:
+        isupport[server].update(d)
+    else:
+        isupport[server] = d
     return WEECHAT_RC_OK
 
 def print_affected_users(buffer, *hostmasks):
@@ -1943,14 +1985,16 @@ def print_affected_users(buffer, *hostmasks):
 @signal_parse
 def mode_cb(server, channel, nick, data, signal, signal_data):
     """Keep the banmask list updated when somebody changes modes"""
-    #debug('MODE: %s' %' '.join((server, channel, nick, data, signal, signal_data)))
+    debug('MODE: %s %s' %(signal, signal_data))
     #:m4v!~znc@unaffiliated/m4v MODE #test -bo+v asd!*@* m4v dude
     pair = signal_data.split(' ', 4)[3:]
     if len(pair) != 2:
+        # modes without argument, not interesting.
         return WEECHAT_RC_OK
     modes, args = pair
-    if len(modes) == 2 and modes[1] in 'ovjl':
-        # return for these modes fairly used but not useful to us
+    # check for some modes, such as +oov which aren't interesting for us
+    s = modes.translate(None, '+-') # remove + and -
+    if set(s).issubset(set('ovjl')): # TODO should use isupport here
         return WEECHAT_RC_OK
     key = (server, channel)
     allkeys = CaseInsensibleSet()
@@ -1977,7 +2021,7 @@ def mode_cb(server, channel, nick, data, signal, signal_data):
         # update masklist
         for action, mode, mask in L:
             masklist = maskModes[mode]
-            #debug('MODE: %s%s %s %s' %(action, mode, mask, op))
+            debug('MODE: %s%s %s %s' %(action, mode, mask, op))
             if action == '+':
                 hostmask = hostmask_pattern_match(mask, userCache.get(*key).itervalues())
                 if hostmask:
@@ -2001,8 +2045,8 @@ def join_cb(server, channel, nick, data, signal, signal_data):
         if is_tracked(server, channel):
             # joined a channel that we should track
             userCache.generate_cache(server, channel)
-            for mode in supported_modes(server):
-                maskModes[mode].fetch(server, channel)
+            #for mode in supported_modes(server):
+            #    maskModes[mode].fetch(server, channel)
     elif key in userCache:
         hostname = signal_data[1:signal_data.find(' ')]
         userCache[key][nick] = hostname
@@ -2281,6 +2325,7 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_signal('*,irc_in_quit', 'quit_cb', '')
     weechat.hook_signal('*,irc_in_nick', 'nick_cb', '')
     weechat.hook_signal('*,irc_in_mode', 'mode_cb', '')
+    weechat.hook_signal('*,irc_in_005', 'isupport_cb', '')
 
     weechat.hook_signal('irc_server_connected', 'connected_cb', '')
 
