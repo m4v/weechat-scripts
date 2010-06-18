@@ -119,40 +119,6 @@
 #     Valid values: 'on', 'off' Default: 'off'
 #
 #
-#   The following configs can't be defined per channel, only per server.
-#
-#   * plugins.var.python.chanop.chanmodes:
-#     Indicates to chanop the channel modes supported by server, all servers support
-#     'b' channel modes which are typical bans, but there are others such as 'q'
-#     (mutes), 'e' (ban exceptions) and 'I' (invite exceptions).
-#     Chanop currently only understands 'b' and 'q' modes, so suitable values for
-#     this config are only 'bq' or 'b'.
-#     If you wish to use mutes in networks such as freenode you need to add 'q'
-#     in the config value.
-#     Default: 'b'
-#
-#     Warning: Enabling 'q' in networks that don't support it, such as quakenet,
-#     might lead to some nasty change of modes when you use /omute command.
-#
-#     Examples:
-#     /set plugins.var.python.chanop.chanmodes.freenode bq
-#     (freenode only)
-#     /set plugins.var.python.chanop.chanmodes bq
-#     (all servers)
-#
-#   * plugins.var.python.chanop.modes:
-#     Indicates to chanop the maximum number of modes per command that the server
-#     supports. This has the effect of setting several bans (up to the value set
-#     here) with a single command. On freenode is 4 while on other networks like
-#     quakenet is 6.
-#     Default: 4
-#
-#   * plugins.var.python.chanop.watchlist:
-#     Indicates to chanop which channels should watch and keep track of users and
-#     masks. This config is automatically updated when you use any command that needs
-#     op, so manual setting shouldn't be needed.
-#
-#
 #   The following configs are global and can't be defined per server or channel.
 #
 #   * plugins.var.python.chanop.enable_multi_kick:
@@ -164,8 +130,28 @@
 #     Valid values: 'on', 'off' Default: 'off'
 #
 #
+#   The following configs are server specific and aren't meant to be set manually.
+#
+#   * plugins.var.python.chanop.chanmodes:
+#     Indicates to chanop the channel modes supported by server, all servers support
+#     'b' channel modes which are typical bans, but there are others such as 'q'
+#     (quiets), 'e' (ban exceptions) and 'I' (invite exceptions).  Chanop currently
+#     only understands 'b' and 'q' modes.  This config is set by chanop.
+#
+#   * plugins.var.python.chanop.modes:
+#     Indicates to chanop the maximum number of modes per MODE command that the
+#     server supports.  This has the effect of setting several bans (up to the value
+#     set here) with a single command.  On freenode is 4 while on other networks like
+#     quakenet is 6.  This config is set by chanop.
+#
+#   * plugins.var.python.chanop.watchlist:
+#     Indicates to chanop which channels should watch and keep track of users and
+#     masks. This config is automatically updated when you use any command that needs
+#     op, so manual setting shouldn't be needed.
+#
+#
 #   Completions:
-#     Chanop has several completions, documented here. Some aren't used by the script
+#     Chanop has several completions, documented here. Some aren't used by chanop
 #     itself, but can be used in aliases with custom completions.
 #
 #   * chanop_unban_mask (used in /ounban)
@@ -201,26 +187,32 @@
 #  * rewrite the queue message stuff
 #  * multiple-channel ban (?)
 #  * freenode:
-#   * support for bans with channel forward
-#   * support for extbans (?)
+#   - support for bans with channel forward
+#   - support for extbans (?)
 #
 #
 #   History:
 #   2010-
 #   version 0.2: major updates
 #   * fixed mutes for ircd-seven (freenode)
-#   * added commands: /ovoice /odevoice /ounmute /omode /olist /osync
-#   * autocompletion for bans set on a channel.
-#   * autocompletion for new bans.
-#   * implemented user and banmask cache.
+#   * implemented user and mask cache.
+#   * added commands:
+#    - /ovoice /odevoice for de/voice users.
+#    - /omode for change channel modes.
+#    - /olist for list bans/quiets on cache.
+#    - /osync for update user/masks cache.
+#   * autocompletions:
+#    - for bans set on a channel.
+#    - for make new bans.
+#    - for nicks/usernames/hostnames in cache.
 #   * /okban renamed to /obankick because is too easy to try to /okban
 #     somebody due to tab fail.
 #   * added display_affected feature.
 #   * added --webchat ban option.
 #   * config options removed:
-#     - merge_bans: replaced by 'modes' option
-#     - enable_mute: replaced by 'chanmodes' option
-#     - invert_kickban_order: now is fixed to "ban, then kick"
+#    - merge_bans: replaced by 'modes' option
+#    - enable_mute: replaced by 'chanmodes' option
+#    - invert_kickban_order: now is fixed to "ban, then kick"
 #
 #   2009-11-9
 #   version 0.1.1: fixes
