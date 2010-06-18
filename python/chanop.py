@@ -29,21 +29,21 @@
 #   in a per server or per channel basis so it can fit most needs without
 #   changing its code.
 #
-#   Features several completions for ban/mute masks and a memory for channel
+#   Features several completions for ban/quiet masks and a memory for channel
 #   masks and users (so users that parted are still bannable).
 #
 #   Commands (see detailed help with /help in WeeChat):
 #   *      /oop: Request op
 #   *    /odeop: Drop op
 #   *    /okick: Kick user (or users)
-#   *     /oban: Apply bans
-#   *   /ounban: Remove bans
-#   *    /omute: Apply mutes
-#   *  /ounmute: Remove mutes
+#   *     /oban: Apply ban mask.
+#   *   /ounban: Remove ban mask.
+#   *   /oquiet: Apply quiet mask.
+#   * /ounquiet: Remove quiet mask.
 #   * /obankick: Ban and kick user (or users)
 #   *   /otopic: Change channel topic
 #   *    /omode: Change channel modes
-#   *    /olist: List cached masks (bans or mutes)
+#   *    /olist: List cached masks (bans or quiets)
 #   *   /ovoice: Give voice to user
 #   * /odevoice: Remove voice from user
 #
@@ -92,7 +92,7 @@
 #
 #   * plugins.var.python.chanop.default_banmask:
 #     List of keywords separated by comas. Defines default banmask, when using
-#     /oban, /obankick or /omute
+#     /oban, /obankick or /oquiet
 #     You can use several keywords for build a banmask, each keyword defines how
 #     the banmask will be generated for a given hostmask, see /help oban.
 #     Valid keywords are: nick, user, host, exact and webchat
@@ -159,10 +159,10 @@
 #     Supports patterns for autocomplete several masks: *<tab> for all bans, or
 #     *192.168*<tab> for bans with '192.168' string.
 #
-#   * chanop_unmute_mask (used in /ounmute)
+#   * chanop_unquiet (used in /ounquiet)
 #     Same as chanop_unban_mask, but with masks for q channel mode.
 #
-#   * chanop_ban_mask (used in /oban and /omute)
+#   * chanop_ban_mask (used in /oban and /oquiet)
 #     Given a partial IRC hostmask, it will try to complete with hostmasks of current
 #     users: *!*@192<tab> will try to complete with matching users, like
 #     *!*@192.168.0.1
@@ -183,7 +183,7 @@
 #   (win free config value validation by WeeChat)
 #  * ban expire time
 #  * save ban.mask and ban.hostmask across reloads
-#  * allow to override mute command (for quiet with ChanServ)
+#  * allow to override quiet command (for quiet with ChanServ)
 #  * rewrite the queue message stuff
 #  * multiple-channel ban (?)
 #  * freenode:
@@ -194,19 +194,21 @@
 #   History:
 #   2010-
 #   version 0.2: major updates
-#   * fixed mutes for ircd-seven (freenode)
+#   * fixed quiets for ircd-seven (freenode)
 #   * implemented user and mask cache.
 #   * added commands:
 #    - /ovoice /odevoice for de/voice users.
 #    - /omode for change channel modes.
 #    - /olist for list bans/quiets on cache.
 #    - /osync for update user/masks cache.
+#   * changed /omute and /ounmute commands to /oquiet and /ounquiet, as q masks
+#   is refered as a quiet rather than a mute.
 #   * autocompletions:
 #    - for bans set on a channel.
 #    - for make new bans.
 #    - for nicks/usernames/hostnames in cache.
 #   * /okban renamed to /obankick because is too easy to try to /okban
-#     somebody due to tab fail.
+#   somebody due to tab fail.
 #   * added display_affected feature.
 #   * added --webchat ban option.
 #   * config options removed:
@@ -1054,8 +1056,8 @@ class MaskCache(ServerChannelDict):
         weechat.command(buffer, cmd)
 
 banlist = MaskCache('b')
-mutelist = MaskCache('q')
-maskModes = { 'b':banlist, 'q': mutelist }
+quietlist = MaskCache('q')
+maskModes = { 'b':banlist, 'q': quietlist }
 
 def masklist_add_cb(data, modifier, modifier_data, string):
     """Adds ban to the list."""
@@ -1597,7 +1599,7 @@ class UnBan(Ban):
     unban = Ban.ban
 
 
-class Mute(Ban):
+class Quiet(Ban):
     help = ("Silence user or hostmask.",
             Ban.help[1],
             """
@@ -1605,20 +1607,20 @@ class Mute(Ban):
             You can disable it by removing 'q' from your server channelmodes
             option:
               /set plugins.var.python.%s.chanmodes.servername b""" %SCRIPT_NAME)
-    command = 'omute'
+    command = 'oquiet'
     completion = '%(chanop_nicks)|%(chanop_ban_mask)|%*'
     _mode = 'q'
-    masklist = mutelist
+    masklist = quietlist
 
 
-class UnMute(UnBan):
-    command = 'ounmute'
-    help = ("Remove mutes.",
+class UnQuiet(UnBan):
+    command = 'ounquiet'
+    help = ("Remove quiets.",
             UnBan.help[1],
-            UnBan.help[2].replace('bans', 'mutes').replace(UnBan.command, command))
-    completion = '%(chanop_nicks)|%(chanop_unmute_mask)|%*'
+            UnBan.help[2].replace('bans', 'quiets').replace(UnBan.command, command))
+    completion = '%(chanop_nicks)|%(chanop_unquiet_mask)|%*'
     _mode = 'q'
-    masklist = mutelist
+    masklist = quietlist
 
 
 class BanKick(Ban, Kick):
@@ -1717,9 +1719,9 @@ class Mode(CommandNeedsOp):
 
 class ShowBans(CommandChanop):
     command = 'olist'
-    help = ("Lists bans or mutes in cache.",
-            "(bans|mutes) [channel]","")
-    completion = 'bans|mutes %(irc_server_channels)'
+    help = ("Lists bans or quiets in cache.",
+            "(bans|quiets) [channel]","")
+    completion = 'bans|quiets %(irc_server_channels)'
     showbuffer = ''
 
     def parse_args(self, data, buffer, args):
@@ -1732,7 +1734,7 @@ class ShowBans(CommandChanop):
             raise ValueError, 'missing argument'
         if type == 'bans':
             self.mode = 'b'
-        elif type == 'mutes':
+        elif type == 'quiets':
             self.mode = 'q'
         else:
             raise ValueError, 'incorrect argument'
@@ -2156,7 +2158,7 @@ global waiting_for_completion, cmpl_mask_args
 waiting_for_completion = None
 cmpl_mask_args = None
 def unban_mask_cmpl(mode, completion_item, buffer, completion):
-    """Completion for applied banmasks, for commands like /ounban /ounmute"""
+    """Completion for applied banmasks, for commands like /ounban /ounquiet"""
     masklist = maskModes[mode]
     key = irc_buffer(buffer)
     if not key:
@@ -2200,7 +2202,7 @@ def cmpl_unban(buffer, server, channel, completion, masklist, input, pattern):
 
 @cmpl_get_irc_users
 def ban_mask_cmpl(users, data, completion_item, buffer, completion):
-    """Completion for banmasks, for commands like /oban /omute"""
+    """Completion for banmasks, for commands like /oban /oquiet"""
     input = weechat.buffer_get_string(buffer, 'input')
     if input[-1] == ' ':
         # no pattern, return
@@ -2304,9 +2306,9 @@ if __name__ == '__main__' and import_ok and \
     Ban().hook()
     UnBan().hook()
     ShowBans().hook()
-    # hook /omute /ounmute
-    Mute().hook()
-    UnMute().hook()
+    # hook /oquiet /ounquiet
+    Quiet().hook()
+    UnQuiet().hook()
     # hook /otopic /omode /ovoive /odevoice
     Topic().hook()
     Mode().hook()
@@ -2321,7 +2323,7 @@ if __name__ == '__main__' and import_ok and \
             'update_chanop_watchlist_cb', '')
 
     weechat.hook_completion('chanop_unban_mask', 'channelmode b masks', 'unban_mask_cmpl', 'b')
-    weechat.hook_completion('chanop_unmute_mask', 'channelmode q masks', 'unban_mask_cmpl', 'q')
+    weechat.hook_completion('chanop_unquiet_mask', 'channelmode q masks', 'unban_mask_cmpl', 'q')
     weechat.hook_completion('chanop_ban_mask', 'completes partial mask', 'ban_mask_cmpl', '')
     weechat.hook_completion('chanop_nicks', 'nicks in cache', 'nicks_cmpl', '')
     weechat.hook_completion('chanop_users', 'usernames in cache', 'users_cmpl', '')
