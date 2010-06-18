@@ -1932,6 +1932,7 @@ def supported_modes(server, mode=None):
     """
     Checks if server supports a specific chanmode. If <mode> is None returns all modes supported
     by server."""
+    supported = set('bq')
     if server in isupport:
         modes = isupport[server].get('CHANMODES')
         if modes:
@@ -1940,6 +1941,8 @@ def supported_modes(server, mode=None):
         modes = weechat.config_get_plugin('chanmodes.%s' %server)
     if not modes:
         modes = 'b'
+    else:
+        modes = ''.join(supported.intersection(modes))
     if mode:
         return mode in modes
     else:
@@ -2024,7 +2027,7 @@ def mode_cb(server, channel, nick, data, signal, signal_data):
                 action = c
             elif c in servermodes:
                 L.append((action, c, args.pop(0)))
-            elif c in 'ov': # these have an argument, drop it
+            elif c in 'oveI': # these have an argument, drop it
                 del args[0]
         affected_users = []
         # update masklist
