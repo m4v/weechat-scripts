@@ -295,8 +295,8 @@ def debug_time_stamp(f):
         f(s, prefix=prefix, **kwargs)
     return setprefix
 
-@debug_time_stamp
-def debug(s, prefix='', buffer_name=None):
+#@debug_time_stamp
+def debug(s, prefix='', buffer_name=None, args=()):
     """Debug msg"""
     if not weechat.config_get_plugin('debug'): return
     if not buffer_name:
@@ -306,7 +306,22 @@ def debug(s, prefix='', buffer_name=None):
         buffer = weechat.buffer_new(buffer_name, '', '', '', '')
         weechat.buffer_set(buffer, 'nicklist', '0')
         weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
-    weechat.prnt(buffer, '%s\t%s' %(prefix, s))
+    weechat.prnt(buffer, '%s\t%s' %(prefix, s %args))
+
+def debug_print_cache(data, buffer, args):
+    """Prints stuff stored in cache"""
+    _debug = lambda s: debug(s, buffer_name = 'chanop_cache')
+    for key, users in userCache.iteritems():
+        _debug('\n')
+        for nick, host in users.iteritems():
+            _debug('%s.%s %10s => %s' %(key[0], key[1], nick, host))
+        _debug('--')
+        for nick, when in users._temp_users.iteritems():
+            _debug('%s.%s %10s => %s' %(key[0], key[1], nick, when))
+    _debug('\n')
+    for pattern in _regexp_cache:
+        _debug('regexp for %s' %pattern)
+    return WEECHAT_RC_OK
 
 
 ##############
@@ -707,9 +722,9 @@ class Message(object):
         else:
             command = self.command
         debug('sending: %r' %command)
-        if weechat.config_get_plugin('debug') == '2':
-            # don't run commands
-            return True
+        #if weechat.config_get_plugin('debug') == '2':
+        #    # don't run commands
+        #    return True
         weechat.command(self.buffer, command)
         return True
 
@@ -750,8 +765,8 @@ class CommandQueue(object):
             hook_timeout = weechat.hook_timer(60*1000, 0, 1, 'queue_timeout_cb', data)
 
             Message.__call__(self)
-            if weechat.config_get_plugin('debug') == '2':
-                return True
+            #if weechat.config_get_plugin('debug') == '2':
+            #    return True
             return False # returning false interrupts the queue execution
 
         def __str__(self):
@@ -768,7 +783,7 @@ class CommandQueue(object):
         def __call__(self):
             if not self.channel or not weechat.info_get('irc_is_channel', self.channel):
                 return True
-            debug('adding %s to the watchlist' %self.channel)
+            #debug('adding %s to the watchlist' %self.channel)
             config = 'watchlist.%s' %self.server
             channels = CaseInsensibleSet(get_config_list(config))
             if self.channel not in channels:
@@ -907,7 +922,7 @@ class ServerChannelDict(CaseInsensibleDict):
     def purge(self):
         for key in self.keys():
             if not is_tracked(*key):
-                debug('Removing %s.%s list, not in watchlist. (%s items)' %(key[0], key[1], len(self[key])))
+                debug('Removing %s.%s list, not in watchlist. (%s items)', args=(key[0], key[1], len(self[key])))
                 del self[key]
         for data in self.itervalues():
             data.purge()
@@ -1052,7 +1067,7 @@ maskModes = { 'b':banlist, 'q': mutelist }
 
 def masklist_add_cb(data, modifier, modifier_data, string):
     """Adds ban to the list."""
-    debug(string)
+    #debug(string)
     channel, banmask, op, date = string.split()[-4:]
     server = modifier_data
     serv, chan, mode = MaskCache.hook_queue[0]
@@ -1065,7 +1080,7 @@ def masklist_add_cb(data, modifier, modifier_data, string):
 
 def masklist_end_cb(data, modifier, modifier_data, string):
     """Ban listing over."""
-    debug(string)
+    #debug(string)
     global waiting_for_completion, cmpl_mask_args
     server, channel, mode = MaskCache.hook_queue.pop(0)
     masklist = maskModes[mode]
@@ -1943,7 +1958,7 @@ def isupport_cb(data, signal, signal_data):
     data = data.split()
     server = signal.partition(',')[0]
     d = {}
-    debug(data)
+    #debug(data)
     for s in data:
         if '=' in s:
             k, v = s.split('=')
@@ -1985,7 +2000,7 @@ def print_affected_users(buffer, *hostmasks):
 @signal_parse
 def mode_cb(server, channel, nick, data, signal, signal_data):
     """Keep the banmask list updated when somebody changes modes"""
-    debug('MODE: %s %s' %(signal, signal_data))
+    #debug('MODE: %s %s' %(signal, signal_data))
     #:m4v!~znc@unaffiliated/m4v MODE #test -bo+v asd!*@* m4v dude
     pair = signal_data.split(' ', 4)[3:]
     if len(pair) != 2:
@@ -2021,7 +2036,7 @@ def mode_cb(server, channel, nick, data, signal, signal_data):
         # update masklist
         for action, mode, mask in L:
             masklist = maskModes[mode]
-            debug('MODE: %s%s %s %s' %(action, mode, mask, op))
+            #debug('MODE: %s%s %s %s' %(action, mode, mask, op))
             if action == '+':
                 hostmask = hostmask_pattern_match(mask, userCache.get(*key).itervalues())
                 if hostmask:
@@ -2333,22 +2348,7 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_timer(30*60*1000, 0, 0, 'garbage_collector_cb', '')
 
     # debug commands
-    def debug_print_cache(data, buffer, args):
-        """Prints stuff stored in cache"""
-        _debug = lambda s: debug(s, buffer_name = 'chanop_cache')
-        for key, users in userCache.iteritems():
-            _debug('\n')
-            for nick, host in users.iteritems():
-                _debug('%s.%s %10s => %s' %(key[0], key[1], nick, host))
-            _debug('--')
-            for nick, when in users._temp_users.iteritems():
-                _debug('%s.%s %10s => %s' %(key[0], key[1], nick, when))
-        _debug('\n')
-        for pattern in _regexp_cache:
-            _debug('regexp for %s' %pattern)
-        return WEECHAT_RC_OK
-
-    weechat.hook_command('ocaches', '', '', '', '', 'debug_print_cache', '')
+    #weechat.hook_command('ocaches', '', '', '', '', 'debug_print_cache', '')
 
 
 
