@@ -532,6 +532,18 @@ def get_host(s):
         return s[n+1:m]
     return s[n+1:]
 
+def is_channel(s):
+    return weechat.info_get('irc_is_channel', s)
+
+def is_nick(s):
+    return weechat.info_get('irc_is_nick', s)
+
+# for old WeeChat
+_nickchars = re.escape(r'[]\`_^{|}')
+_nickRe = re.compile(r'^[A-Za-z%s][-0-9A-Za-z%s]*$' %(_nickchars, _nickchars))
+def _is_nick(s):
+    return bool(_nickRe.match(s))
+
 def hex_to_ip(s):
     """
     '7f000001' => '127.0.0.1'"""
@@ -1826,9 +1838,11 @@ class ShowBans(CommandChanop):
 
 class Sync(Command):
     help = ("Synchronises channel masks and users",
-            "",#"[-tracked]",
+            "[channel]",
             """
-            Updates channel masks and user cache for current channel.
+            Updates channel masks and user cache.
+            
+            channel: channel to sync, if not given uses current channel.
             """)
 #              -tracked: Updates for all tracked channels instead of current.
 #                        Tracked channels are those listed on config option
@@ -1836,7 +1850,7 @@ class Sync(Command):
 #            """ %{'name':SCRIPT_NAME})
 
     command = 'osync'
-#    completion = '-tracked'
+    completion = '%(irc_channels)'
 
     def execute(self):
         def sync(server, channel):
@@ -1845,7 +1859,10 @@ class Sync(Command):
                 maskModes[mode].fetch(server, channel)
 
         server = weechat.buffer_get_string(self.buffer, 'localvar_server')
-        channel = weechat.buffer_get_string(self.buffer, 'localvar_channel')
+        if self.args and is_channel(self.args):
+            channel = self.args
+        else:
+            channel = weechat.buffer_get_string(self.buffer, 'localvar_channel')
         sync(server, channel)
         return
         # this is disabled for now.
@@ -2277,14 +2294,12 @@ if __name__ == '__main__' and import_ok and \
                                    color_delimiter,
                                    color_reset)
 
-    # valid nick, use weechat's api if available
+    # check weechat versions
     version = weechat.info_get('version_number', '')
     if not version or version < 0x30200:
-        _nickchars = re.escape(r'[]\`_^{|}')
-        _nickRe = re.compile(r'^[A-Za-z%s][-0-9A-Za-z%s]*$' %(_nickchars, _nickchars))
-        is_nick = lambda s: bool(_nickRe.match(s))
-    else:
-        is_nick = lambda s: weechat.info_get('irc_is_nick', s)
+        is_nick = _is_nick
+    #if not version or version < 0x30300:
+    #    pass
 
     for opt, val in settings.iteritems():
         if not weechat.config_is_set_plugin(opt):
