@@ -1041,7 +1041,7 @@ class MaskCache(ServerChannelDict):
     def fetch(self, server, channel):
         """Fetches masks for a given server and channel."""
         # check modes
-        if not supported_modes(server, self.mode):
+        if self.mode not in supported_modes(server):
             return
         # check the last time we did this
         try:
@@ -1544,7 +1544,7 @@ class Ban(CommandNeedsOp):
             self.queue_clear()
 
     def mode_is_supported(self):
-        return supported_modes(self.server, self._mode)
+        return self._mode in supported_modes(self.server)
 
     def ban(self, *banmasks, **kwargs):
         if self._mode != 'b' and not self.mode_is_supported():
@@ -1553,18 +1553,7 @@ class Ban(CommandNeedsOp):
             mode = 'b'
         else:
             mode = self._mode
-        # TODO refactor this
-        if self.server in isupport:
-            max_modes = isupport[server].get('MODES')
-        else:
-            max_modes = weechat.config_get_plugin('modes.%s' %self.server)
-        try:
-            max_modes = int(max_modes)
-        except TypeError:
-            max_modes = 1
-        if not max_modes:
-            # max_modes can't be 0
-            max_modes = 1
+        max_modes = supported_maxmodes(self.server)
         for n in range(0, len(banmasks), max_modes):
             slice = banmasks[n:n+max_modes]
             bans = ' '.join(slice)
@@ -1929,7 +1918,7 @@ def server_init(server):
                 for mode in supported_modes(server):
                     maskModes[mode].fetch(server, channel)
     config = 'chanmodes.%s' %server
-    if not weechat.config_get_plugin(config):
+    if not weechat_isupport_api and not weechat.config_get_plugin(config):
         # request server version.
         buffer = weechat.buffer_search('irc', 'server.%s' %server)
         weechat.command(buffer, '/VERSION')
@@ -1944,29 +1933,43 @@ def connected_cb(data, signal, signal_data):
     server_init(signal_data)
     return WEECHAT_RC_OK
 
-# TODO refactor this
-def supported_modes(server, mode=None):
-    """
-    Checks if server supports a specific chanmode. If <mode> is None returns all modes supported
-    by server."""
-    supported = set('bq')
-    if server in isupport:
-        modes = isupport[server].get('CHANMODES')
-        if modes:
-            modes = modes[0] # we only want the modes that use hostmasks
-    else:
-        modes = weechat.config_get_plugin('chanmodes.%s' %server)
-    if not modes:
-        modes = 'b'
-    else:
-        modes = ''.join(supported.intersection(modes))
-    if mode:
-        return mode in modes
-    else:
-        return modes
-
 isupport = {}
+def get_isupport_value(server, feature):
+    try:
+        return isupport[server][feature]
+    except KeyError:
+        if server not in isupport:
+            isupport[server] = {}
+        v = weechat.info_get('irc_server_isupport_value', '%s,%s' %(server, feature.upper()))
+        if v == '': # old api
+            v = weechat.config_get_plugin('%s.%s' %(feature, server))
+        isupport[server][feature] = v
+        return v
+
+_supported_modes = set('bq') # the script only support b,q masks
+def supported_modes(server):
+    """Returns modes supported by server."""
+    modes = get_isupport_value(server, 'chanmodes')
+    if not modes:
+        return 'b'
+    modes = modes.partition(',')[0] # we only care about the first type
+    modes = ''.join(_supported_modes.intersection(modes))
+    return modes
+
+def supported_maxmodes(server):
+    """Returns max modes number supported by server."""
+    max = get_isupport_value(server, 'modes')
+    try:
+        max = int(max)
+        if max <= 0:
+            max = 1
+    except ValueError:
+        return 1
+    return max
+
 def isupport_cb(data, signal, signal_data):
+    """Callback used for catch isupport msg if current version of WeeChat doesn't
+    support it."""
     data = signal_data.split(' ', 3)[-1]
     data, s, s = data.rpartition(' :')
     data = data.split()
@@ -1978,18 +1981,12 @@ def isupport_cb(data, signal, signal_data):
             k, v = s.split('=')
         else:
             k, v = s, True
-        if k == 'CHANMODES':
-            v = tuple(v.split(','))
-            config = 'chanmodes.%s' %server
-            weechat.config_set_plugin(config, v[0])
-        elif k == 'MODES':
-            config = 'modes.%s' %server
+        k = k.lower()
+        if k in ('chanmodes', 'modes'):
+            config = '%s.%s' %(k, server)
             weechat.config_set_plugin(config, v)
-        d[k] = v
-    if server in isupport:
-        isupport[server].update(d)
-    else:
-        isupport[server] = d
+            d[k] = v
+    isupport[server] = d
     return WEECHAT_RC_OK
 
 def print_affected_users(buffer, *hostmasks):
@@ -2014,17 +2011,21 @@ def print_affected_users(buffer, *hostmasks):
 @signal_parse
 def mode_cb(server, channel, nick, data, signal, signal_data):
     """Keep the banmask list updated when somebody changes modes"""
-    #debug('MODE: %s %s' %(signal, signal_data))
+    debug('MODE: %s %s' %(signal, signal_data))
     #:m4v!~znc@unaffiliated/m4v MODE #test -bo+v asd!*@* m4v dude
     pair = signal_data.split(' ', 4)[3:]
     if len(pair) != 2:
         # modes without argument, not interesting.
         return WEECHAT_RC_OK
     modes, args = pair
-    # check for some modes, such as +oov which aren't interesting for us
+
+    # check if there are interesting modes
+    servermodes = supported_modes(server)
     s = modes.translate(None, '+-') # remove + and -
-    if set(s).issubset(set('ovjl')): # TODO should use isupport here
+    if not set(servermodes).intersection(s):
         return WEECHAT_RC_OK
+
+    # check if channel is in watchlist
     key = (server, channel)
     allkeys = CaseInsensibleSet()
     for masklist in maskModes.itervalues():
@@ -2032,36 +2033,46 @@ def mode_cb(server, channel, nick, data, signal, signal_data):
         if key not in allkeys and not is_tracked(server, channel):
             # from a channel we're not tracking
             return WEECHAT_RC_OK
-    servermodes = set(supported_modes(server))
-    if servermodes.intersection(set(modes)):
-        # split chanmodes into tuples like ('+', 'b', 'asd!*@*')
-        action = ''
-        L = []
-        args = args.split()
-        op = signal_data[1:signal_data.find(' ')]
-        for c in modes:
-            if c in '+-':
-                action = c
-            elif c in servermodes:
-                L.append((action, c, args.pop(0)))
-            elif c in 'oveI': # these have an argument, drop it
-                del args[0]
-        affected_users = []
-        # update masklist
-        for action, mode, mask in L:
-            masklist = maskModes[mode]
-            #debug('MODE: %s%s %s %s' %(action, mode, mask, op))
-            if action == '+':
-                hostmask = hostmask_pattern_match(mask, userCache.get(*key).itervalues())
-                if hostmask:
-                    affected_users.extend(hostmask)
-                masklist.add(server, channel, mask, operator=op, hostmask=hostmask)
-            elif action == '-':
-                masklist.remove(server, channel, mask)
-        if affected_users and get_config_boolean('display_affected',
-                get_function=get_config_specific, server=server, channel=channel):
-            buffer = weechat.buffer_search('irc', '%s.%s' %key)
-            print_affected_users(buffer, *set(affected_users))
+
+    # split chanmodes into tuples like ('+', 'b', 'asd!*@*')
+    action = ''
+    chanmode_list = []
+    args = args.split()
+    op = signal_data[1:signal_data.find(' ')]
+    chanmodes = get_isupport_value(server, 'chanmodes').split(',')
+    # user channel mode, such as +v or +o, get only the letters and not the prefixes
+    prefix = get_isupport_value(server, 'prefix')
+    usermodes = ''.join(map(lambda c: c.isalpha() and c or '', prefix))
+    # modes not supported by script, like +e +I
+    notsupported = chanmodes[0].translate(None, servermodes)
+    modes_with_args = chanmodes[1] + usermodes + notsupported
+    modes_with_args_when_set = chanmodes[2]
+    for c in modes:
+        if c in '+-':
+            action = c
+        elif c in servermodes:
+            chanmode_list.append((action, c, args.pop(0)))
+        elif c in modes_with_args:
+            del args[0]
+        elif c in modes_with_args_when_set and action == '+':
+            del args[0]
+
+    affected_users = []
+    # update masklist
+    for action, mode, mask in chanmode_list:
+        masklist = maskModes[mode]
+        debug('MODE: %s%s %s %s' %(action, mode, mask, op))
+        if action == '+':
+            hostmask = hostmask_pattern_match(mask, userCache.get(*key).itervalues())
+            if hostmask:
+                affected_users.extend(hostmask)
+            masklist.add(server, channel, mask, operator=op, hostmask=hostmask)
+        elif action == '-':
+            masklist.remove(server, channel, mask)
+    if affected_users and get_config_boolean('display_affected',
+            get_function=get_config_specific, server=server, channel=channel):
+        buffer = weechat.buffer_search('irc', '%s.%s' %key)
+        print_affected_users(buffer, *set(affected_users))
     return WEECHAT_RC_OK
 
 
@@ -2294,12 +2305,16 @@ if __name__ == '__main__' and import_ok and \
                                    color_delimiter,
                                    color_reset)
 
-    # check weechat versions
+    # check weechat version
     version = weechat.info_get('version_number', '')
-    if not version or version < 0x30200:
-        is_nick = _is_nick
-    #if not version or version < 0x30300:
-    #    pass
+    #debug(version)
+    if version:
+        version = int(version)
+    else:
+        version = 0
+    if version < 0x30200:
+        is_nick = _is_nick # prior to 0.3.2 didn't have irc_is_nick info
+    weechat_isupport_api = version >= 0x30300 # prior to 0.3.3 didn't have support for ISUPPORT msg
 
     for opt, val in settings.iteritems():
         if not weechat.config_is_set_plugin(opt):
@@ -2352,7 +2367,8 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_signal('*,irc_in_quit', 'quit_cb', '')
     weechat.hook_signal('*,irc_in_nick', 'nick_cb', '')
     weechat.hook_signal('*,irc_in_mode', 'mode_cb', '')
-    weechat.hook_signal('*,irc_in_005', 'isupport_cb', '')
+    if not weechat_isupport_api:
+        weechat.hook_signal('*,irc_in_005', 'isupport_cb', '')
 
     weechat.hook_signal('irc_server_connected', 'connected_cb', '')
 
