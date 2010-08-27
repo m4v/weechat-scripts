@@ -260,14 +260,13 @@ import getopt, re
 from time import time
 now = lambda : int(time())
 
-
 ################
 ### Messages ###
 
-def error(s, prefix=None, buffer='', trace=''):
+script_nick = SCRIPT_NAME
+def error(s, buffer='', trace=''):
     """Error msg"""
-    prefix = prefix or script_nick
-    weechat.prnt(buffer, '%s%s %s' %(weechat.prefix('error'), prefix, s))
+    weechat.prnt(buffer, '%s%s %s' %(weechat.prefix('error'), script_nick, s))
     if weechat.config_get_plugin('debug'):
         if not trace:
             import traceback
@@ -275,47 +274,9 @@ def error(s, prefix=None, buffer='', trace=''):
                 trace = traceback.format_exc()
         not trace or weechat.prnt('', trace)
 
-def say(s, prefix=None, buffer=''):
+def say(s, buffer=''):
     """normal msg"""
-    prefix = prefix or script_nick
-    weechat.prnt(buffer, '%s\t%s' %(prefix, s))
-
-### Debug functions and decorators ###
-def debug_time_stamp(f):
-    start = now()
-    def setprefix(s, prefix='', **kwargs):
-        if not prefix:
-            prefix = now() - start
-        f(s, prefix=prefix, **kwargs)
-    return setprefix
-
-#@debug_time_stamp
-def debug(s, prefix='', buffer_name=None, args=()):
-    """Debug msg"""
-    if not weechat.config_get_plugin('debug'): return
-    if not buffer_name:
-        buffer_name = SCRIPT_NAME + '_debug'
-    buffer = weechat.buffer_search('python', buffer_name)
-    if not buffer:
-        buffer = weechat.buffer_new(buffer_name, '', '', '', '')
-        weechat.buffer_set(buffer, 'nicklist', '0')
-        weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
-    weechat.prnt(buffer, '%s\t%s' %(prefix, s %args))
-
-def debug_print_cache(data, buffer, args):
-    """Prints stuff stored in cache"""
-    _debug = lambda s: debug(s, buffer_name = 'chanop_cache')
-    for key, users in userCache.iteritems():
-        _debug('\n')
-        for nick, host in users.iteritems():
-            _debug('%s.%s %10s => %s' %(key[0], key[1], nick, host))
-        _debug('--')
-        for nick, when in users._temp_users.iteritems():
-            _debug('%s.%s %10s => %s' %(key[0], key[1], nick, when))
-    _debug('\n')
-    for pattern in _regexp_cache:
-        _debug('regexp for %s' %pattern)
-    return WEECHAT_RC_OK
+    weechat.prnt(buffer, '%s\t%s' %(script_nick, s))
 
 
 ##############
@@ -574,6 +535,8 @@ class Infolist(object):
 
     fields = {
             'name':'string',
+            'option_name':'string',
+            'value':'string',
             'host':'string',
             'flags':'integer',
             'is_connected':'integer',
@@ -727,7 +690,7 @@ class Message(object):
                command = '/wait %s %s' %(self.wait, self.command)
         else:
             command = self.command
-        debug('sending: %r' %command)
+        debug('sending: %r', command)
         #if weechat.config_get_plugin('debug') == '2':
         #    # don't run commands
         #    return True
@@ -917,6 +880,30 @@ class CaseInsensibleSet(set):
         set.remove(self, self.normalize(v))
 
 
+class ChannelWatchlistSet(CaseInsensibleSet):
+    _updated = False
+    def __contains__(self, v):
+        if not self._updated:
+            self.__updateFromConfig()
+        return CaseInsensibleSet.__contains__(self, v)
+
+    def __updateFromConfig(self):
+        self._updated = True
+        infolist = Infolist('option', 'plugins.var.python.%s.watchlist.*' %SCRIPT_NAME)
+        n = len('python.%s.watchlist.' %SCRIPT_NAME)
+        while infolist.next():
+            name = infolist['option_name']
+            value = infolist['value']
+            server = name[n:]
+            if value:
+                channels = value.split(',')
+            else:
+                channels = []
+            self.update([ (server, channel) for channel in channels ])
+
+chanopChannels = ChannelWatchlistSet()
+
+
 class ServerChannelDict(CaseInsensibleDict):
     def getKeys(self, server, item=None):
         """Return a list of keys that match server and has item if given"""
@@ -927,8 +914,8 @@ class ServerChannelDict(CaseInsensibleDict):
 
     def purge(self):
         for key in self.keys():
-            if not is_tracked(*key):
-                debug('Removing %s.%s list, not in watchlist. (%s items)', args=(key[0], key[1], len(self[key])))
+            if key not in chanopChannels:
+                debug('Removing %s.%s list, not in watchlist. (%s items)', key[0], key[1], len(self[key]))
                 del self[key]
         for data in self.itervalues():
             data.purge()
@@ -1140,25 +1127,24 @@ class UserList(CaseInsensibleDict):
 
 
 class UserCache(ServerChannelDict):
-    def generate_cache(self, server, channel):
+    def generateCache(self, key):
         users = UserList()
         try:
-            infolist = Infolist('irc_nick', '%s,%s' %(server, channel))
+            infolist = Infolist('irc_nick', '%s,%s' %key)
         except:
             #error('Not in a IRC channel.') # better to fail silently
             return users
         while infolist.next():
             name = infolist['name']
             users[name] = '%s!%s' %(name, infolist['host'])
-        self[(server, channel)] = users
+        self[key] = users
         return users
 
-    def get(self, server, channel):
-        """Return list of users"""
+    def __getitem__(self, k):
         try:
-            return self[server, channel]
+            return ServerChannelDict.__getitem__(self, k)
         except KeyError:
-            return self.generate_cache(server, channel)
+            return self.generateCache(k)
 
     def hostFromNick(self, nick, server, channel=None):
         """Returns hostmask of nick, searching in all or one channel"""
@@ -1197,7 +1183,7 @@ class CommandChanop(Command):
         self.server = weechat.buffer_get_string(self.buffer, 'localvar_server')
         self.channel = weechat.buffer_get_string(self.buffer, 'localvar_channel')
         self.nick = weechat.info_get('irc_nick', self.server)
-        self.users = userCache.get(self.server, self.channel)
+        self.users = userCache[(self.server, self.channel)]
 
     def replace_vars(self, s):
         try:
@@ -1843,7 +1829,7 @@ class Sync(Command):
 
     def execute(self):
         def sync(server, channel):
-            userCache.generate_cache(server, channel)
+            userCache.generateCache((server, channel))
             for mode in supported_modes(server):
                 maskModes[mode].fetch(server, channel)
 
@@ -1879,8 +1865,14 @@ class Sync(Command):
 def signal_parse(f):
     def decorator(data, signal, signal_data):
         server = signal[:signal.find(',')]
-        channel = signal_data.split()[2].lstrip(':')
+        channel = signal_data.split()[2]
+        if channel[0] == ':':
+            channel = channel[1:]
+        if (server, channel) not in chanopChannels:
+            # signals only processed for channels in watchlist
+            return WEECHAT_RC_OK
         nick = get_nick(signal_data)
+        debug('%s %s %s', data, signal, signal_data)
         return f(server, channel, nick, data, signal, signal_data)
     decorator.func_name = f.func_name
     return decorator
@@ -1891,14 +1883,13 @@ def signal_parse_no_channel(f):
         nick = get_nick(signal_data)
         keys = userCache.getKeys(server, nick)
         if keys:
+            debug('%s %s %s', data, signal, signal_data)
             return f(keys, nick, data, signal, signal_data)
         return WEECHAT_RC_OK
     decorator.func_name = f.func_name
     return decorator
 
 # Init stuff
-global chanop_channels
-chanop_channels = CaseInsensibleSet()
 def chanop_init():
     servers = Infolist('irc_server')
     while servers.next():
@@ -1907,26 +1898,20 @@ def chanop_init():
             server_init(server)
 
 def server_init(server):
-    global chanop_channels
-    channels = get_config_list('watchlist.%s' %server)
-    if channels:
-        chanop_channels.update([ (server, channel) for channel in channels ])
-        fetch_bans = False#get_config_boolean('fetch_bans')
-        for channel in channels:
-            userCache.generate_cache(server, channel)
-            if fetch_bans:
-                for mode in supported_modes(server):
-                    maskModes[mode].fetch(server, channel)
+#    channels = get_config_list('watchlist.%s' %server)
+#    if channels:
+#        chanop_channels.update([ (server, channel) for channel in channels ])
+#        fetch_bans = False#get_config_boolean('fetch_bans')
+#        for channel in channels:
+#            userCache.generate_cache(server, channel)
+#            if fetch_bans:
+#                for mode in supported_modes(server):
+#                    maskModes[mode].fetch(server, channel)
     config = 'chanmodes.%s' %server
     if not weechat_isupport_api and not weechat.config_get_plugin(config):
         # request server version.
         buffer = weechat.buffer_search('irc', 'server.%s' %server)
         weechat.command(buffer, '/VERSION')
-
-def is_tracked(server, channel):
-    """Check if a server channel pair is in watchlist"""
-    global chanop_channels
-    return (server, channel) in chanop_channels
 
 def connected_cb(data, signal, signal_data):
     #debug('CONNECTED: %s' %' '.join((data, signal, signal_data)))
@@ -2011,7 +1996,6 @@ def print_affected_users(buffer, *hostmasks):
 @signal_parse
 def mode_cb(server, channel, nick, data, signal, signal_data):
     """Keep the banmask list updated when somebody changes modes"""
-    debug('MODE: %s %s' %(signal, signal_data))
     #:m4v!~znc@unaffiliated/m4v MODE #test -bo+v asd!*@* m4v dude
     pair = signal_data.split(' ', 4)[3:]
     if len(pair) != 2:
@@ -2030,7 +2014,7 @@ def mode_cb(server, channel, nick, data, signal, signal_data):
     allkeys = CaseInsensibleSet()
     for masklist in maskModes.itervalues():
         allkeys.update(masklist)
-        if key not in allkeys and not is_tracked(server, channel):
+        if key not in allkeys and key not in chanopChannels:
             # from a channel we're not tracking
             return WEECHAT_RC_OK
 
@@ -2061,9 +2045,9 @@ def mode_cb(server, channel, nick, data, signal, signal_data):
     # update masklist
     for action, mode, mask in chanmode_list:
         masklist = maskModes[mode]
-        debug('MODE: %s%s %s %s' %(action, mode, mask, op))
+        debug('MODE: %s%s %s %s', action, mode, mask, op)
         if action == '+':
-            hostmask = hostmask_pattern_match(mask, userCache.get(*key).itervalues())
+            hostmask = hostmask_pattern_match(mask, userCache[key].itervalues())
             if hostmask:
                 affected_users.extend(hostmask)
             masklist.add(server, channel, mask, operator=op, hostmask=hostmask)
@@ -2079,25 +2063,20 @@ def mode_cb(server, channel, nick, data, signal, signal_data):
 # User cache
 @signal_parse
 def join_cb(server, channel, nick, data, signal, signal_data):
-    #debug('JOIN: %s' %' '.join((server, channel, nick, data, signal, signal_data)))
     key = (server, channel)
     if nick == weechat.info_get('irc_nick', server):
-        if is_tracked(server, channel):
-            # joined a channel that we should track
-            userCache.generate_cache(server, channel)
-            #for mode in supported_modes(server):
-            #    maskModes[mode].fetch(server, channel)
-    elif key in userCache:
+        # joined a channel that we should track
+        userCache.generateCache(key)
+        #for mode in supported_modes(server):
+        #    maskModes[mode].fetch(server, channel)
+    else:
         hostname = signal_data[1:signal_data.find(' ')]
         userCache[key][nick] = hostname
     return WEECHAT_RC_OK
 
 @signal_parse
 def part_cb(server, channel, nick, data, signal, signal_data):
-    #debug('PART: %s' %' '.join((server, channel, nick, data, signal, signal_data)))
-    key = (server, channel)
-    if key in userCache:
-        userCache[key].remove(nick)
+    userCache[(server, channel)].remove(nick)
     return WEECHAT_RC_OK
 
 @signal_parse_no_channel
@@ -2108,7 +2087,6 @@ def quit_cb(keys, nick, data, signal, signal_data):
 
 @signal_parse_no_channel
 def nick_cb(keys, nick, data, signal, signal_data):
-    #debug('NICK: %s' %' '.join((data, signal, signal_data)))
     hostname = signal_data[1:signal_data.find(' ')]
     newnick = signal_data[signal_data.rfind(' ')+2:]
     newhostname = '%s!%s' %(newnick, hostname[hostname.find('!')+1:])
@@ -2159,16 +2137,15 @@ def enable_multi_kick_conf_cb(data, config, value):
 
 def update_chanop_watchlist_cb(data, config, value):
     #debug('CONFIG: %s' %(' '.join((data, config, value))))
-    global chanop_channels
     server = config[config.rfind('.')+1:]
     if value:
         L = value.split(',')
     else:
         L = []
-    for serv, chan in list(chanop_channels):
+    for serv, chan in list(chanopChannels):
         if serv == server:
-            chanop_channels.remove((serv, chan))
-    chanop_channels.update([ (server, channel) for channel in L ])
+            chanopChannels.remove((serv, chan))
+    chanopChannels.update([ (server, channel) for channel in L ])
     return WEECHAT_RC_OK
 
 
@@ -2181,7 +2158,7 @@ def cmpl_get_irc_users(f):
         key = irc_buffer(buffer)
         if not key:
             return WEECHAT_RC_OK
-        users = userCache.get(*key)
+        users = userCache[key]
         return f(users, data, completion_item, buffer, completion)
     return decorator
 
@@ -2290,6 +2267,9 @@ if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
         SCRIPT_DESC, '', ''):
 
+    from weeutils import DebugBuffer
+    debug = DebugBuffer('chanop_debugging', globals())
+
     # colors
     color_delimiter = weechat.color('chat_delimiters')
     color_chat_nick = weechat.color('chat_nick')
@@ -2320,7 +2300,7 @@ if __name__ == '__main__' and import_ok and \
         if not weechat.config_is_set_plugin(opt):
             weechat.config_set_plugin(opt, val)
 
-    chanop_init()
+    #chanop_init()
 
     # hook /oop /odeop
     Op().hook()
@@ -2374,10 +2354,6 @@ if __name__ == '__main__' and import_ok and \
 
     # run our cleaner function every 30 min.
     weechat.hook_timer(30*60*1000, 0, 0, 'garbage_collector_cb', '')
-
-    # debug commands
-    #weechat.hook_command('ocaches', '', '', '', '', 'debug_print_cache', '')
-
 
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
