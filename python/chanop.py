@@ -941,6 +941,7 @@ class MaskObject(object):
 class MaskList(CaseInsensibleDict):
     def __init__(self):
         self.fetch_time = 0
+        self.synced = False
 
     def __setitem__(self, mask, d):
         if mask in self:
@@ -975,14 +976,11 @@ class MaskCache(ServerChannelDict):
     def __init__(self, mode='b'):
         self.mode = mode
 
-    def initList(self, server, channel):
-        self[server, channel] = MaskList()
-
     def add(self, server, channel, mask, **kwargs):
         """Adds a ban to (server, channel) banlist."""
         key = (server, channel)
         if key not in self:
-            self.initList(*key)
+            self[key] = MaskList()
         self[key][mask] = kwargs
 
     def remove(self, server, channel, mask=None):#, hostmask=None):
@@ -1051,7 +1049,7 @@ class MaskCache(ServerChannelDict):
             self.hook_fetch.append(weechat.hook_modifier('irc_in_367', 'masklist_add_cb', ''))
             self.hook_fetch.append(weechat.hook_modifier('irc_in_368', 'masklist_end_cb', ''))
         cmd = '/wait %s /mode %s %s' %(len(self.hook_queue), channel, self.mode)
-        say('Fetching %s masks (+%s channelmode).' %(channel, self.mode))
+        #say('Fetching %s masks (+%s channelmode).' %(channel, self.mode))
         weechat.command(buffer, cmd)
 
 banlist = MaskCache('b')
@@ -1079,21 +1077,20 @@ def masklist_end_cb(data, modifier, modifier_data, string):
     masklist = maskModes[mode]
     key = (server, channel)
     if key not in masklist:
-        masklist.initList(*key)
-    else:
-        say('Got %s +%s masks (%s masks).' %(channel, mode, len(masklist[key])))
+        masklist[key] = MaskList()
+    masklist[key].synced = True
     if not MaskCache.hook_queue:
         # fetch is over
         for hook in MaskCache.hook_fetch:
             weechat.unhook(hook)
         del MaskCache.hook_fetch[:]
-        #say('Got all channel masks.')
     # check if there is a completion waiting for the fetch to finish
     if waiting_for_completion:
         buffer, completion  = waiting_for_completion
-        input = weechat.buffer_get_string(buffer, 'input')
-        input = input[:input.find(' fetching masks')] # remove this bit
-        weechat.buffer_set(buffer, 'input', '%s ' %input)
+        if masklist[key]:
+            say('Got %s +%s masks.' %(len(masklist[key]), mode), buffer)
+        else:
+            say('No +%s masks found.' %mode, buffer)
         cmpl_unban(buffer, server, channel, completion, masklist, input, cmpl_mask_args)
         waiting_for_completion = cmpl_mask_args = None
     return ''
@@ -1558,7 +1555,7 @@ class UnBan(Ban):
             Example:
             /%(cmd)s *192.168*<tab>
               Will autocomplete with all bans matching *192.168*""" %{'cmd':command})
-    completion = '%(chanop_nicks)|%(chanop_unban_mask)|%*'
+    completion = '%(chanop_unban_mask)|%(chanop_nicks)|%*'
     _prefix = '-'
 
     def search_masks(self, s):
@@ -1605,7 +1602,7 @@ class UnQuiet(UnBan):
     help = ("Remove quiets.",
             UnBan.help[1],
             UnBan.help[2].replace('bans', 'quiets').replace(UnBan.command, command))
-    completion = '%(chanop_nicks)|%(chanop_unquiet_mask)|%*'
+    completion = '%(chanop_unquiet_mask)|%(chanop_nicks)|%*'
     _mode = 'q'
     masklist = quietlist
 
@@ -2172,21 +2169,22 @@ def unban_mask_cmpl(mode, completion_item, buffer, completion):
     if not key:
         return WEECHAT_RC_OK
     server, channel = key
-    if key not in masklist:
+    if key not in masklist or not masklist[key].synced:
         # do completion in masklist_end_cb function
         global waiting_for_completion, cmpl_mask_args
         input = weechat.buffer_get_string(buffer, 'input')
+        debug(input)
         if input[-1] != ' ':
             input, _, cmpl_mask_args = input.rpartition(' ')
         input = input.strip()
         masklist.fetch(server, channel)
-        # check if it's fetching a banlist or nothing (due to fetching too soon)
-        if MaskCache.hook_fetch:
+        # check if it's fetching a banlist
+        if MaskCache.hook_fetch and not waiting_for_completion:
             waiting_for_completion = (buffer, completion)
-            if 'fetching masks' not in input:
-                weechat.buffer_set(buffer, 'input', '%s fetching masks...' %input)
+            say('Fetching +%s masks in %s, please wait...' %(mode, channel), buffer)
         else:
-            weechat.buffer_set(buffer, 'input', '%s nothing.' %input)
+            # fetch in progress, do nothing.
+            pass
     else:
         # mask list updated, do completion
         input = weechat.buffer_get_string(buffer, 'input')
@@ -2200,13 +2198,14 @@ def cmpl_unban(buffer, server, channel, completion, masklist, input, pattern):
     if pattern:
         L = masklist.search(pattern, server, channel)
         if L:
-            weechat.buffer_set(buffer, 'input', '%s %s ' %(input, ' '.join(L)))
+            input = '%s %s ' %(input, ' '.join(L))
+            weechat.buffer_set(buffer, 'input', input)
+            weechat.buffer_set(buffer, 'input_pos', str(len(input)))
             return
     elif not masks:
-            weechat.buffer_set(buffer, 'input', '%s nothing.' %input)
-            return
+        return
     for mask in masks.iterkeys():
-        weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_SORT)
+        weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_END)
 
 @cmpl_get_irc_users
 def ban_mask_cmpl(users, data, completion_item, buffer, completion):
