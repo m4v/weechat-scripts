@@ -1340,15 +1340,20 @@ def deop_callback(buffer, count):
 
 # Chanop commands
 class Op(CommandChanop):
-    help = ("Request operator privileges.", "",
+    help = ("Request operator privileges or give it to users.", "[nick [nick ... ]]",
             """
             The command used for ask op is defined globally in
             plugins.var.python.%(name)s.op_command, it can be defined per server
             or per channel in:
               plugins.var.python.%(name)s.op_command.servername
-              plugins.var.python.%(name)s.op_command.servername.#channelname"""\
+              plugins.var.python.%(name)s.op_command.servername.#channelname
+              
+            After using this command, you won't be autodeoped."""\
                       %{'name':SCRIPT_NAME})
     command = 'oop'
+    completion = '%(nicks)'
+
+    _prefix = '+'
 
     def execute(self):
         op = self.get_op()
@@ -1358,14 +1363,45 @@ class Op(CommandChanop):
             hook = deop_hook[self.buffer]
             weechat.unhook(hook)
             del deop_hook[self.buffer]
+        if self.args:
+            nicks = []
+            for nick in self.args.split():
+                if is_nick(nick) and not self.has_op(nick):
+                    nicks.append(nick)
+            self.op(nicks)
+
+    def op(self, nicks):
+        max_modes = supported_maxmodes(self.server)
+        for n in range(0, len(nicks), max_modes):
+            slice = nicks[n:n+max_modes]
+            cmd = '/mode %s%s %s' %(self._prefix, 'o'*len(slice), ' '.join(slice))
+            self.queue(cmd)
 
 
-class Deop(CommandChanop):
-    help = ("Drops operator privileges.", "", "")
+class Deop(CommandNeedsOp, Op):
+    help = ("Removes operator privileges from yourself or users.", "[nick [nick ... ]]", "")
     command = 'odeop'
+    completion = '%(nicks)'
+    
+    _prefix = '-'
+
+    def parse_args(self, data, buffer, args):
+        """Override CommandNeedsOp.parse_args so it doesn't do /help if no args are supplied."""
+        CommandChanop.parse_args(self, data, buffer, args)
 
     def execute(self):
-        self.drop_op()
+        if self.args:
+            nicks = []
+            for nick in self.args.split():
+                if is_nick(nick) and self.has_op(nick):
+                    nicks.append(nick)
+            if nicks:
+                CommandNeedsOp.execute(self, nicks)
+        else:
+            self.drop_op()
+
+    def execute_op(self, nicks):
+        self.op(nicks)
 
 
 class Kick(CommandNeedsOp):
