@@ -1836,23 +1836,6 @@ class Sync(Command):
         else:
             channel = weechat.buffer_get_string(self.buffer, 'localvar_channel')
         sync(server, channel)
-        return
-        # this is disabled for now.
-        if self.args == '-tracked':
-            infolist = Infolist('irc_server')
-            items = []
-            while infolist.next():
-                if infolist['is_connected']:
-                    server = infolist['name']
-                    channels = get_config_list('watchlist.%s' %server)
-                    if channels:
-                        items.extend([(server, channel) for channel in channels ])
-            for item in items:
-                sync(*item)
-        elif self.args:
-            error('Wrong arguments for %s' %self.command)
-        else:
-            pass
 
 
 ########################
@@ -1886,35 +1869,6 @@ def signal_parse_no_channel(f):
     decorator.func_name = f.func_name
     return decorator
 
-# Init stuff
-def chanop_init():
-    servers = Infolist('irc_server')
-    while servers.next():
-        if servers['is_connected']:
-            server = servers['name']
-            server_init(server)
-
-def server_init(server):
-#    channels = get_config_list('watchlist.%s' %server)
-#    if channels:
-#        chanop_channels.update([ (server, channel) for channel in channels ])
-#        fetch_bans = False#get_config_boolean('fetch_bans')
-#        for channel in channels:
-#            userCache.generate_cache(server, channel)
-#            if fetch_bans:
-#                for mode in supported_modes(server):
-#                    maskModes[mode].fetch(server, channel)
-    config = 'chanmodes.%s' %server
-    if not weechat_isupport_api and not weechat.config_get_plugin(config):
-        # request server version.
-        buffer = weechat.buffer_search('irc', 'server.%s' %server)
-        weechat.command(buffer, '/VERSION')
-
-def connected_cb(data, signal, signal_data):
-    #debug('CONNECTED: %s' %' '.join((data, signal, signal_data)))
-    server_init(signal_data)
-    return WEECHAT_RC_OK
-
 isupport = {}
 def get_isupport_value(server, feature):
     try:
@@ -1923,9 +1877,18 @@ def get_isupport_value(server, feature):
         if server not in isupport:
             isupport[server] = {}
         v = weechat.info_get('irc_server_isupport_value', '%s,%s' %(server, feature.upper()))
-        if v == '': # old api
-            v = weechat.config_get_plugin('%s.%s' %(feature, server))
-        isupport[server][feature] = v
+        if v:
+            isupport[server][feature] = v
+        else:
+            # old api
+            v = weechat.config_get_plugin('isupport.%s.%s' %(server, feature))
+            if not v:
+                # lets do a /VERSION (it should be done only once.)
+                if '/VERSION' in isupport[server]:
+                    return ''
+                buffer = weechat.buffer_search('irc', 'server.%s' %server)
+                weechat.command(buffer, '/VERSION')
+                isupport[server]['/VERSION'] = True
         return v
 
 _supported_modes = set('bq') # the script only support b,q masks
@@ -1964,8 +1927,8 @@ def isupport_cb(data, signal, signal_data):
         else:
             k, v = s, True
         k = k.lower()
-        if k in ('chanmodes', 'modes'):
-            config = '%s.%s' %(k, server)
+        if k in ('chanmodes', 'modes', 'prefix'):
+            config = 'isupport.%s.%s' %(server, k)
             weechat.config_set_plugin(config, v)
             d[k] = v
     isupport[server] = d
@@ -2015,15 +1978,21 @@ def mode_cb(server, channel, nick, data, signal, signal_data):
             # from a channel we're not tracking
             return WEECHAT_RC_OK
 
+    prefix = get_isupport_value(server, 'prefix')
+    chanmodes = get_isupport_value(server, 'chanmodes')
+    if not prefix or not chanmodes:
+        # we don't have ISUPPORT data, can't continue
+        return WEECHAT_RC_OK
+
     # split chanmodes into tuples like ('+', 'b', 'asd!*@*')
     action = ''
     chanmode_list = []
     args = args.split()
     op = signal_data[1:signal_data.find(' ')]
-    chanmodes = get_isupport_value(server, 'chanmodes').split(',')
+    
     # user channel mode, such as +v or +o, get only the letters and not the prefixes
-    prefix = get_isupport_value(server, 'prefix')
     usermodes = ''.join(map(lambda c: c.isalpha() and c or '', prefix))
+    chanmodes = chanmodes.split(',')
     # modes not supported by script, like +e +I
     notsupported = chanmodes[0].translate(None, servermodes)
     modes_with_args = chanmodes[1] + usermodes + notsupported
@@ -2285,21 +2254,19 @@ if __name__ == '__main__' and import_ok and \
                                    color_reset)
 
     # check weechat version
-    version = weechat.info_get('version_number', '')
-    #debug(version)
-    if version:
-        version = int(version)
-    else:
+    try:
+        version = int(weechat.info_get('version_number', ''))
+    except:
         version = 0
+    #debug(version)
     if version < 0x30200:
         is_nick = _is_nick # prior to 0.3.2 didn't have irc_is_nick info
-    weechat_isupport_api = version >= 0x30300 # prior to 0.3.3 didn't have support for ISUPPORT msg
+    if version < 0x30300: # prior to 0.3.3 didn't have support for ISUPPORT msg
+        weechat.hook_signal('*,irc_in_005', 'isupport_cb', '')
 
     for opt, val in settings.iteritems():
         if not weechat.config_is_set_plugin(opt):
             weechat.config_set_plugin(opt, val)
-
-    #chanop_init()
 
     # hook /oop /odeop
     Op().hook()
@@ -2346,10 +2313,6 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_signal('*,irc_in_quit', 'quit_cb', '')
     weechat.hook_signal('*,irc_in_nick', 'nick_cb', '')
     weechat.hook_signal('*,irc_in_mode', 'mode_cb', '')
-    if not weechat_isupport_api:
-        weechat.hook_signal('*,irc_in_005', 'isupport_cb', '')
-
-    weechat.hook_signal('irc_server_connected', 'connected_cb', '')
 
     # run our cleaner function every 30 min.
     weechat.hook_timer(30*60*1000, 0, 0, 'garbage_collector_cb', '')
