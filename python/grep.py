@@ -375,6 +375,7 @@ def get_config_log_filter():
 
 def get_home():
     home = weechat.config_string(weechat.config_get('logger.file.path'))
+    home = path.expanduser(home)
     return home.replace('%h', weechat.info_get('weechat_dir', ''))
 
 def strip_home(s, dir=''):
