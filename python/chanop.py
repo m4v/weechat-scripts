@@ -172,18 +172,19 @@
 #     Same as chanop_nicks, but with the host part of the hostmask.
 #
 #
-#  TODO
-#  * use dedicated config file like in urlgrab.py
-#   (win free config value validation by WeeChat)
-#  * ban expire time
-#  * save ban.mask and ban.hostmask across reloads
-#  * allow to override quiet command (for quiet with ChanServ)
-#  * rewrite the queue message stuff
-#  * multiple-channel ban (?)
-#  * freenode:
-#   - support for bans with channel forward
-#   - support for extbans (?)
-#  * Refactor /oop /odeop /ovoice /odevoice commands, should use MODE.
+#   TODO
+#   * use dedicated config file like in urlgrab.py
+#    (win free config value validation by WeeChat)
+#   * ban expire time
+#   * save ban.mask and ban.hostmask across reloads
+#   * allow to override quiet command (for quiet with ChanServ)
+#   * rewrite the queue message stuff
+#   * multiple-channel ban (?)
+#   * freenode:
+#    - support for bans with channel forward
+#    - support for extbans (?)
+#   * Refactor /oop /odeop /ovoice /odevoice commands, should use MODE.
+#   * Update banmask cache with /ban list
 #
 #
 #   History:
@@ -1069,7 +1070,7 @@ def masklist_add_cb(data, modifier, modifier_data, string):
 def masklist_end_cb(data, modifier, modifier_data, string):
     """Ban listing over."""
     #debug(string)
-    global waiting_for_completion, cmpl_mask_args
+    global waiting_for_completion
     server, channel, mode = MaskCache.hook_queue.pop(0)
     masklist = maskModes[mode]
     key = (server, channel)
@@ -1088,8 +1089,8 @@ def masklist_end_cb(data, modifier, modifier_data, string):
             say('Got %s +%s masks.' %(len(masklist[key]), mode), buffer)
         else:
             say('No +%s masks found.' %mode, buffer)
-        cmpl_unban(buffer, server, channel, completion, masklist, input, cmpl_mask_args)
-        waiting_for_completion = cmpl_mask_args = None
+        cmpl_unban(buffer, server, channel, completion, masklist)
+        waiting_for_completion = None
     return ''
 
 
@@ -1143,7 +1144,7 @@ class UserCache(ServerChannelDict):
     def hostFromNick(self, nick, server, channel=None):
         """Returns hostmask of nick, searching in all or one channel"""
         if channel:
-            users = self.get(server, channel)
+            users = self[(server, channel)]
             if nick in users:
                 return users[nick]
         for key in self.getKeys(server, nick):
@@ -1885,7 +1886,7 @@ def signal_parse(f):
             # signals only processed for channels in watchlist
             return WEECHAT_RC_OK
         nick = get_nick(signal_data)
-        debug('%s %s %s', data, signal, signal_data)
+        #debug('%s %s %s', data, signal, signal_data)
         return f(server, channel, nick, data, signal, signal_data)
     decorator.func_name = f.func_name
     return decorator
@@ -1896,7 +1897,7 @@ def signal_parse_no_channel(f):
         nick = get_nick(signal_data)
         keys = userCache.getKeys(server, nick)
         if keys:
-            debug('%s %s %s', data, signal, signal_data)
+            #debug('%s %s %s', data, signal, signal_data)
             return f(keys, nick, data, signal, signal_data)
         return WEECHAT_RC_OK
     decorator.func_name = f.func_name
@@ -2044,7 +2045,7 @@ def mode_cb(server, channel, nick, data, signal, signal_data):
     # update masklist
     for action, mode, mask in chanmode_list:
         masklist = maskModes[mode]
-        debug('MODE: %s%s %s %s', action, mode, mask, op)
+        #debug('MODE: %s%s %s %s', action, mode, mask, op)
         if action == '+':
             hostmask = hostmask_pattern_match(mask, userCache[key].itervalues())
             if hostmask:
@@ -2106,7 +2107,7 @@ def garbage_collector_cb(data, counter):
 
     userCache.purge()
 
-    if weechat.config_get_plugin('debug'):
+    if True:
         user_count = sum(map(len, userCache.itervalues()))
         temp_user_count = sum(map(lambda x: len(x._temp_users), userCache.itervalues()))
         for mode, masklist in maskModes.iteritems():
@@ -2173,12 +2174,7 @@ def unban_mask_cmpl(mode, completion_item, buffer, completion):
     server, channel = key
     if key not in masklist or not masklist[key].synced:
         # do completion in masklist_end_cb function
-        global waiting_for_completion, cmpl_mask_args
-        input = weechat.buffer_get_string(buffer, 'input')
-        debug(input)
-        if input[-1] != ' ':
-            input, _, cmpl_mask_args = input.rpartition(' ')
-        input = input.strip()
+        global waiting_for_completion
         masklist.fetch(server, channel)
         # check if it's fetching a banlist
         if MaskCache.hook_fetch and not waiting_for_completion:
@@ -2189,14 +2185,18 @@ def unban_mask_cmpl(mode, completion_item, buffer, completion):
             pass
     else:
         # mask list updated, do completion
-        input = weechat.buffer_get_string(buffer, 'input')
-        input, _, pattern = input.rpartition(' ')
-        cmpl_unban(buffer, server, channel, completion, masklist, input, pattern)
+        cmpl_unban(buffer, server, channel, completion, masklist)
     return WEECHAT_RC_OK
 
-def cmpl_unban(buffer, server, channel, completion, masklist, input, pattern):
+def cmpl_unban(buffer, server, channel, completion, masklist):
     """Updates input with masks if pattern given or feeds the completion list"""
     masks = masklist[server, channel]
+    input = weechat.buffer_get_string(buffer, 'input')
+    if input[-1] != ' ':
+        input, _, pattern = input.rpartition(' ')
+    else:
+        pattern = ''
+    #debug('%s %s', repr(input), repr(pattern))
     if pattern:
         L = masklist.search(pattern, server, channel)
         if L:
