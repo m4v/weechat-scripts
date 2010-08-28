@@ -66,13 +66,6 @@
 #
 #
 #   History:
-#   2010-04-08
-#   version 0.6.6: bug fixes
-#   * use WEECHAT_LIST_POS_END in log file completion, makes completion faster
-#   * disable bytecode if using python 2.6
-#   * use single quotes in command string
-#   * fix bug that could change buffer's title when using /grep stop
-#
 #   2010-01-24
 #   version 0.6.5: disable bytecode is a 2.6 feature, instead, resort to delete the bytecode manually
 #
@@ -153,7 +146,7 @@
 #
 ###
 
-import sys, getopt, time, os, re
+import sys, getopt, time, os
 path = os.path
 stat = os.stat
 
@@ -166,7 +159,7 @@ except ImportError:
 
 SCRIPT_NAME    = "grep"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.7-dev"
+SCRIPT_VERSION = "0.6.5"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Search in buffers and logs"
 SCRIPT_COMMAND = "grep"
@@ -291,11 +284,7 @@ class linesList(list):
 
 ### Misc functions ###
 now = time.time
-def get_size(f):
-    try:
-        return stat(f).st_size
-    except OSError:
-        return 0
+get_size = lambda x: stat(x).st_size
 
 sizeDict = {0:'b', 1:'KiB', 2:'MiB', 3:'GiB', 4:'TiB'}
 def human_readable_size(size):
@@ -375,7 +364,6 @@ def get_config_log_filter():
 
 def get_home():
     home = weechat.config_string(weechat.config_get('logger.file.path'))
-    home = path.expanduser(home)
     return home.replace('%h', weechat.info_get('weechat_dir', ''))
 
 def strip_home(s, dir=''):
@@ -389,17 +377,16 @@ def strip_home(s, dir=''):
     return s
 
 ### Messages ###
-def debug(s, prefix='', buffer=None, buffer_name=None):
+def debug(s, prefix='debug'):
     """Debug msg"""
     if not weechat.config_get_plugin('debug'): return
-    if not buffer_name:
-        buffer_name = SCRIPT_NAME + '_debug'
-    if buffer is None:
-        buffer = weechat.buffer_search('python', buffer_name)
-        if not buffer:
-            buffer = weechat.buffer_new(buffer_name, '', '', '', '')
-            weechat.buffer_set(buffer, 'nicklist', '0')
-            weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
+    buffer_name = 'DEBUG_' + SCRIPT_NAME
+    buffer = weechat.buffer_search('python', buffer_name)
+    if not buffer:
+        buffer = weechat.buffer_new(buffer_name, '', '', '', '')
+        weechat.buffer_set(buffer, 'nicklist', '0')
+        weechat.buffer_set(buffer, 'time_for_each_line', '0')
+        weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
     weechat.prnt(buffer, '%s\t%s' %(prefix, s))
 
 def error(s, prefix=None, buffer='', trace=''):
@@ -449,9 +436,9 @@ def dir_list(dir, filter_list=(), filter_excludes=True, include_dir=False):
     join = path.join
     def walk_path():
         for basedir, subdirs, files in walk(dir):
-            #if include_dir:
-            #    subdirs = map(lambda s : join(s, ''), subdirs)
-            #    files.extend(subdirs)
+            if include_dir: 
+                subdirs = map(lambda s : join(s, ''), subdirs)
+                files.extend(subdirs)
             files_path = map(lambda f : join(basedir, f), files)
             files_path = [ file for file in files_path if not filter(file) ]
             extend(files_path)
@@ -643,11 +630,7 @@ def grep_file(file, head, tail, after_context, before_context, count, regexp, hi
     else:
         check = lambda s: check_string(s, regexp, hilight, exact)
     
-    try:
-        file_object = open(file, 'r')
-    except IOError:
-        # file doesn't exist
-        return lines
+    file_object = open(file, 'r')
     if tail or before_context:
         # for these options, I need to seek in the file, but is slower and uses a good deal of
         # memory if the log is too big, so we do this *only* for these options.
@@ -895,53 +878,51 @@ def show_matching_lines():
         else:
             # we hook a process so grepping runs in background.
             #debug('on background')
-            global hook_file_grep, script_path, bytecode
+            global hook_file_grep, script_path
             timeout = 1000*60*10 # 10 min
 
-            quotify = lambda s: '"%s"' %s
-            files_string = ', '.join(map(quotify, search_in_files))
+            def shell_escapes(s):
+                # nicks might have ` characters, must be escaped
+                if '`' in s:
+                    s = s.replace('`', '\`')
+                return "'%s'" %s
+
+            files_string = ', '.join(map(shell_escapes, search_in_files))
 
             cmd = grep_proccess_cmd %dict(logs=files_string, head=head, pattern=pattern, tail=tail,
                     hilight=hilight, after_context=after_context, before_context=before_context,
                     exact=exact, matchcase=matchcase, home_dir=home_dir, script_path=script_path,
-                    count=count, invert=invert, bytecode=bytecode)
+                    count=count, invert=invert)
 
             #debug(cmd)
             hook_file_grep = weechat.hook_process(cmd, timeout, 'grep_file_callback', '')
-            global pattern_tmpl
             if hook_file_grep:
-                buffer_create("Searching for '%s' in %s worth of data..." %(pattern_tmpl,
+                buffer_create("Searching for '%s' in %s worth of data..." %(pattern,
                     human_readable_size(size)))
     else:
         buffer_update()
 
 # defined here for commodity
-grep_proccess_cmd = """python -%(bytecode)sc '
-import sys, cPickle, cStringIO
-sys.path.append("%(script_path)s") # add WeeChat script dir so we can import grep
+grep_proccess_cmd = """python -c "
+import sys, cPickle
+sys.path.append('%(script_path)s') # add WeeChat script dir so we can import grep
 from grep import make_regexp, grep_file, strip_home
 logs = (%(logs)s, )
 try:
-    regexp = make_regexp("%(pattern)s", %(matchcase)s)
+    regexp = make_regexp('%(pattern)s', %(matchcase)s)
     d = {}
     for log in logs:
-        log_name = strip_home(log, "%(home_dir)s")
+        log_name = strip_home(log, '%(home_dir)s')
         lines = grep_file(log, %(head)s, %(tail)s, %(after_context)s, %(before_context)s,
-        %(count)s, regexp, "%(hilight)s", %(exact)s, %(invert)s)
+        %(count)s, regexp, '%(hilight)s', %(exact)s, %(invert)s)
         d[log_name] = lines
-    s_out = cStringIO.StringIO()
-    cPickle.dump(d, s_out, 0)
-    s_out.flush()
-    print s_out.getvalue()
-#debug
-    import tempfile
-    fd = tempfile.NamedTemporaryFile(delete=False)
-    print >> sys.stderr, fd.name
-    s_out.flush()
-    fd.write(s_out.getvalue())
+    fdname = '/tmp/grep_search.tmp'
+    fd = open(fdname, 'wb')
+    print fdname
+    cPickle.dump(d, fd, -1)
     fd.close()
 except Exception, e:
-    print >> sys.stderr, e'
+    print >> sys.stderr, e"
 """
 
 grep_stdout = grep_stderr = ''
@@ -962,25 +943,26 @@ def grep_file_callback(data, command, rc, stdout, stderr):
             weechat.buffer_set(grep_buffer, 'title', title)
 
         try:
-            if grep_stderr and not grep_stdout:
+            if grep_stderr:
                 error(grep_stderr)
                 set_buffer_error()
-            if grep_stdout:
-                #debug(repr(grep_stdout))
-                try:
-                    import cPickle, cStringIO
-                    s_in = cStringIO.StringIO(grep_stdout)
-                    d = cPickle.load(s_in)
-                    matched_lines.update(d)
-                except ValueError, e:
-                    error(grep_stderr)
-                    error(e, trace=repr(s_in.getvalue()[-300:]))
-                    set_buffer_error()
-                except Exception, e:
-                    error(e)
-                    set_buffer_error()
-                else:
-                    buffer_update()
+            elif grep_stdout:
+                #debug(grep_stdout)
+                file = grep_stdout.strip()
+                if file:
+                    try:
+                        import cPickle, os
+                        #debug(file)
+                        fd = open(file, 'rb')
+                        d = cPickle.load(fd)
+                        matched_lines.update(d)
+                        fd.close()
+                    except Exception, e:
+                        error(e)
+                        set_buffer_error()
+                    else:
+                        os.remove(file)
+                        buffer_update()
         finally:
             grep_stdout = grep_stderr = ''
             hook_file_grep = None
@@ -1001,8 +983,7 @@ def get_grep_file_status():
 ### Grep buffer ###
 def buffer_update():
     """Updates our buffer with new lines."""
-    global matched_lines, pattern_tmpl, count, hilight, invert
-    pattern = pattern_tmpl
+    global matched_lines, pattern, count, hilight, invert
     time_grep = now()
 
     buffer = buffer_create()
@@ -1233,19 +1214,19 @@ def buffer_input(data, buffer, input_data):
 def cmd_init():
     """Resets global vars."""
     global home_dir, cache_dir, nick_dict
-    global pattern_tmpl, pattern, matchcase, number, count, exact, hilight, invert
+    global pattern, matchcase, number, count, exact, hilight, invert
     global tail, head, after_context, before_context
     hilight = ''
     head = tail = after_context = before_context = invert = False
     matchcase = count = exact = False
-    pattern_tmpl = pattern = number = None
+    pattern = number = None
     home_dir = get_home()
     cache_dir = {} # for avoid walking the dir tree more than once per command
     nick_dict = {} # nick cache for don't calculate nick color every time
 
-def cmd_grep_parsing(args, buffer=''):
+def cmd_grep_parsing(args):
     """Parses args for /grep and grep input buffer."""
-    global pattern_tmpl, pattern, matchcase, number, count, exact, hilight, invert
+    global pattern, matchcase, number, count, exact, hilight, invert
     global tail, head, after_context, before_context
     global log_name, buffer_name, only_buffers, all
     opts, args = getopt.gnu_getopt(args.split(), 'cmHeahtivn:bA:B:C:o', ['count', 'matchcase', 'hilight',
@@ -1259,28 +1240,10 @@ def cmd_grep_parsing(args, buffer=''):
         elif args[0] == 'buffer':
             del args[0]
             buffer_name = args.pop(0)
-    
-    def tmplReplacer(match):
-        """This function will replace templates with regexps"""
-        s = match.groups()[0]
-        debug(s)
-        tmpl_args = s.split()
-        tmpl_key, _, tmpl_args = s.partition(' ')
-        try:
-            template = templates[tmpl_key]
-            if callable(template):
-                return template(buffer, tmpl_args)
-            else:
-                return template
-        except:
-            return '%%{%s}' %s
-
     args = ' '.join(args) # join pattern for keep spaces
     if args:
-        pattern_tmpl = args  
-        pattern = _tmplRe.sub(tmplReplacer, args)
-        debug('Using regexp: %s' %pattern, buffer='', prefix=script_nick)
-    if not pattern:
+        pattern = args
+    elif not pattern:
         raise Exception, 'No pattern for grep the logs.'
 
     def positive_number(opt, val):
@@ -1362,7 +1325,7 @@ def cmd_grep_stop(buffer, args):
             say(s, buffer=buffer)
             grep_buffer = weechat.buffer_search('python', SCRIPT_NAME)
             if grep_buffer:
-                weechat.buffer_set(grep_buffer, 'title', s)
+                weechat.buffer_set(buffer, 'title', s)
             del matched_lines
         else:
             say(get_grep_file_status(), buffer=buffer)
@@ -1387,7 +1350,7 @@ def cmd_grep(data, buffer, args):
 
     # parse
     try:
-        cmd_grep_parsing(args, buffer=buffer)
+        cmd_grep_parsing(args)
     except Exception, e:
         error('Argument error, %s' %e)
         return WEECHAT_RC_OK
@@ -1493,109 +1456,15 @@ def cmd_logs(data, buffer, args):
 def completion_log_files(data, completion_item, buffer, completion):
     #debug('completion: %s' %', '.join((data, completion_item, buffer, completion)))
     global home_dir
-    l = len(home_dir)
-    completion_list_add = weechat.hook_completion_list_add
-    WEECHAT_LIST_POS_END = weechat.WEECHAT_LIST_POS_END
-    for log in dir_list(home_dir):
-        completion_list_add(completion, log[l:], 0, WEECHAT_LIST_POS_END)
+    for log in dir_list(home_dir, include_dir=True):
+        weechat.hook_completion_list_add(completion, strip_home(log), 0, weechat.WEECHAT_LIST_POS_SORT)
     return WEECHAT_RC_OK
 
 def completion_grep_args(data, completion_item, buffer, completion):
     for arg in ('count', 'all', 'matchcase', 'hilight', 'exact', 'head', 'tail', 'number', 'buffer',
             'after-context', 'before-context', 'context', 'invert', 'only-match'):
         weechat.hook_completion_list_add(completion, '--' + arg, 0, weechat.WEECHAT_LIST_POS_SORT)
-    for tmpl in templates:
-        weechat.hook_completion_list_add(completion, '%{' + tmpl, 0, weechat.WEECHAT_LIST_POS_SORT)
     return WEECHAT_RC_OK
-
-
-### Templates ###
-_tmplRe = re.compile(r'%\{(\w+.*?)\}')
-def make_url_regexp(buffer, args):
-    debug('make url: %s' %args)
-    if args:
-        words = r'(?:%s)' %'|'.join(map(re.escape, args.split()))
-        return r'((?:\w+://|www\.)[^\s]*%s[^\s]*(?:/[^\])>\s]*)?)' %words
-    else:
-        return url
-
-def make_host_regexp(buffer, args):
-    debug('make host: %s' %str(args))
-    if not buffer:
-        return ''
-    regexp = []
-    for nick in args.split():
-        host = get_host(buffer, nick)
-        if not host: continue
-        host = host[host.find('@')+1:]
-        regexp.append(re.escape(host))
-    if regexp:
-        return '|'.join(regexp)
-    return ''
-
-def make_username_regexp(buffer, args):
-    debug('make username: %s' %str(args))
-    if not buffer:
-        return ''
-    regexp = []
-    for nick in args.split():
-        user = get_username(buffer, nick)
-        if not user: continue
-        regexp.append(re.escape(user))
-    if regexp:
-        return '|'.join(regexp)
-    return ''
-
-def make_simple_regexp(buffer, pattern):
-    s = '^'
-    for c in pattern:
-        if c == '*':
-            s += '.*'
-        elif c == '?':
-            s += '.'
-        else:
-            s += re.escape(c)
-    s += '$'
-    return s
-
-def get_username(buffer, nick):
-    host = get_host(buffer, nick)
-    if host:
-        return host[:host.find('@')]
-    return ''
-
-def get_host(buffer, nick):
-    channel = weechat.buffer_get_string(buffer, 'localvar_channel')
-    server = weechat.buffer_get_string(buffer, 'localvar_server')
-    nick_infolist = weechat.infolist_get('irc_nick', '', '%s,%s' %(server, channel))
-    if not nick_infolist:
-        return None
-    host = None
-    nick = nick.lower()
-    while weechat.infolist_next(nick_infolist):
-        if nick == weechat.infolist_string(nick_infolist, 'name').lower():
-            host = weechat.infolist_string(nick_infolist, 'host')
-            break
-    weechat.infolist_free(nick_infolist)
-    debug('get_host %s' %host)
-    return host
-
-# stolen from urlbar
-octet = r'(?:2(?:[0-4]\d|5[0-5])|1\d\d|\d{1,2})'
-ipAddr = r'%s(?:\.%s){3}' % (octet, octet)
-label = r'[0-9a-z][-0-9a-z]*[0-9a-z]?'
-domain = r'%s(?:\.%s)*\.[a-z][-0-9a-z]*[a-z]?' % (label, label)
-url = r'(\w+://(?:%s|%s)(?::\d+)?(?:/[^\])>\s]*)?)' % (domain, ipAddr)
-
-templates = {
-        'ip'   :ipAddr,
-        'url'  :make_url_regexp,
-        'host' :make_host_regexp,
-        'user' :make_username_regexp,
-        'escape': lambda b, s: re.escape(s),
-        'simple': make_simple_regexp,
-        'domain': domain,
-        }
 
 ### Main ###
 def delete_bytecode():
@@ -1615,15 +1484,6 @@ if __name__ == '__main__' and import_ok and \
     script_path = path.dirname(__file__)
     sys.path.append(script_path)
     delete_bytecode()
-
-    # check python version
-    import sys
-    global bytecode
-    if sys.version_info > (2, 6):
-        bytecode = 'B'
-    else:
-        bytecode = ''
-
 
     weechat.hook_command(SCRIPT_COMMAND, cmd_grep.__doc__,
             "[log <file> | buffer <name> | stop] [-a|--all] [-b|--buffer] [-c|--count] [-m|--matchcase] "
@@ -1662,7 +1522,7 @@ Python regular expression syntax:
 """,
             # completion template
             "buffer %(buffers_names) %(grep_arguments)|%*"
-            "||log %(grep_log_files) %(grep_arguments)|%*"
+            "||log %(grep_log_files)|%(filename) %(grep_arguments)|%*"
             "||stop"
             "||%(grep_arguments)|%*",
             'cmd_grep' ,'')
