@@ -28,7 +28,7 @@
 #   Settings:
 #   * plugins.var.python.automode.enabled:
 #     Self-explanatory, disables/enables automodes.
-#     Valid values: 'on', 'off'
+#     Valid values: 'on', 'off' Default: 'on'
 #
 ###
 
@@ -56,37 +56,9 @@ settings = { 'enabled': 'on' }
 ### Messages ###
 
 script_nick = SCRIPT_NAME
-def debug(s, *args, **kwargs):
-    """Debug msg"""
-    if not weechat.config_get_plugin('debug'): return
-    if 'buffer' not in kwargs:
-        buffer_name = 'DEBUG_' + SCRIPT_NAME
-        buffer = weechat.buffer_search('python', buffer_name)
-        if not buffer:
-            buffer = weechat.buffer_new(buffer_name, '', '', '', '')
-            weechat.buffer_set(buffer, 'nicklist', '0')
-            weechat.buffer_set(buffer, 'time_for_each_line', '0')
-            weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
-    else:
-        buffer = kwargs['buffer']
-    if 'prefix' in kwargs:
-        prefix = kwargs['prefix']
-    else:
-        prefix = ''
-    if not isinstance(s, basestring):
-        s = str(s)
-    s = '%s\t%s' %(prefix, s %args)
-    weechat.prnt(buffer, s)
-
-def error(s, buffer='', trace=''):
+def error(s, buffer=''):
     """Error msg"""
     weechat.prnt(buffer, '%s%s %s' %(weechat.prefix('error'), script_nick, s))
-    if weechat.config_get_plugin('debug'):
-        if not trace:
-            import traceback
-            if traceback.sys.exc_type:
-                trace = traceback.format_exc()
-        not trace or weechat.prnt('', trace)
 
 def say(s, buffer=''):
     """normal msg"""
@@ -141,7 +113,6 @@ def get_userhost(server, channel, nick):
     finally:
         weechat.infolist_free(infolist)
 
-
 def get_patterns_in_config(filter):
     d = {}
     infolist = weechat.infolist_get('option', '', 'plugins.var.python.%s.%s' %(SCRIPT_NAME, filter))
@@ -172,7 +143,7 @@ def get_patterns_in_config(filter):
 ### Script callbacks ###
 
 def join_cb(data, signal, signal_data):
-    debug('JOIN: %s %s', signal, signal_data)
+    #debug('JOIN: %s %s', signal, signal_data)
     prefix, _, channel = signal_data.split()
     prefix = prefix[1:].lower()
     if channel[0] == ':':
@@ -182,18 +153,18 @@ def join_cb(data, signal, signal_data):
     for type in ('op', 'halfop', 'voice'):
         list = get_config_list('.'.join((server, channel, type)))
         for pattern in list:
-            debug('checking: %r - %r', prefix, pattern)
+            #debug('checking: %r - %r', prefix, pattern)
             if fnmatch(prefix, pattern):
                 buffer = weechat.buffer_search('irc', '%s.%s' %(server, channel))
                 weechat.command(buffer, '/%s %s' %(type, prefix[:prefix.find('!')]))
                 return WEECHAT_RC_OK
     return WEECHAT_RC_OK
 
+
 def command(data, buffer, args):
     global join_hook
     if not args:
-        weechat.command('', '/help %s' %SCRIPT_NAME)
-        return WEECHAT_RC_OK
+        args = 'list'
             
     channel = weechat.buffer_get_string(buffer, 'localvar_channel')
     server = weechat.buffer_get_string(buffer, 'localvar_server')
@@ -263,9 +234,14 @@ def command(data, buffer, args):
             else:
                 filter = '*'
                 buffer = '' # print in core buffer
+            if not get_config_boolean('enabled'):
+                say('Automodes currently disabled.', buffer)
             patterns = get_patterns_in_config(filter)
             if not patterns:
-                say('No automodes set.', buffer)
+                if buffer:
+                    say('No automodes for %s.' %channel, buffer)
+                else:
+                    say('No automodes.', buffer)
                 return WEECHAT_RC_OK
             for key, items in patterns.iteritems():
                 say('%s[%s%s.%s%s]' %(color_chat_delimiters,
@@ -328,14 +304,14 @@ if __name__ == '__main__' and import_ok and \
                 weechat.config_set_plugin(opt, val)
 
     global join_hook
-    if  get_config_boolean('enabled'):
+    if get_config_boolean('enabled'):
         join_hook = weechat.hook_signal('*,irc_in_join', 'join_cb', '') 
     else:
         join_hook = ''
 
     weechat.hook_completion('automode_patterns', 'automode patterns', 'completer', '')
     weechat.hook_command(SCRIPT_NAME, SCRIPT_DESC ,
-            "(add|del) <type> <nick|expression> | list | disable | enable",
+            "[ (add|del) <type> <nick|expression> | list | disable | enable ]",
             "       add: Adds a new automode for current channel. If a nick is given instead of an"
             " expression, it will use nick's exact usermask.\n"
             "       del: Removes an automode in current channel.\n"
@@ -344,7 +320,7 @@ if __name__ == '__main__' and import_ok and \
             " It should be of the format 'nick!user@host', wildcards '?', '*', and character groups"
             " are allowed.\n"
             "      list: List automodes for current channel, or all automodes if current buffer"
-            " isn't an IRC channel.\n"
+            " isn't an IRC channel. This is the default action if no option is given.\n"
             "   disable: Disables the script.\n"
             "    enable: Enables the script.\n"
             "\n"
