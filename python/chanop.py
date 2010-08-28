@@ -33,9 +33,9 @@
 #   masks and users (so users that parted are still bannable).
 #
 #   Commands (see detailed help with /help in WeeChat):
-#   *      /oop: Request op
-#   *    /odeop: Drop op
-#   *    /okick: Kick user (or users)
+#   *      /oop: Request or give op.
+#   *    /odeop: Drop or remove op.
+#   *    /okick: Kick user (or users).
 #   *     /oban: Apply ban mask.
 #   *   /ounban: Remove ban mask.
 #   *   /oquiet: Apply quiet mask.
@@ -54,10 +54,10 @@
 #   networks, stay always op'ed in one channel while
 #   auto-deop in another.
 #
-#   For define the option 'option' in server 'server_name' use:
-#   /set plugins.var.python.chanop.option.server_name "value"
-#   For define it in the channel '#channel_name':
-#   /set plugins.var.python.chanop.option.server_name.#channel_name "value"
+#   For define an option for a specific server use:
+#   /set plugins.var.python.chanop.<option>.<server> "value"
+#   For define it in a specific channel use:
+#   /set plugins.var.python.chanop.<option>.<server>.<#channel> "value"
 #
 #   * plugins.var.python.chanop.op_command:
 #     Here you define the command the script must run for request op, normally
@@ -130,29 +130,23 @@
 #     Valid values: 'on', 'off' Default: 'off'
 #
 #
-#   The following configs are server specific and aren't meant to be set manually.
-#
-#   * plugins.var.python.chanop.chanmodes:
-#     Indicates to chanop the channel modes supported by server, all servers support
-#     'b' channel modes which are typical bans, but there are others such as 'q'
-#     (quiets), 'e' (ban exceptions) and 'I' (invite exceptions).  Chanop currently
-#     only understands 'b' and 'q' modes.  This config is set by chanop.
-#
-#   * plugins.var.python.chanop.modes:
-#     Indicates to chanop the maximum number of modes per MODE command that the
-#     server supports.  This has the effect of setting several bans (up to the value
-#     set here) with a single command.  On freenode is 4 while on other networks like
-#     quakenet is 6.  This config is set by chanop.
+#   The following configs are defined per server and are updated by chanop.
 #
 #   * plugins.var.python.chanop.watchlist:
 #     Indicates to chanop which channels should watch and keep track of users and
 #     masks. This config is automatically updated when you use any command that needs
 #     op, so manual setting shouldn't be needed.
 #
+#   * plugins.var.python.chanop.isupport:
+#     Only used in WeeChat versions prior to 0.3.3 which lacked support for
+#     irc_005 messages. These aren't meant to be set manually.
+#
 #
 #   Completions:
 #     Chanop has several completions, documented here. Some aren't used by chanop
 #     itself, but can be used in aliases with custom completions.
+#     Example (if you use grep.py script):
+#     /alias -completion %(chanop_hosts) hgrep /grep
 #
 #   * chanop_unban_mask (used in /ounban)
 #     Autocompletes with banmasks set in current channel, requesting them if needed.
@@ -189,37 +183,40 @@
 #  * freenode:
 #   - support for bans with channel forward
 #   - support for extbans (?)
+#  * Refactor /oop /odeop /ovoice /odevoice commands, should use MODE.
 #
 #
 #   History:
 #   2010-
-#   version 0.2: major updates
+#   version 0.2: major update
 #   * fixed quiets for ircd-seven (freenode)
 #   * implemented user and mask cache.
 #   * added commands:
-#    - /ovoice /odevoice for de/voice users.
-#    - /omode for change channel modes.
-#    - /olist for list bans/quiets on cache.
-#    - /osync for update user/masks cache.
+#     - /ovoice /odevoice for de/voice users.
+#     - /omode for change channel modes.
+#     - /olist for list bans/quiets on cache.
+#     - /osync for update user/masks cache manually.
 #   * changed /omute and /ounmute commands to /oquiet and /ounquiet, as q masks
-#   is refered as a quiet rather than a mute.
+#     is refered as a quiet rather than a mute.
 #   * autocompletions:
-#    - for bans set on a channel.
-#    - for make new bans.
-#    - for nicks/usernames/hostnames in cache.
-#   * /okban renamed to /obankick because is too easy to try to /okban
-#   somebody due to tab fail.
+#     - for bans set on a channel.
+#     - for make new bans.
+#     - for nicks/usernames/hostnames in cache.
+#   * /okban renamed to /obankick. This is because /okban is too similar to
+#     /okick and bankicking somebody due to tab fail was too easy.
 #   * added display_affected feature.
 #   * added --webchat ban option.
 #   * config options removed:
-#    - merge_bans: replaced by 'modes' option
-#    - enable_mute: replaced by 'chanmodes' option
-#    - invert_kickban_order: now is fixed to "ban, then kick"
+#     - merge_bans: replaced by 'modes' option
+#     - enable_mute: replaced by 'chanmodes' option
+#     - invert_kickban_order: now is fixed to "ban, then kick"
+#   * Use WeeChat isupport infos.
+#   * /oop and /odeop can op/deop other users.
 #
 #   2009-11-9
 #   version 0.1.1: fixes
 #   * script renamed to 'chanop' because it was causing conflicts with python
-#   'operator' module
+#     'operator' module
 #   * added /otopic command
 #
 #   2009-10-31
@@ -534,11 +531,11 @@ class Infolist(object):
     """Class for reading WeeChat's infolists."""
 
     fields = {
-            'name':'string',
-            'option_name':'string',
-            'value':'string',
-            'host':'string',
-            'flags':'integer',
+            'name'        :'string',
+            'option_name' :'string',
+            'value'       :'string',
+            'host'        :'string',
+            'flags'       :'integer',
             'is_connected':'integer',
             }
 
@@ -1332,9 +1329,9 @@ def deop_callback(buffer, count):
     if weechat_queue.commands:
         # there are commands in queue yet, wait some more
         deop_hook[buffer] = weechat.hook_timer(5000, 0, 1, 'deop_callback', buffer)
-        return
-    cmd_deop('', buffer, '')
-    del deop_hook[buffer]
+    else:
+        cmd_deop('', buffer, '')
+        del deop_hook[buffer]
     return WEECHAT_RC_OK
 
 
@@ -1744,9 +1741,10 @@ class ShowBans(CommandChanop):
     completion = 'bans|quiets %(irc_server_channels)'
     showbuffer = ''
 
+    padding = 40
+
     def parse_args(self, data, buffer, args):
         self.buffer = buffer
-        # FIXME calling /olist from chanop buffer fails since server is ''
         self.server = weechat.buffer_get_string(self.buffer, 'localvar_server')
         self.channel = weechat.buffer_get_string(self.buffer, 'localvar_channel')
         type, _, args = args.partition(' ')
@@ -1796,6 +1794,7 @@ class ShowBans(CommandChanop):
         b = self.get_buffer()
         weechat.buffer_clear(b)
         weechat.buffer_set(b, 'display', '1')
+        weechat.buffer_set(b, 'title', '%s' %SCRIPT_NAME)
 
     def set_title(self, s):
         weechat.buffer_set(self.get_buffer(), 'title', s)
@@ -1807,10 +1806,6 @@ class ShowBans(CommandChanop):
 
     def execute(self):
         self.showbuffer = ''
-        try:
-            self.padding = int(weechat.config_get_plugin('padding'))
-        except:
-            self.padding = 40
         self.clear()
         masklist = maskModes[self.mode]
         if not masklist:
@@ -1838,6 +1833,8 @@ class ShowBans(CommandChanop):
                 self.prnt_ban(ban.mask, op, ban.date, ban.hostmask)
         else:
             self.prnt('No known %s for %s.%s' %(self.type, key[0], key[1]))
+        if masks is None or not masklist[key].synced:
+            self.prnt("\n%sList not synced." %color_channel)
         self.set_title('List of %s known by chanop in %s.%s (total: %s)' %(self.type,
                                                                            key[0],
                                                                            key[1],
