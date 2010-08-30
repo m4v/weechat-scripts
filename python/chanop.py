@@ -145,7 +145,10 @@
 #   Completions:
 #     Chanop has several completions, documented here. Some aren't used by chanop
 #     itself, but can be used in aliases with custom completions.
-#     Example (if you use grep.py script):
+#     Examples:
+#     apply exemptions with mask autocompletion
+#     /alias -completion %(chanop_ban_mask) exemption /mode $channel +e
+#     if you use grep.py script, grep with host autocompletion, for look clones. 
 #     /alias -completion %(chanop_hosts) hgrep /grep
 #
 #   * chanop_unban_mask (used in /ounban)
@@ -196,13 +199,12 @@
 #     - /ovoice /odevoice for de/voice users.
 #     - /omode for change channel modes.
 #     - /olist for list bans/quiets on cache.
-#     - /osync for update user/masks cache manually.
 #   * changed /omute and /ounmute commands to /oquiet and /ounquiet, as q masks
 #     is refered as a quiet rather than a mute.
 #   * autocompletions:
 #     - for bans set on a channel.
 #     - for make new bans.
-#     - for nicks/usernames/hostnames in cache.
+#     - for nicks/usernames/hostnames.
 #   * /okban renamed to /obankick. This is because /okban is too similar to
 #     /okick and bankicking somebody due to tab fail was too easy.
 #   * added display_affected feature.
@@ -386,6 +388,7 @@ def time_elapsed(elapsed, ret=None, level=2):
 #################
 ### IRC utils ###
 
+# XXX a regexp would be better?
 def is_hostmask(s):
     """Returns whether or not the string s is a valid User hostmask."""
     n = s.find('!')
@@ -405,6 +408,7 @@ def is_ip(s):
     except socket.error:
         return False
 
+# XXX I hate this, find a simpler way.
 _valid_label = re.compile(r'^[a-z\d\-]+$', re.I)
 def is_hostname(s):
     """
@@ -433,6 +437,7 @@ def pattern_match(pattern, strings):
     if pattern in _regexp_cache:
         regexp = _regexp_cache[pattern]
     else:
+        # XXX doesn't account IRC case insensitive-ness
         s = '^'
         for c in pattern:
             if c == '*':
@@ -560,13 +565,7 @@ class Infolist(object):
     def __getitem__(self, name):
         """Implement the evaluation of self[name]."""
         type = self.fields[name]
-        return getattr(self, 'get_%s' %type)(name)
-
-    def get_string(self, name):
-        return weechat.infolist_string(self.pointer, name)
-
-    def get_integer(self, name):
-        return weechat.infolist_integer(self.pointer, name)
+        return getattr(weechat, 'infolist_%s' %type)(self.pointer, name)
 
     def next(self):
         self.cursor = weechat.infolist_next(self.pointer)
@@ -1147,8 +1146,11 @@ class UserCache(ServerChannelDict):
             users = self[(server, channel)]
             if nick in users:
                 return users[nick]
-        for key in self.getKeys(server, nick):
+        try:
+            key = self.getKeys(server, nick)[0]
             return self[key][nick]
+        except IndexError:
+            return None
 
 userCache = UserCache()
 
@@ -1842,13 +1844,12 @@ class ShowBans(CommandChanop):
                                                                            mask_count))
 
 
+# This command shouldn't be needed...
 class Sync(Command):
     help = ("Synchronises channel masks and users",
-            "[channel]",
+            "",
             """
             Updates channel masks and user cache.
-            
-            channel: channel to sync, if not given uses current channel.
             """)
 #              -tracked: Updates for all tracked channels instead of current.
 #                        Tracked channels are those listed on config option
@@ -1856,7 +1857,6 @@ class Sync(Command):
 #            """ %{'name':SCRIPT_NAME})
 
     command = 'osync'
-    completion = '%(irc_channels)'
 
     def execute(self):
         def sync(server, channel):
@@ -1865,10 +1865,7 @@ class Sync(Command):
                 maskModes[mode].fetch(server, channel)
 
         server = weechat.buffer_get_string(self.buffer, 'localvar_server')
-        if self.args and is_channel(self.args):
-            channel = self.args
-        else:
-            channel = weechat.buffer_get_string(self.buffer, 'localvar_channel')
+        channel = weechat.buffer_get_string(self.buffer, 'localvar_channel')
         sync(server, channel)
 
 
@@ -1905,10 +1902,13 @@ def signal_parse_no_channel(f):
 
 isupport = {}
 def get_isupport_value(server, feature):
+    #debug('isupport %s %s', server, feature)
     try:
         return isupport[server][feature]
     except KeyError:
-        if server not in isupport:
+        if not server:
+            return ''
+        elif server not in isupport:
             isupport[server] = {}
         v = weechat.info_get('irc_server_isupport_value', '%s,%s' %(server, feature.upper()))
         if v:
@@ -2000,7 +2000,7 @@ def mode_cb(server, channel, nick, data, signal, signal_data):
     # check if there are interesting modes
     servermodes = supported_modes(server)
     s = modes.translate(None, '+-') # remove + and -
-    if not set(servermodes).intersection(s):
+    if not set(servermodes).intersection(s)
         return WEECHAT_RC_OK
 
     # check if channel is in watchlist
@@ -2113,10 +2113,10 @@ def garbage_collector_cb(data, counter):
         for mode, masklist in maskModes.iteritems():
             mask_count = sum(map(len, masklist.itervalues()))
             mask_chan = len(masklist)
-            debug("collector: %s '%s' cached masks in %s channels" %(mask_count, mode, mask_chan))
-        debug('collector: %s cached users in %s channels' %(user_count, len(userCache)))
-        debug('collector: %s users about to be purged' %temp_user_count)
-        debug('collector: %s cached regexps' %len(_regexp_cache))
+            debug("collector: %s '%s' cached masks in %s channels", mask_count, mode, mask_chan)
+        debug('collector: %s cached users in %s channels', user_count, len(userCache))
+        debug('collector: %s users about to be purged', temp_user_count)
+        debug('collector: %s cached regexps', len(_regexp_cache))
     return WEECHAT_RC_OK
 
 
