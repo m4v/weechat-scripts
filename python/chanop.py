@@ -2000,7 +2000,7 @@ def mode_cb(server, channel, nick, data, signal, signal_data):
     # check if there are interesting modes
     servermodes = supported_modes(server)
     s = modes.translate(None, '+-') # remove + and -
-    if not set(servermodes).intersection(s)
+    if not set(servermodes).intersection(s):
         return WEECHAT_RC_OK
 
     # check if channel is in watchlist
