@@ -1857,31 +1857,6 @@ class ShowBans(CommandChanop):
                                                                            mask_count))
 
 
-# This command shouldn't be needed...
-class Sync(Command):
-    help = ("Synchronises channel masks and users",
-            "",
-            """
-            Updates channel masks and user cache.
-            """)
-#              -tracked: Updates for all tracked channels instead of current.
-#                        Tracked channels are those listed on config option
-#                        plugins.var.python.%(name)s.channels.<servername>
-#            """ %{'name':SCRIPT_NAME})
-
-    command = 'osync'
-
-    def execute(self):
-        def sync(server, channel):
-            userCache.generateCache((server, channel))
-            for mode in supported_modes(server):
-                maskModes[mode].fetch(server, channel)
-
-        server = weechat.buffer_get_string(self.buffer, 'localvar_server')
-        channel = weechat.buffer_get_string(self.buffer, 'localvar_channel')
-        sync(server, channel)
-
-
 ########################
 ### Script callbacks ###
 
@@ -2340,8 +2315,6 @@ if __name__ == '__main__' and import_ok and \
     Mode().hook()
     Voice().hook()
     DeVoice().hook()
-    # hook /osync
-    Sync().hook()
 
     weechat.hook_config('plugins.var.python.%s.enable_multi_kick' %SCRIPT_NAME,
             'enable_multi_kick_conf_cb', '')
