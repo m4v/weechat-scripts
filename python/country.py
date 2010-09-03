@@ -159,7 +159,7 @@ def check_database():
         ip_database = os.path.join(get_script_dir(), database_file)
     return os.path.isfile(ip_database)
 
-timeout = 1000*60
+timeout = 1000*60*10
 hook_download = ''
 def update_database():
     """Downloads and uncompress the database."""
