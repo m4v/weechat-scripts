@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 ###
-# Copyright (c) 2009 by Elián Hanisch <lambdae2@gmail.com>
+# Copyright (c) 2010 by Elián Hanisch <lambdae2@gmail.com>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,7 +17,23 @@
 ###
 
 ###
+# Module for debugging scripts. Please note that this doesn't give you an interactive console, it
+# can only evaluate simple statements, assignations like "myVar = True" will raise an exception.
 #
+# For debug a script, insert these lines after weechat.register() call.
+#
+#
+# from weeutils import DebugBuffer
+# debug = DebugBuffer("name", globals())
+# debug.display()
+#
+#
+# Then, after loading the script (not weeutils.py), try "dir()" in the buffer input, it should
+# display script's global functions and variables.
+# This module should be placed in your python scripts path as weeutils.py
+#
+# weeutils.py can be loaded as a script, you will able to call methods in weechat's
+# python module only.
 #
 ###
 
@@ -25,7 +41,7 @@ SCRIPT_NAME    = "weeutils"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
 SCRIPT_VERSION = "0.1"
 SCRIPT_LICENSE = "GPL3"
-SCRIPT_DESC    = "Script for debug other scripts or test code in WeeChat."
+SCRIPT_DESC    = "Debug a script or test code in WeeChat."
 
 try:
     import weechat
@@ -40,7 +56,7 @@ import __main__
 import traceback
 
 def callback(method):
-    """This function will take a bound method and create a callback for it."""
+    """This function will take a bound method and make it a callback."""
     # try to create a descriptive and unique name.
     func = method.__name__
     inst = method.im_self.__name__
@@ -51,10 +67,11 @@ def callback(method):
 
 
 class SimpleBuffer(object):
-    """WeeChat buffer."""
+    """WeeChat buffer. Only for displaying lines."""
     def __init__(self, name):
         assert name, "Buffer needs a name."
         self.__name__ = name
+        self._pointer = ''
 
     def _getBuffer(self):
         buffer = weechat.buffer_search('python', self.__name__)
@@ -62,8 +79,13 @@ class SimpleBuffer(object):
             buffer = self.create()
         return buffer
 
-    def create(self):
+    def _create(self):
         return weechat.buffer_new(self.__name__, '', '', '', '')
+    
+    def create(self):
+        buffer = self._create()
+        self._pointer = buffer
+        return buffer
 
     def __call__(self, s, *args, **kwargs):
         self.prnt(s, *args, **kwargs)
@@ -90,7 +112,7 @@ class SimpleBuffer(object):
 
 class Buffer(SimpleBuffer):
     """WeeChat buffer. With input and close methods."""
-    def create(self):
+    def _create(self):
         return weechat.buffer_new(self.__name__, callback(self.input), '', callback(self.close), '')
 
     def input(self, data, buffer, input):
@@ -105,8 +127,9 @@ class DebugBuffer(Buffer):
         Buffer.__init__(self, name)
         self.globals = globals
 
-    def create(self):
-        buffer = Buffer.create(self)
+
+    def _create(self):
+        buffer = Buffer._create(self)
         weechat.buffer_set(buffer, 'nicklist', '0')
         weechat.buffer_set(buffer, 'time_for_each_line', '0')
         weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
@@ -128,14 +151,14 @@ if __name__ == '__main__' and import_ok and \
         SCRIPT_DESC, '', ''):
 
         # we're being loaded as a script.
-        # import weechat functions into this script namespace.
+        # import weechat functions into this namespace.
         from weechat import *
 
         def weechat_functions():
             return [ func for func in dir(weechat) if callable(getattr(weechat, func)) ]
         
         myBuffer = DebugBuffer('weeutils', globals())
-        myBuffer("Test simple (onliners) Python code.")
+        myBuffer("Test simple Python statements here.")
         myBuffer("Example: \"buffer_search('python', 'weeutils')\"")
         myBuffer("For a list of WeeChat functions, type 'weechat_functions()'")
         myBuffer.display()
