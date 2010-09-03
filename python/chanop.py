@@ -188,6 +188,7 @@
 #    - support for extbans (?)
 #   * Refactor /oop /odeop /ovoice /odevoice commands, should use MODE.
 #   * Update banmask cache with /ban list
+#   * Sort completions by user activity
 #
 #
 #   History:
@@ -243,7 +244,7 @@ settings = {
 'kick_reason'           :'kthxbye!',
 'enable_multi_kick'     :'off',
 'display_affected'      :'off',
-#'fetch_bans'            :'off', # FIXME make per server
+#'fetch_bans'            :'off',
 }
 
 
@@ -1069,7 +1070,7 @@ def masklist_add_cb(data, modifier, modifier_data, string):
 def masklist_end_cb(data, modifier, modifier_data, string):
     """Ban listing over."""
     #debug(string)
-    global waiting_for_completion
+    global waiting_for_completion, waiting_for_sync
     server, channel, mode = MaskCache.hook_queue.pop(0)
     masklist = maskModes[mode]
     key = (server, channel)
@@ -1090,6 +1091,10 @@ def masklist_end_cb(data, modifier, modifier_data, string):
             say('No +%s masks found.' %mode, buffer)
         cmpl_unban(buffer, server, channel, completion, masklist)
         waiting_for_completion = None
+    if waiting_for_sync:
+        buffer, mode, channel = waiting_for_sync
+        cmd_showbans('', buffer, '%s %s' %(mode, channel))
+        waiting_for_sync = None
     return ''
 
 
@@ -1737,6 +1742,8 @@ class Mode(CommandNeedsOp):
         self.queue(cmd)
 
 
+global waiting_for_sync
+waiting_for_sync = None
 class ShowBans(CommandChanop):
     command = 'olist'
     help = ("Lists bans or quiets in cache.",
@@ -1753,13 +1760,14 @@ class ShowBans(CommandChanop):
         type, _, args = args.partition(' ')
         if not type:
             raise ValueError, 'missing argument'
-        if type == 'bans':
+        if type in ('b', 'bans'):
+            self.type = 'bans'
             self.mode = 'b'
-        elif type == 'quiets':
+        elif type in ('q', 'quiets'):
+            self.type = 'quiets'
             self.mode = 'q'
         else:
             raise ValueError, 'incorrect argument'
-        self.type = type
         self.args = args.strip()
 
     def get_buffer(self):
@@ -1809,11 +1817,12 @@ class ShowBans(CommandChanop):
 
     def execute(self):
         self.showbuffer = ''
-        self.clear()
-        masklist = maskModes[self.mode]
-        if not masklist:
-            self.prnt("No %s known." %self.type)
+        if self.mode not in supported_modes(self.server):
+            self.clear()
+            self.prnt("\n%sNetwork '%s' doesn't support %s" %(color_channel, self.server,
+                self.type))
             return
+        masklist = maskModes[self.mode]
         if self.args:
             key = (self.server, self.args)
         else:
@@ -1825,6 +1834,7 @@ class ShowBans(CommandChanop):
                 error("Buffer isn't an irc channel.")
                 return
             masks = None
+        self.clear()
         mask_count = 0
         if masks:
             mask_count = len(masks)
@@ -1837,7 +1847,10 @@ class ShowBans(CommandChanop):
         else:
             self.prnt('No known %s for %s.%s' %(self.type, key[0], key[1]))
         if masks is None or not masklist[key].synced:
-            self.prnt("\n%sList not synced." %color_channel)
+            self.prnt("\n%sList not synced, please wait ..." %color_channel)
+            global waiting_for_sync
+            waiting_for_sync = (self.buffer, self.mode, key[1])
+            masklist.fetch(*key)
         self.set_title('List of %s known by chanop in %s.%s (total: %s)' %(self.type,
                                                                            key[0],
                                                                            key[1],
@@ -2317,7 +2330,8 @@ if __name__ == '__main__' and import_ok and \
     # hook /oban /ounban /olist
     Ban().hook()
     UnBan().hook()
-    ShowBans().hook()
+    cmd_showbans = ShowBans()
+    cmd_showbans.hook()
     # hook /oquiet /ounquiet
     Quiet().hook()
     UnQuiet().hook()
