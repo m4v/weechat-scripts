@@ -689,9 +689,9 @@ class Message(object):
         else:
             command = self.command
         debug('sending: %r', command)
-        #if weechat.config_get_plugin('debug') == '2':
-        #    # don't run commands
-        #    return True
+        if weechat.config_get_plugin('debug'):
+            # don't run commands
+            return True
         weechat.command(self.buffer, command)
         return True
 
@@ -732,8 +732,8 @@ class CommandQueue(object):
             hook_timeout = weechat.hook_timer(60*1000, 0, 1, 'queue_timeout_cb', data)
 
             Message.__call__(self)
-            #if weechat.config_get_plugin('debug') == '2':
-            #    return True
+            if weechat.config_get_plugin('debug'):
+                return True
             return False # returning false interrupts the queue execution
 
         def __str__(self):
@@ -1903,7 +1903,7 @@ def signal_parse(f):
             # signals only processed for channels in watchlist
             return WEECHAT_RC_OK
         nick = get_nick(signal_data)
-        #debug('%s %s %s', data, signal, signal_data)
+        debug('%s %s %s', data, signal, signal_data)
         return f(server, channel, nick, data, signal, signal_data)
     decorator.func_name = f.func_name
     return decorator
@@ -1914,7 +1914,7 @@ def signal_parse_no_channel(f):
         nick = get_nick(signal_data)
         keys = userCache.getKeys(server, nick)
         if keys:
-            #debug('%s %s %s', data, signal, signal_data)
+            debug('%s %s %s', data, signal, signal_data)
             return f(keys, nick, data, signal, signal_data)
         return WEECHAT_RC_OK
     decorator.func_name = f.func_name
