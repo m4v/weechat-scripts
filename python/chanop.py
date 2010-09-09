@@ -461,7 +461,7 @@ def get_nick(s):
     ':nick!user@host' => 'nick'"""
     n = s.find('!')
     if n < 1:
-        return ''
+        raise ValueError, "Invalid usermask: %s" %s
     if s[0] == ':':
         return s[1:n]
     return s[:n]
@@ -483,7 +483,7 @@ def get_user(s, trim=False):
                 return s
         else:
             return s
-    return ''
+    raise ValueError, "Invalid usermask: %s" %s
 
 def get_host(s):
     """
@@ -491,7 +491,7 @@ def get_host(s):
     n = s.find('@')
     if n < 3:
         # not a valid hostmask
-        return ''
+        raise ValueError, "Invalid usermask: %s" %s
     m = s.find(' ')
     if m > 0 and m > n:
         return s[n+1:m]
@@ -1098,16 +1098,40 @@ def masklist_end_cb(data, modifier, modifier_data, string):
     return ''
 
 
+# TODO refactor UserList and UserCache
 # Users
 class UserList(CaseInsensibleDict):
-    def __init__(self):
+    def __init__(self, key):
+        self._key = key
         self._temp_users = CaseInsensibleDict()
 
     def __setitem__(self, nick, hostname):
+        #debug('%s setitem: %s %s' %(self.__class__.__name__, nick, hostname))
         CaseInsensibleDict.__setitem__(self, nick, hostname)
         # remove from temp list, in case if user did a cycle
         if nick in self._temp_users:
             del self._temp_users[nick]
+
+    def __getitem__(self, nick):
+        host = CaseInsensibleDict.__getitem__(self, nick)
+        if host:
+            return host
+        #debug('cache failed, trying infolist')
+        try:
+            infolist = Infolist('irc_nick', '%s,%s' %self._key)
+        except:
+            pass
+        else:
+            while infolist.next():
+                name = infolist['name']
+                host = infolist['host']
+                if host:
+                    self[name] = '%s!%s' %(name, host)
+        host = CaseInsensibleDict.__getitem__(self, nick)
+        if host:
+            return host
+        else:
+            raise KeyError
 
     def remove(self, nick):
         """Place nick in queue for deletion"""
@@ -1127,16 +1151,24 @@ class UserList(CaseInsensibleDict):
 
 class UserCache(ServerChannelDict):
     def generateCache(self, key):
-        users = UserList()
+        users = UserList(key)
         try:
             infolist = Infolist('irc_nick', '%s,%s' %key)
         except:
-            #error('Not in a IRC channel.') # better to fail silently
+            # better to fail silently
+            #debug('invalid buffer')
             return users
         while infolist.next():
             name = infolist['name']
-            users[name] = '%s!%s' %(name, infolist['host'])
-        self[key] = users
+            host = infolist['host']
+            #debug('host: %r' %host)
+            if not host:
+                # be extra careful
+                users[name] = ''
+            else:
+                users[name] = '%s!%s' %(name, host)
+        if users:
+            self[key] = users
         return users
 
     def __getitem__(self, k):
@@ -2052,14 +2084,8 @@ def mode_cb(server, channel, nick, data, signal, signal_data):
 @signal_parse
 def join_cb(server, channel, nick, data, signal, signal_data):
     key = (server, channel)
-    if nick == weechat.info_get('irc_nick', server):
-        # joined a channel that we should track
-        userCache.generateCache(key)
-        #for mode in supported_modes(server):
-        #    maskModes[mode].fetch(server, channel)
-    else:
-        hostname = signal_data[1:signal_data.find(' ')]
-        userCache[key][nick] = hostname
+    hostname = signal_data[1:signal_data.find(' ')]
+    userCache[key][nick] = hostname
     return WEECHAT_RC_OK
 
 @signal_parse
@@ -2258,6 +2284,7 @@ if __name__ == '__main__' and import_ok and \
 
     from weeutils import DebugBuffer
     debug = DebugBuffer('chanop_debugging', globals())
+    debug.create()
 
     # colors
     color_delimiter = weechat.color('chat_delimiters')
