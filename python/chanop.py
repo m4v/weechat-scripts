@@ -591,7 +591,7 @@ class Infolist(object):
 
 class Command(object):
     """Class for hook WeeChat commands."""
-    help = ("WeeChat command.", "[define usage template]", "detailed help here")
+    description, usage, help = "WeeChat command.", "[define usage template]", "detailed help here"
 
     command = ''
     completion = ''
@@ -618,27 +618,6 @@ class Command(object):
         self.buffer = buffer
         self.args = args
 
-    def _parse_doc(self):
-        """Parsing of the command help strings."""
-        desc, usage, help = self.help
-        # format fix for help
-        help = help.strip('\n').splitlines()
-        if help:
-            n = 0
-            for c in help[0]:
-                if c in ' \t':
-                    n += 1
-                else:
-                    break
-
-            def trim(s):
-                return s[n:]
-
-            help = '\n'.join(map(trim, help))
-        else:
-            help = ''
-        return desc, usage, help
-
     def execute(self):
         """This method is called when the command is run, override this."""
         pass
@@ -649,9 +628,8 @@ class Command(object):
                 self.callback)
         assert not self.pointer, "There's already a hook pointer, unhook first (%s)" %self.command
         assert not hasattr(__main__, self.callback), "Callback already in __main__ (%s)" %self.callback
-        desc, usage, help = self._parse_doc()
-        self.pointer = weechat.hook_command(self.command, desc, usage, help, self.completion,
-                self.callback, '')
+        self.pointer = weechat.hook_command(self.command, self.description, self.usage, self.help,
+                self.completion, self.callback, '')
         if self.pointer == '':
             raise Exception, "hook_command failed"
         # add self to the global namespace
@@ -1377,16 +1355,14 @@ def deop_callback(buffer, count):
 
 # Chanop commands
 class Op(CommandChanop):
-    help = ("Request operator privileges or give it to users.", "[nick [nick ... ]]",
-            """
-            The command used for ask op is defined globally in
-            plugins.var.python.%(name)s.op_command, it can be defined per server
-            or per channel in:
-              plugins.var.python.%(name)s.op_command.servername
-              plugins.var.python.%(name)s.op_command.servername.#channelname
-              
-            After using this command, you won't be autodeoped."""\
-                      %{'name':SCRIPT_NAME})
+    description, usage = "Request operator privileges or give it to users.", "[nick [nick ... ]]",
+    help = \
+    "The command used for ask op is defined globally in plugins.var.python.%(name)s.op_command\n"\
+    "It can be defined per server or per channel in:\n"\
+    " plugins.var.python.%(name)s.op_command.servername\n"\
+    " plugins.var.python.%(name)s.op_command.servername.#channelname\n"\
+    "\n"\
+    "After using this command, you won't be autodeoped." %{'name':SCRIPT_NAME}
     command = 'oop'
     completion = '%(nicks)'
 
@@ -1416,7 +1392,8 @@ class Op(CommandChanop):
 
 
 class Deop(CommandNeedsOp, Op):
-    help = ("Removes operator privileges from yourself or users.", "[nick [nick ... ]]", "")
+    description, usage, help = \
+    "Removes operator privileges from yourself or users.", "[nick [nick ... ]]", ""
     command = 'odeop'
     completion = '%(nicks)'
     
@@ -1442,7 +1419,7 @@ class Deop(CommandNeedsOp, Op):
 
 
 class Kick(CommandNeedsOp):
-    help = ("Kick nick.", "<nick> [<reason>]", "")
+    description, usage, help = "Kick nick.", "<nick> [<reason>]", ""
     command = 'okick'
     completion = '%(nicks)'
 
@@ -1463,12 +1440,11 @@ class Kick(CommandNeedsOp):
 
 
 class MultiKick(Kick):
-    help = ("Kick one or more nicks.",
-            "<nick> [<nick> ..] [:] [<reason>]",
-            """
-            Note: Is not needed, but use ':' as a separator between nicks and
-            the reason. Otherwise, if there's a nick in the channel matching the
-            first word in reason it will be kicked.""")
+    description, usage = "Kick one or more nicks.", "<nick> [<nick> ..] [:] [<reason>]"
+    help = \
+    "Note: Is not needed, but use ':' as a separator between nicks and "\
+    "the reason. Otherwise, if there's a nick in the channel matching the "\
+    "first word in reason it will be kicked."
     completion = '%(nicks)|%*'
 
     def execute_op(self, args=None):
@@ -1495,27 +1471,27 @@ class MultiKick(Kick):
 
 
 class Ban(CommandNeedsOp):
-    help = ("Ban user or hostmask.",
-            "<nick|mask> [<nick|mask> ..] [ [--host] [--user] [--nick] | --exact | --webchat ]",
-            """
-            Mask options:
-             -h  --host: Match hostname (*!*@host)
-             -n  --nick: Match nick     (nick!*@*)
-             -u  --user: Match username (*!user@*)
-             -e --exact: Use exact hostmask. Can't be combined with other options.
-             -w --webchat: Like --host, but a bit more smarter against webchat's
-                           users, it will match username if hostname isn't valid and
-                           username is a hexed ip. Can't be combined with other
-                           options.
-
-            If no mask options are supplied, configured defaults are used.
-
-            Example:
-            /oban somebody --user --host
-              will ban with *!user@hostname mask.
-            """)
+    description = "Ban user or hostmask."
+    usage = \
+    "<nick|mask> [<nick|mask> ..] [ [--host] [--user] [--nick] | --exact | --webchat ]"
+    help = \
+    "Mask options:\n"\
+    " -h  --host: Match hostname (*!*@host)\n"\
+    " -n  --nick: Match nick     (nick!*@*)\n"\
+    " -u  --user: Match username (*!user@*)\n"\
+    " -e --exact: Use exact hostmask. Can't be combined with other options.\n"\
+    " -w --webchat: Like --host, but for webchat's users, it will match "\
+    "username if hostname isn't valid and username is a hexed ip. "\
+    "Can't be combined with other options.\n"\
+    "\n"\
+    "If no mask options are supplied, configured defaults are used.\n"\
+    "\n"\
+    "Example:\n"\
+    "/oban somebody --user --host\n"\
+    "  will ban with *!user@hostname mask.\n"
     command = 'oban'
     completion = '%(chanop_nicks)|%(chanop_ban_mask)|%*'
+
     masklist = banlist
     banmask = []
     _mode = 'b'
@@ -1618,16 +1594,15 @@ class Ban(CommandNeedsOp):
 
 
 class UnBan(Ban):
+    description, usage = "Remove bans.", "<nick|mask> [<nick|mask> ..]"
     command = 'ounban'
-    help = ("Remove bans.",
-            "<nick|mask> [<nick|mask> ..]",
-            """
-            Autocompletion will complete with channel's bans. Patterns allowed for
-            autocomplete any matching bans.
-
-            Example:
-            /%(cmd)s *192.168*<tab>
-              Will autocomplete with all bans matching *192.168*""" %{'cmd':command})
+    help = \
+    "Autocompletion will complete with channel's bans. Patterns allowed for autocomplete any"\
+    " matching bans.\n"\
+    "\n"\
+    "Example:\n"\
+    "/%(cmd)s *192.168*<tab>\n"\
+    "  Will autocomplete with all bans matching *192.168*" %{'cmd':command}
     completion = '%(chanop_unban_mask)|%(chanop_nicks)|%*'
     _prefix = '-'
 
@@ -1657,33 +1632,29 @@ class UnBan(Ban):
 
 
 class Quiet(Ban):
-    help = ("Silence user or hostmask.",
-            Ban.help[1],
-            """
-            This command is only for networks that support channel mode 'q',
-            You can disable it by removing 'q' from your server channelmodes
-            option:
-              /set plugins.var.python.%s.chanmodes.servername b""" %SCRIPT_NAME)
+    description = "Silence user or hostmask."
+    help = "This command is only for networks that support channel mode 'q'."
     command = 'oquiet'
     completion = '%(chanop_nicks)|%(chanop_ban_mask)|%*'
+
     _mode = 'q'
     masklist = quietlist
 
 
 class UnQuiet(UnBan):
     command = 'ounquiet'
-    help = ("Remove quiets.",
-            UnBan.help[1],
-            UnBan.help[2].replace('bans', 'quiets').replace(UnBan.command, command))
+    description = "Remove quiets."
+    help = UnBan.help.replace('bans', 'quiets').replace(UnBan.command, command)
     completion = '%(chanop_unquiet_mask)|%(chanop_nicks)|%*'
+
     _mode = 'q'
     masklist = quietlist
 
 
 class BanKick(Ban, Kick):
-    help = ("Bankicks nick.",
-            "<nick> [<reason>] [ [--host] [--user] [--nick] | --exact | --webchat ]",
-            "Combines /oban and /okick commands.")
+    description = "Bankicks nick."
+    usage = "<nick> [<reason>] [ [--host] [--user] [--nick] | --exact | --webchat ]"
+    help = "Combines /oban and /okick commands."
     command = 'obankick'
     completion = '%(chanop_nicks)'
 
@@ -1702,9 +1673,9 @@ class BanKick(Ban, Kick):
 
 
 class MultiBanKick(BanKick):
-    help = ("Bankicks one or more nicks.",
-            "<nick> [<nick> ..] [:] [<reason>] [ [--host)] [--user] [--nick] | --exact | --webchat ]",
-            BanKick.help[2])
+    description = "Bankicks one or more nicks."
+    usage = \
+    "<nick> [<nick> ..] [:] [<reason>] [ [--host)] [--user] [--nick] | --exact | --webchat ]"
     completion = '%(chanop_nicks)|%*'
 
     def execute_op(self):
@@ -1731,8 +1702,8 @@ class MultiBanKick(BanKick):
 
 
 class Topic(CommandNeedsOp):
-    help = ("Changes channel topic.", "[-delete | topic]",
-            "Clear topic if '-delete' is the new topic.")
+    description, usage = "Changes channel topic.", "[-delete | topic]"
+    help = "Clear topic if '-delete' is the new topic."
     command = 'otopic'
     completion = '%(irc_channel_topic)||-delete'
 
@@ -1745,7 +1716,7 @@ class Topic(CommandNeedsOp):
 
 
 class Voice(CommandNeedsOp):
-    help = ("Gives voice to somebody.", "nick", "")
+    description, usage, help = "Gives voice to somebody.", "nick", ""
     command = 'ovoice'
     completion = '%(nicks)'
 
@@ -1754,7 +1725,7 @@ class Voice(CommandNeedsOp):
 
 
 class DeVoice(Voice):
-    help = ("Removes voice from somebody.", "nick", "")
+    description = "Removes voice from somebody."
     command = 'odevoice'
 
     def execute_op(self):
@@ -1762,8 +1733,7 @@ class DeVoice(Voice):
 
 
 class Mode(CommandNeedsOp):
-    help = ("Changes channel modes.", "",
-            "")
+    description, usage, help = "Changes channel modes.", "", ""
     command = 'omode'
 
     def execute_op(self):
@@ -1777,9 +1747,8 @@ class Mode(CommandNeedsOp):
 global waiting_for_sync
 waiting_for_sync = None
 class ShowBans(CommandChanop):
+    description, usage, help = "Lists bans or quiets in cache.", "(bans|quiets) [channel]", ""
     command = 'olist'
-    help = ("Lists bans or quiets in cache.",
-            "(bans|quiets) [channel]","")
     completion = 'bans|quiets %(irc_server_channels)'
     showbuffer = ''
 
