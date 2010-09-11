@@ -30,7 +30,8 @@
 #   changing its code.
 #
 #   Features several completions for ban/quiet masks and a memory for channel
-#   masks and users (so users that parted are still bannable).
+#   masks and users (so users that parted are still bannable by nick).
+#
 #
 #   Commands (see detailed help with /help in WeeChat):
 #   *      /oop: Request or give op.
@@ -168,10 +169,10 @@
 #     Autocompletes nicks, same as WeeChat's completer, but using chanop's user
 #     cache, so nicks from users that parted the channel will be still be completed.
 #
-#   * chanop_users (not used)
+#   * chanop_users (not used by chanop)
 #     Same as chanop_nicks, but with the usename part of the hostmask.
 #
-#   * chanop_hosts (not used)
+#   * chanop_hosts (not used by chanop)
 #     Same as chanop_nicks, but with the host part of the hostmask.
 #
 #
@@ -187,7 +188,7 @@
 #    - support for bans with channel forward
 #    - support for extbans (?)
 #   * Refactor /oop /odeop /ovoice /odevoice commands, should use MODE.
-#   * Update banmask cache with /ban list
+#   * Update banmask cache with regular /ban command
 #   * Sort completions by user activity
 #
 #
@@ -211,8 +212,8 @@
 #   * added display_affected feature.
 #   * added --webchat ban option.
 #   * config options removed:
-#     - merge_bans: replaced by 'modes' option
-#     - enable_mute: replaced by 'chanmodes' option
+#     - merge_bans: superseded by isupport methods.
+#     - enable_mute: superseded by isupport methods.
 #     - invert_kickban_order: now is fixed to "ban, then kick"
 #   * Use WeeChat isupport infos.
 #   * /oop and /odeop can op/deop other users.
@@ -244,7 +245,6 @@ settings = {
 'kick_reason'           :'kthxbye!',
 'enable_multi_kick'     :'off',
 'display_affected'      :'off',
-#'fetch_bans'            :'off',
 }
 
 
@@ -1034,11 +1034,11 @@ maskModes = { 'b':banlist, 'q': quietlist }
 
 def masklist_add_cb(data, modifier, modifier_data, string):
     """Adds ban to the list."""
-    #debug(string)
     channel, banmask, op, date = string.split()[-4:]
     server = modifier_data
+    #debug('%s %s', server, channel)
     serv, chan, mode = MaskCache.hook_queue[0]
-    if (serv, chan) ==  (server, channel):
+    if caseInsensibleKey((serv, chan)) ==  (server, channel):
         maskModes[mode].add(server, channel, banmask, operator=op, date=date)
     else:
         error("Error: got mask from unexpected server/channel",
@@ -1095,6 +1095,14 @@ class UserList(CaseInsensibleDict):
         if host:
             return host
         #debug('cache failed, trying infolist')
+        self._regenerateCache()
+        host = CaseInsensibleDict.__getitem__(self, nick)
+        if host:
+            return host
+        else:
+            raise KeyError
+
+    def _regenerateCache(self):
         try:
             infolist = Infolist('irc_nick', '%s,%s' %self._key)
         except:
@@ -1105,11 +1113,11 @@ class UserList(CaseInsensibleDict):
                 host = infolist['host']
                 if host:
                     self[name] = '%s!%s' %(name, host)
-        host = CaseInsensibleDict.__getitem__(self, nick)
-        if host:
-            return host
-        else:
-            raise KeyError
+
+    def itervalues(self):
+        if '' in CaseInsensibleDict.itervalues(self):
+            self._regenerateCache()
+        return CaseInsensibleDict.itervalues(self)
 
     def remove(self, nick):
         """Place nick in queue for deletion"""
@@ -1359,8 +1367,8 @@ class Op(CommandChanop):
     help = \
     "The command used for ask op is defined globally in plugins.var.python.%(name)s.op_command\n"\
     "It can be defined per server or per channel in:\n"\
-    " plugins.var.python.%(name)s.op_command.servername\n"\
-    " plugins.var.python.%(name)s.op_command.servername.#channelname\n"\
+    " plugins.var.python.%(name)s.op_command.<server>\n"\
+    " plugins.var.python.%(name)s.op_command.<server>.<#channel>\n"\
     "\n"\
     "After using this command, you won't be autodeoped." %{'name':SCRIPT_NAME}
     command = 'oop'
@@ -1419,7 +1427,11 @@ class Deop(CommandNeedsOp, Op):
 
 
 class Kick(CommandNeedsOp):
-    description, usage, help = "Kick nick.", "<nick> [<reason>]", ""
+    description, usage = "Kick nick.", "<nick> [<reason>]"
+    help = \
+    "On freenode, you can set this command to use /remove instead of /kick, users"\
+    " will see it as if the user parted and can bypass autojoin-on-kick scripts."\
+    " See plugins.var.python.%s.enable_remove config option." %SCRIPT_NAME
     command = 'okick'
     completion = '%(nicks)'
 
@@ -1441,7 +1453,7 @@ class Kick(CommandNeedsOp):
 
 class MultiKick(Kick):
     description, usage = "Kick one or more nicks.", "<nick> [<nick> ..] [:] [<reason>]"
-    help = \
+    help = Kick.help + "\n\n"\
     "Note: Is not needed, but use ':' as a separator between nicks and "\
     "the reason. Otherwise, if there's a nick in the channel matching the "\
     "first word in reason it will be kicked."
@@ -1534,6 +1546,7 @@ class Ban(CommandNeedsOp):
 
     def make_banmask(self, hostmask):
         assert self.banmask
+        assert is_hostmask(hostmask), "Invalid hostmask: %s" %hostmask
         if 'exact' in self.banmask:
             return hostmask
         elif 'webchat' in self.banmask:
@@ -1554,6 +1567,7 @@ class Ban(CommandNeedsOp):
         if 'host' in self.banmask:
             host = get_host(hostmask)
         banmask = '%s!%s@%s' %(nick, user, host)
+        assert is_hostmask(banmask), "Invalid banmask: %s" %banmask
         return banmask
 
     def execute_op(self):
@@ -1633,7 +1647,7 @@ class UnBan(Ban):
 
 class Quiet(Ban):
     description = "Silence user or hostmask."
-    help = "This command is only for networks that support channel mode 'q'."
+    help = "This command is only for networks that support channel mode 'q'. See /help oban as well."
     command = 'oquiet'
     completion = '%(chanop_nicks)|%(chanop_ban_mask)|%*'
 
@@ -1644,7 +1658,7 @@ class Quiet(Ban):
 class UnQuiet(UnBan):
     command = 'ounquiet'
     description = "Remove quiets."
-    help = UnBan.help.replace('bans', 'quiets').replace(UnBan.command, command)
+    help = "Works exactly like /ounban, but only for quiets. See /help ounban"
     completion = '%(chanop_unquiet_mask)|%(chanop_nicks)|%*'
 
     _mode = 'q'
@@ -1654,7 +1668,7 @@ class UnQuiet(UnBan):
 class BanKick(Ban, Kick):
     description = "Bankicks nick."
     usage = "<nick> [<reason>] [ [--host] [--user] [--nick] | --exact | --webchat ]"
-    help = "Combines /oban and /okick commands."
+    help = "Combines /oban and /okick commands. See /help oban and /help okick."
     command = 'obankick'
     completion = '%(chanop_nicks)'
 
@@ -1733,7 +1747,7 @@ class DeVoice(Voice):
 
 
 class Mode(CommandNeedsOp):
-    description, usage, help = "Changes channel modes.", "", ""
+    description, usage, help = "Changes channel modes.", "<channel modes>", ""
     command = 'omode'
 
     def execute_op(self):
@@ -1747,7 +1761,7 @@ class Mode(CommandNeedsOp):
 global waiting_for_sync
 waiting_for_sync = None
 class ShowBans(CommandChanop):
-    description, usage, help = "Lists bans or quiets in cache.", "(bans|quiets) [channel]", ""
+    description, usage, help = "Lists bans or quiets of a channel.", "(bans|quiets) [channel]", ""
     command = 'olist'
     completion = 'bans|quiets %(irc_server_channels)'
     showbuffer = ''
@@ -1831,8 +1845,8 @@ class ShowBans(CommandChanop):
         try:
             masks = masklist[key]
         except KeyError:
-            if not weechat.info_get('irc_is_channel', self.channel):
-                error("Buffer isn't an irc channel.")
+            if not (weechat.info_get('irc_is_channel', key[1]) and self.server):
+                error("Command /%s must be used in an IRC buffer." %self.command)
                 return
             masks = None
         self.clear()
@@ -1843,7 +1857,12 @@ class ShowBans(CommandChanop):
             masks = [ m for m in masks.itervalues() ]
             masks.sort(key=lambda x: x.date)
             for ban in masks:
-                op = ban.operator and get_nick(ban.operator) or self.server
+                op = self.server
+                if ban.operator:
+                    try:
+                        op = get_nick(ban.operator)
+                    except:
+                        pass
                 self.prnt_ban(ban.mask, op, ban.date, ban.hostmask)
         else:
             self.prnt('No known %s for %s.%s' %(self.type, key[0], key[1]))
@@ -1871,7 +1890,10 @@ def signal_parse(f):
         if (server, channel) not in chanopChannels:
             # signals only processed for channels in watchlist
             return WEECHAT_RC_OK
-        nick = get_nick(signal_data)
+        try:
+            nick = get_nick(signal_data)
+        except ValueError:
+            return WEECHAT_RC_OK
         debug('%s %s %s', data, signal, signal_data)
         return f(server, channel, nick, data, signal, signal_data)
     decorator.func_name = f.func_name
