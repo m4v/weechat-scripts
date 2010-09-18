@@ -1115,7 +1115,10 @@ class UserList(CaseInsensibleDict):
                     self[name] = '%s!%s' %(name, host)
 
     def itervalues(self):
+        # quick fix for '' hostmask until I get to refactor all this
         if '' in CaseInsensibleDict.itervalues(self):
+            self.clear()
+            self._temp_users.clear()
             self._regenerateCache()
         return CaseInsensibleDict.itervalues(self)
 
