@@ -193,7 +193,7 @@
 #
 #
 #   History:
-#   2010-
+#   2010-09-20
 #   version 0.2: major update
 #   * fixed quiets for ircd-seven (freenode)
 #   * implemented user and mask cache.
@@ -230,7 +230,7 @@
 
 SCRIPT_NAME    = "chanop"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.2-dev"
+SCRIPT_VERSION = "0.2"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Helper script for IRC operators"
 
@@ -1438,7 +1438,7 @@ class Kick(CommandNeedsOp):
     description, usage = "Kick nick.", "<nick> [<reason>]"
     help = \
     "On freenode, you can set this command to use /remove instead of /kick, users"\
-    " will see it as if the user parted and can bypass autojoin-on-kick scripts."\
+    " will see it as if the user parted and it can bypass autojoin-on-kick scripts."\
     " See plugins.var.python.%s.enable_remove config option." %SCRIPT_NAME
     command = 'okick'
     completion = '%(nicks)'
@@ -1619,8 +1619,8 @@ class UnBan(Ban):
     description, usage = "Remove bans.", "<nick|mask> [<nick|mask> ..]"
     command = 'ounban'
     help = \
-    "Autocompletion will complete with channel's bans. Patterns allowed for autocomplete any"\
-    " matching bans.\n"\
+    "Autocompletion will use channel's bans, patterns allowed for autocomplete multiple"\
+    " bans.\n"\
     "\n"\
     "Example:\n"\
     "/%(cmd)s *192.168*<tab>\n"\
