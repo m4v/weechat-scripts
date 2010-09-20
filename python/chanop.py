@@ -116,7 +116,7 @@
 #   * plugins.var.python.chanop.display_affected:
 #     Whenever a new ban is set, chanop will show the users affected by it.
 #     This is intended for help operators to see if their ban is too wide or
-#     point out clones.
+#     point out clones in the channel.
 #     Valid values: 'on', 'off' Default: 'off'
 #
 #
@@ -131,7 +131,7 @@
 #     Valid values: 'on', 'off' Default: 'off'
 #
 #
-#   The following configs are defined per server and are updated by chanop.
+#   The following configs are defined per server and are updated by the script only.
 #
 #   * plugins.var.python.chanop.watchlist:
 #     Indicates to chanop which channels should watch and keep track of users and
@@ -150,7 +150,7 @@
 #     apply exemptions with mask autocompletion
 #     /alias -completion %(chanop_ban_mask) exemption /mode $channel +e
 #     if you use grep.py script, grep with host autocompletion, for look clones. 
-#     /alias -completion %(chanop_hosts) hgrep /grep
+#     /alias -completion %(chanop_hosts) ogrep /grep
 #
 #   * chanop_unban_mask (used in /ounban)
 #     Autocompletes with banmasks set in current channel, requesting them if needed.
@@ -244,13 +244,13 @@ settings = {
 'enable_remove'         :'off',
 'kick_reason'           :'kthxbye!',
 'enable_multi_kick'     :'off',
-'display_affected'      :'off',
+'display_affected'      :'on',
 }
 
 
 try:
     import weechat
-    WEECHAT_RC_OK = weechat.WEECHAT_RC_OK
+    from weechat import WEECHAT_RC_OK, prnt
     import_ok = True
 except ImportError:
     print "This script must be run under WeeChat."
@@ -265,20 +265,25 @@ now = lambda : int(time())
 ### Messages ###
 
 script_nick = SCRIPT_NAME
-def error(s, buffer='', trace=''):
+def error(s, buffer=''):
     """Error msg"""
-    weechat.prnt(buffer, '%s%s %s' %(weechat.prefix('error'), script_nick, s))
+    prnt(buffer, '%s%s %s' %(weechat.prefix('error'), script_nick, s))
     if weechat.config_get_plugin('debug'):
-        if not trace:
-            import traceback
-            if traceback.sys.exc_type:
-                trace = traceback.format_exc()
-        not trace or weechat.prnt('', trace)
+        import traceback
+        if traceback.sys.exc_type:
+            trace = traceback.format_exc()
+            prnt('', trace)
 
 def say(s, buffer=''):
     """normal msg"""
-    weechat.prnt(buffer, '%s\t%s' %(script_nick, s))
+    prnt(buffer, '%s\t%s' %(script_nick, s))
 
+def debug(s, *args):
+    if not isinstance(s, basestring):
+        s = str(s)
+    if args:
+        s = s %args
+    prnt('', '%s\t%s' %(script_nick, s))
 
 ##############
 ### Config ###
@@ -666,10 +671,10 @@ class Message(object):
                command = '/wait %s %s' %(self.wait, self.command)
         else:
             command = self.command
-        debug('sending: %r', command)
         if weechat.config_get_plugin('debug'):
+            debug('sending: %r', command)
             # don't run commands
-            return True
+            #return True
         weechat.command(self.buffer, command)
         return True
 
@@ -710,8 +715,8 @@ class CommandQueue(object):
             hook_timeout = weechat.hook_timer(60*1000, 0, 1, 'queue_timeout_cb', data)
 
             Message.__call__(self)
-            if weechat.config_get_plugin('debug'):
-                return True
+            #if weechat.config_get_plugin('debug'):
+            #    return True
             return False # returning false interrupts the queue execution
 
         def __str__(self):
@@ -891,7 +896,7 @@ class ServerChannelDict(CaseInsensibleDict):
     def purge(self):
         for key in self.keys():
             if key not in chanopChannels:
-                debug('Removing %s.%s list, not in watchlist. (%s items)', key[0], key[1], len(self[key]))
+                #debug('Removing %s.%s list, not in watchlist. (%s items)', key[0], key[1], len(self[key]))
                 del self[key]
         for data in self.itervalues():
             data.purge()
@@ -1897,7 +1902,7 @@ def signal_parse(f):
             nick = get_nick(signal_data)
         except ValueError:
             return WEECHAT_RC_OK
-        debug('%s %s %s', data, signal, signal_data)
+        #debug('%s %s %s', data, signal, signal_data)
         return f(server, channel, nick, data, signal, signal_data)
     decorator.func_name = f.func_name
     return decorator
@@ -1908,7 +1913,7 @@ def signal_parse_no_channel(f):
         nick = get_nick(signal_data)
         keys = userCache.getKeys(server, nick)
         if keys:
-            debug('%s %s %s', data, signal, signal_data)
+            #debug('%s %s %s', data, signal, signal_data)
             return f(keys, nick, data, signal, signal_data)
         return WEECHAT_RC_OK
     decorator.func_name = f.func_name
@@ -2115,16 +2120,16 @@ def garbage_collector_cb(data, counter):
 
     userCache.purge()
 
-    if True:
+    if weechat.config_get_plugin('debug'):
         user_count = sum(map(len, userCache.itervalues()))
         temp_user_count = sum(map(lambda x: len(x._temp_users), userCache.itervalues()))
         for mode, masklist in maskModes.iteritems():
             mask_count = sum(map(len, masklist.itervalues()))
             mask_chan = len(masklist)
-            debug("collector: %s '%s' cached masks in %s channels", mask_count, mode, mask_chan)
-        debug('collector: %s cached users in %s channels', user_count, len(userCache))
-        debug('collector: %s users about to be purged', temp_user_count)
-        debug('collector: %s cached regexps', len(_regexp_cache))
+            debug("%s '%s' cached masks in %s channels", mask_count, mode, mask_chan)
+        debug('%s cached users in %s channels', user_count, len(userCache))
+        debug('%s users about to be purged', temp_user_count)
+        debug('%s cached regexps', len(_regexp_cache))
     return WEECHAT_RC_OK
 
 
@@ -2276,9 +2281,9 @@ if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
         SCRIPT_DESC, '', ''):
 
-    from weeutils import DebugBuffer
-    debug = DebugBuffer('chanop_debugging', globals())
-    debug.create()
+    #from weeutils import DebugBuffer
+    #debug = DebugBuffer('chanop_debugging', globals())
+    #debug.create()
 
     # colors
     color_delimiter = weechat.color('chat_delimiters')
