@@ -2281,9 +2281,12 @@ if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
         SCRIPT_DESC, '', ''):
 
-    #from weeutils import DebugBuffer
-    #debug = DebugBuffer('chanop_debugging', globals())
-    #debug.create()
+    try:
+        from weeutils import DebugBuffer
+        debug = DebugBuffer('chanop_debugging', globals())
+        debug.create()
+    except:
+        pass
 
     # colors
     color_delimiter = weechat.color('chat_delimiters')
