@@ -230,7 +230,7 @@
 
 SCRIPT_NAME    = "chanop"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.2"
+SCRIPT_VERSION = "0.3-dev"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Helper script for IRC operators"
 
@@ -539,6 +539,17 @@ def irc_buffer(buffer):
 #######################
 ### WeeChat classes ###
 
+def callback(method):
+    """This function will take a bound method and make it a callback."""
+    # try to create a descriptive and unique name.
+    import __main__
+    func = method.__name__
+    inst = method.im_self.__name__
+    name = '%s_%s' %(inst, func)
+    # set our callback
+    setattr(__main__, name, method)
+    return name
+
 class Infolist(object):
     """Class for reading WeeChat's infolists."""
 
@@ -597,55 +608,56 @@ class Infolist(object):
 class Command(object):
     """Class for hook WeeChat commands."""
     description, usage, help = "WeeChat command.", "[define usage template]", "detailed help here"
-
     command = ''
     completion = ''
-    callback = ''
-    def __init__(self, command='', callback='', completion=''):
-        if command:
-            self.command = command
-        if callback:
-            self.callback = callback
-        elif not self.callback:
-            self.callback = 'chanop_%s' %self.command
-        if completion:
-            self.completion = completion
-        self.pointer = ''
+
+    def __init__(self):
+        assert self.command, "No command defined"
+        self.__name__ = self.command
+        self._pointer = ''   
+        self._callback = ''   
 
     def __call__(self, *args):
+        return self.callback(*args)
+
+    def callback(self, *args):
         """Called by WeeChat when /command is used."""
-        self.parse_args(*args)
+        try:
+            self.parser(*args)  # argument parsing
+        except Exception, e:
+            error('Argument error, %s' %e)
+            return WEECHAT_RC_OK
         self.execute()
         return WEECHAT_RC_OK
 
-    def parse_args(self, data, buffer, args):
-        """Do argument parsing here."""
+    def parser(self, data, buffer, args):
+        """Argument parsing, override if needed."""
         self.buffer = buffer
-        self.args = args
+        self.args = args.split()
 
     def execute(self):
         """This method is called when the command is run, override this."""
         pass
 
     def hook(self):
-        import __main__
-        assert self.command and self.callback, "command: '%s' callback: '%s'" %(self.command,
-                self.callback)
-        assert not self.pointer, "There's already a hook pointer, unhook first (%s)" %self.command
-        assert not hasattr(__main__, self.callback), "Callback already in __main__ (%s)" %self.callback
-        self.pointer = weechat.hook_command(self.command, self.description, self.usage, self.help,
-                self.completion, self.callback, '')
-        if self.pointer == '':
-            raise Exception, "hook_command failed"
-        # add self to the global namespace
-        setattr(__main__, self.callback, self)
+        assert not self._pointer, \
+                "There's already a hook pointer, unhook first (%s)" %self.command
+        self._callback = callback(self.callback)
+        pointer = weechat.hook_command(self.command,
+                                       self.description,
+                                       self.usage,
+                                       self.help,
+                                       self.completion,
+                                       self._callback, '')
+        if pointer == '':
+            raise Exception, "hook_command failed: %s %s" %(SCRIPT_NAME, self.command)
+        self._pointer = pointer
 
     def unhook(self):
-        import __main__
-        delattr(__main__, self.callback)
-        if self.pointer:
-            weechat.unhook(self.pointer)
-            self.pointer = ''
+        if self._pointer:
+            weechat.unhook(self._pointer)
+            self._pointer = ''
+            self._callback = ''
 
 
 ##########################
@@ -1076,7 +1088,7 @@ def masklist_end_cb(data, modifier, modifier_data, string):
         waiting_for_completion = None
     if waiting_for_sync:
         buffer, mode, channel = waiting_for_sync
-        cmd_showbans('', buffer, '%s %s' %(mode, channel))
+        cmd_showbans.callback('', buffer, '%s %s' %(mode, channel)) # XXX is there a better way?
         waiting_for_sync = None
     return ''
 
@@ -1192,11 +1204,9 @@ userCache = UserCache()
 class CommandChanop(Command):
     """Base class for our commands, with config and general functions."""
     infolist = None
-    def __call__(self, *args):
-        """Called by WeeChat when /command is used."""
-        #debug("command __call__ args: %s" %(args, ))
+    def callback(self, *args):
         try:
-            self.parse_args(*args)  # argument parsing
+            self.parser(*args)  # argument parsing
         except Exception, e:
             error('Argument error, %s' %e)
             return WEECHAT_RC_OK
@@ -1205,7 +1215,7 @@ class CommandChanop(Command):
         self.infolist = None    # free irc_nick infolist
         return WEECHAT_RC_OK    # make WeeChat happy
 
-    def parse_args(self, data, buffer, args):
+    def parser(self, data, buffer, args):
         self.buffer = buffer
         self.args = args
         self.server = weechat.buffer_get_string(self.buffer, 'localvar_server')
@@ -1319,26 +1329,26 @@ class CommandChanop(Command):
         self.queue(cmd)
 
 
-deop_hook = {}
 manual_op = False
-class CommandNeedsOp(CommandChanop):
+class CommandWithOp(CommandChanop):
     """Base class for all the commands that requires op status for work."""
+    deopHooks = {}
 
-    def parse_args(self, data, buffer, args):
+    def parser(self, data, buffer, args):
         """Show help if nothing to parse."""
-        CommandChanop.parse_args(self, data, buffer, args)
+        CommandChanop.parser(self, data, buffer, args)
         if not self.args:
             weechat.command('', '/help %s' %self.command)
 
     def execute(self, *args):
-        global deop_hook, manual_op
+        global manual_op
         buffer = self.buffer
         if not self.args:
             return # don't pointless op and deop it no arguments given
         op = self.get_op()
         if op is None:
             return WEECHAT_RC_OK # not a channel
-        elif op is False or buffer in deop_hook:
+        elif op is False or buffer in self.deopHooks:
             # we're going to autoop or already did
             manual_op = False
         else:
@@ -1347,9 +1357,10 @@ class CommandNeedsOp(CommandChanop):
         if not manual_op and self.get_config_boolean('autodeop'):
             delay = self.get_config_int('autodeop_delay')
             if delay > 0:
-                if buffer in deop_hook:
-                    weechat.unhook(deop_hook[buffer])
-                deop_hook[buffer] = weechat.hook_timer(delay * 1000, 0, 1, 'deop_callback', buffer)
+                if buffer in self.deopHooks:
+                    weechat.unhook(self.deopHooks[buffer])
+                self.deopHooks[buffer] = weechat.hook_timer(delay * 1000, 0, 1,
+                        callback(self.deopCallback), buffer)
             else:
                 self.drop_op()
 
@@ -1357,16 +1368,15 @@ class CommandNeedsOp(CommandChanop):
         """Commands in this method will be run with op privileges."""
         pass
 
-
-def deop_callback(buffer, count):
-    global deop_hook, cmd_deop
-    if weechat_queue.commands:
-        # there are commands in queue yet, wait some more
-        deop_hook[buffer] = weechat.hook_timer(5000, 0, 1, 'deop_callback', buffer)
-    else:
-        cmd_deop('', buffer, '')
-        del deop_hook[buffer]
-    return WEECHAT_RC_OK
+    def deopCallback(self, buffer, count):
+        if weechat_queue.commands:
+            # there are commands in queue yet, wait some more
+            self.deopHooks[buffer] = weechat.hook_timer(5000, 0, 1,
+                    callback(self.deopCallback), buffer)
+        else:
+            self.drop_op()
+            del self.deopHooks[buffer]
+        return WEECHAT_RC_OK
 
 
 # Chanop commands
@@ -1386,12 +1396,12 @@ class Op(CommandChanop):
 
     def execute(self):
         op = self.get_op()
-        if op is True and self.buffer in deop_hook:
+        if op is True and self.buffer in self.deopHooks:
             # /oop was called before auto-deoping, we assume that the user wants
             # to stay opped permanently
-            hook = deop_hook[self.buffer]
+            hook = self.deopHooks[self.buffer]
             weechat.unhook(hook)
-            del deop_hook[self.buffer]
+            del self.deopHooks[self.buffer]
         if self.args:
             nicks = []
             for nick in self.args.split():
@@ -1407,7 +1417,7 @@ class Op(CommandChanop):
             self.queue(cmd)
 
 
-class Deop(CommandNeedsOp, Op):
+class Deop(CommandWithOp, Op):
     description, usage, help = \
     "Removes operator privileges from yourself or users.", "[nick [nick ... ]]", ""
     command = 'odeop'
@@ -1415,9 +1425,9 @@ class Deop(CommandNeedsOp, Op):
     
     _prefix = '-'
 
-    def parse_args(self, data, buffer, args):
-        """Override CommandNeedsOp.parse_args so it doesn't do /help if no args are supplied."""
-        CommandChanop.parse_args(self, data, buffer, args)
+    def parser(self, data, buffer, args):
+        """Override CommandWithOp.parser so it doesn't do /help if no args are supplied."""
+        CommandChanop.parser(self, data, buffer, args)
 
     def execute(self):
         if self.args:
@@ -1426,7 +1436,7 @@ class Deop(CommandNeedsOp, Op):
                 if is_nick(nick) and self.has_op(nick):
                     nicks.append(nick)
             if nicks:
-                CommandNeedsOp.execute(self, nicks)
+                CommandWithOp.execute(self, nicks)
         else:
             self.drop_op()
 
@@ -1434,7 +1444,7 @@ class Deop(CommandNeedsOp, Op):
         self.op(nicks)
 
 
-class Kick(CommandNeedsOp):
+class Kick(CommandWithOp):
     description, usage = "Kick nick.", "<nick> [<reason>]"
     help = \
     "On freenode, you can set this command to use /remove instead of /kick, users"\
@@ -1490,7 +1500,7 @@ class MultiKick(Kick):
             self.queue_clear()
 
 
-class Ban(CommandNeedsOp):
+class Ban(CommandWithOp):
     description = "Ban user or hostmask."
     usage = \
     "<nick|mask> [<nick|mask> ..] [ [--host] [--user] [--nick] | --exact | --webchat ]"
@@ -1517,11 +1527,11 @@ class Ban(CommandNeedsOp):
     _mode = 'b'
     _prefix = '+'
 
-    def parse_args(self, *args):
-        CommandNeedsOp.parse_args(self, *args)
-        self._parse_args(self, *args)
+    def parser(self, *args):
+        CommandWithOp.parser(self, *args)
+        self._parser(*args)
 
-    def _parse_args(self, *args):
+    def _parser(self, *args):
         args = self.args.split()
         try:
             (opts, args) = getopt.gnu_getopt(args, 'hunew', ('host', 'user', 'nick', 'exact',
@@ -1723,7 +1733,7 @@ class MultiBanKick(BanKick):
             self.queue_clear()
 
 
-class Topic(CommandNeedsOp):
+class Topic(CommandWithOp):
     description, usage = "Changes channel topic.", "[-delete | topic]"
     help = "Clear topic if '-delete' is the new topic."
     command = 'otopic'
@@ -1737,7 +1747,7 @@ class Topic(CommandNeedsOp):
         self.queue(cmd)
 
 
-class Voice(CommandNeedsOp):
+class Voice(CommandWithOp):
     description, usage, help = "Gives voice to somebody.", "nick", ""
     command = 'ovoice'
     completion = '%(nicks)'
@@ -1754,7 +1764,7 @@ class DeVoice(Voice):
         self.devoice(self.args)
 
 
-class Mode(CommandNeedsOp):
+class Mode(CommandWithOp):
     description, usage, help = "Changes channel modes.", "<channel modes>", ""
     command = 'omode'
 
@@ -1766,7 +1776,6 @@ class Mode(CommandNeedsOp):
         self.queue(cmd)
 
 
-global waiting_for_sync
 waiting_for_sync = None
 class ShowBans(CommandChanop):
     description, usage, help = "Lists bans or quiets of a channel.", "(bans|quiets) [channel]", ""
@@ -1776,7 +1785,7 @@ class ShowBans(CommandChanop):
 
     padding = 40
 
-    def parse_args(self, data, buffer, args):
+    def parser(self, data, buffer, args):
         self.buffer = buffer
         self.server = weechat.buffer_get_string(self.buffer, 'localvar_server')
         self.channel = weechat.buffer_get_string(self.buffer, 'localvar_channel')
@@ -2320,8 +2329,7 @@ if __name__ == '__main__' and import_ok and \
 
     # hook /oop /odeop
     Op().hook()
-    cmd_deop = Deop()
-    cmd_deop.hook()
+    Deop().hook()
     # hook /okick /obankick
     if get_config_boolean('enable_multi_kick'):
         cmd_kick = MultiKick()
