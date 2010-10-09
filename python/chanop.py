@@ -17,7 +17,7 @@
 ###
 
 ###
-#   Helper script for IRC operators
+#   Helper script for IRC Channel Operators
 #
 #   Inspired by auto_bleh.pl (irssi) and chanserv.py (xchat) scripts.
 #
@@ -232,7 +232,7 @@ SCRIPT_NAME    = "chanop"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
 SCRIPT_VERSION = "0.3-dev"
 SCRIPT_LICENSE = "GPL3"
-SCRIPT_DESC    = "Helper script for IRC operators"
+SCRIPT_DESC    = "Helper script for IRC Channel Operators"
 
 ### default settings ###
 settings = {
