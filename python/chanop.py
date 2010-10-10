@@ -544,7 +544,10 @@ def callback(method):
     # try to create a descriptive and unique name.
     import __main__
     func = method.__name__
-    inst = method.im_self.__name__
+    try:
+        inst = method.im_self.__name__
+    except AttributeError:
+        inst = method.im_self.__class__.__name__
     name = '%s_%s' %(inst, func)
     # set our callback
     setattr(__main__, name, method)
@@ -840,6 +843,10 @@ def caseInsensibleKey(k):
 class CaseInsensibleDict(dict):
     key = staticmethod(caseInsensibleKey)
 
+    def __init__(self, **kwargs):
+        for k, v in kwargs.iteritems():
+            self[k] = v
+
     def __setitem__(self, k, v):
         dict.__setitem__(self, self.key(k), v)
 
@@ -932,29 +939,42 @@ class MaskObject(object):
 
 
 class MaskList(CaseInsensibleDict):
-    def __init__(self):
-        self.fetch_time = 0
-        self.synced = False
+    def __init__(self, server, channel):
+        self.server = CaseInsensibleString(server)
+        self.channel = CaseInsensibleString(channel)
+        self.synced = 0
 
-    def __setitem__(self, mask, d):
+    def add(self, mask, **kwargs):
         if mask in self:
             # mask exists, update it
             ban = self[mask]
-            for attr, value in d.iteritems():
+            for attr, value in kwargs.iteritems():
                 if value:
                     setattr(ban, attr, value)
         else:
-            CaseInsensibleDict.__setitem__(self, mask, MaskObject(mask, **d))
+            self[mask] = MaskObject(mask, **kwargs)
 
     def searchByHostmask(self, hostmask):
-        L = []
-        for mask in self:
-            if hostmask_pattern_match(mask, hostmask):
-                L.append(mask)
-        return L
+        return [ mask for mask in self if hostmask_pattern_match(mask, hostmask) ]
 
     def searchByPattern(self, pattern):
         return pattern_match(pattern, self.iterkeys())
+
+    def searchByNick(self, nick):
+        hostmask = userCache.hostFromNick(nick, self.server, self.channel)
+        if hostmask:
+            return self.searchByHostmask(hostmask)
+        else:
+            return []
+
+    def search(self, s):
+        if is_nick(s):
+            masks = self.searchByNick(s)
+        elif is_hostmask(s):
+            masks = self.searchByHostmask(s)
+        else:
+            masks = self.searchByPattern(s)
+        return masks
 
     def purge(self):
         pass
@@ -962,10 +982,6 @@ class MaskList(CaseInsensibleDict):
 
 class MaskCache(ServerChannelDict):
     """Keeps a list of our bans for quick look up."""
-    # DONT reassign these lists, should be shared across MaskCache instances
-    hook_queue = []
-    hook_fetch = []
-
     def __init__(self, mode='b'):
         self.mode = mode
 
@@ -973,8 +989,8 @@ class MaskCache(ServerChannelDict):
         """Adds a ban to (server, channel) banlist."""
         key = (server, channel)
         if key not in self:
-            self[key] = MaskList()
-        self[key][mask] = kwargs
+            self[key] = MaskList(*key)
+        self[key].add(mask, **kwargs)
 
     def remove(self, server, channel, mask=None):#, hostmask=None):
         key = (server, channel)
@@ -987,110 +1003,146 @@ class MaskCache(ServerChannelDict):
         except KeyError:
             pass
 
-    def searchByHostmask(self, hostmask, server, channel):
-        if hostmask:
-            try:
-                return self[server, channel].searchByHostmask(hostmask)
-            except KeyError:
-                pass
-        return []
 
-    def searchByPattern(self, pattern, server, channel):
-        if pattern:
-            try:
-                return self[server, channel].searchByPattern(pattern)
-            except KeyError:
-                pass
-        return []
+class MaskHandler(ServerChannelDict):
+    _hook_mask = ''
+    _hook_end = ''
+    _hide_msg = False
 
-    def searchByNick(self, nick, server, channel):
-        hostmask = userCache.hostFromNick(nick, server, channel)
-        return self.searchByHostmask(hostmask, server, channel)
+    caches = {}
+    _modeTranslation = CaseInsensibleDict()
+    queue = []
+    _execute = CaseInsensibleDict()
 
-    def search(self, s, server, channel):
-        if is_nick(s):
-            masks = self.searchByNick(s, server, channel)
-        elif is_hostmask(s):
-            masks = self.searchByHostmask(s, server, channel)
-        else:
-            masks = self.searchByPattern(s, server, channel)
-        return masks
+    def hook(self):
+        if not self._hook_mask:
+            self._hook_mask = \
+                    weechat.hook_modifier('irc_in_367', callback(self._maskCallback), '')
+        if not self._hook_end:
+            self._hook_end = \
+                    weechat.hook_modifier('irc_in_368', callback(self._endCallback), '')
 
-    def fetch(self, server, channel):
+    def unhook(self):
+        if self._hook_mask:
+            weechat.unhook(self._hook_mask)
+            self._hook_mask = ''
+        if self._hook_end:
+            weechat.unhook(self._hook_end)
+            self._hook_end = ''
+
+    def __setitem__(self, key, value):
+        try:
+            self[key].append(value)
+        except:
+            ServerChannelDict.__setitem__(self, key, [value])
+
+    def addCache(self, mode, *args):
+        def fetch(server, channel, execute=None):
+            self.fetch(server, channel, mode, execute)
+
+        cache = MaskCache(mode)
+        cache.fetch = fetch
+
+        self.caches[mode] = cache
+        for name in args:
+            self._modeTranslation[name] = cache
+
+    def getCache(self, mode):
+        try:
+            return self.caches[mode]
+        except KeyError:
+            return self._modeTranslation[mode]
+
+    def fetch(self, server, channel, mode, execute=None):
         """Fetches masks for a given server and channel."""
+        buffer = weechat.buffer_search('irc', 'server.%s' %server)
+        if not buffer or not weechat.info_get('irc_is_channel', channel):
+            # invalid server or channel
+            return 
+
         # check modes
-        if self.mode not in supported_modes(server):
+        if mode not in supported_modes(server):
             return
+        maskCache = self.caches[mode]
+        key = (server, channel)
         # check the last time we did this
         try:
-            if (now() - self[server, channel].fetch_time) < 60:
+            masklist = maskCache[key]
+            if (now() - masklist.synced) < 60:
                 # don't fetch again
                 return
         except KeyError:
             pass
+        #    maskCache[key] = masklist = MaskList(*key)
+        
+        if not self.queue:
+            self._fetch(server, channel, mode)
+        elif (server, channel, mode) not in self.queue:
+            self.queue.append((server, channel, mode))
+
+        if execute:
+            self._execute[server, channel] = execute
+
+    def _fetch(self, server, channel, mode):
         buffer = weechat.buffer_search('irc', 'server.%s' %server)
-        if not buffer or not weechat.info_get('irc_is_channel', channel):
-            # invalid server or channel
+        if not buffer:
             return
-        key = (server, channel, self.mode)
-        if key in self.hook_queue:
-            # already in queue
-            return
-        self.hook_queue.append(key)
-        if not self.hook_fetch:
-            # only need to hook once
-            self.hook_fetch.append(weechat.hook_modifier('irc_in_367', 'masklist_add_cb', ''))
-            self.hook_fetch.append(weechat.hook_modifier('irc_in_368', 'masklist_end_cb', ''))
-        cmd = '/wait %s /mode %s %s' %(len(self.hook_queue), channel, self.mode)
-        #say('Fetching %s masks (+%s channelmode).' %(channel, self.mode))
+        cmd = '/mode %s %s' %(channel, mode)
+        say('Fetching %s masks (+%s channelmode).' %(channel, mode))
+        self._hide_msg = True
         weechat.command(buffer, cmd)
 
-banlist = MaskCache('b')
-quietlist = MaskCache('q')
-maskModes = { 'b':banlist, 'q': quietlist }
-
-def masklist_add_cb(data, modifier, modifier_data, string):
-    """Adds ban to the list."""
-    channel, banmask, op, date = string.split()[-4:]
-    server = modifier_data
-    #debug('%s %s', server, channel)
-    serv, chan, mode = MaskCache.hook_queue[0]
-    if caseInsensibleKey((serv, chan)) ==  (server, channel):
-        maskModes[mode].add(server, channel, banmask, operator=op, date=date)
-    else:
-        error("Error: got mask from unexpected server/channel",
-                trace="Expected: %s.%s Got: %s.%s" %(serv, chan, server, channel))
-    return ''
-
-def masklist_end_cb(data, modifier, modifier_data, string):
-    """Ban listing over."""
-    #debug(string)
-    global waiting_for_completion, waiting_for_sync
-    server, channel, mode = MaskCache.hook_queue.pop(0)
-    masklist = maskModes[mode]
-    key = (server, channel)
-    if key not in masklist:
-        masklist[key] = MaskList()
-    masklist[key].synced = True
-    if not MaskCache.hook_queue:
-        # fetch is over
-        for hook in MaskCache.hook_fetch:
-            weechat.unhook(hook)
-        del MaskCache.hook_fetch[:]
-    # check if there is a completion waiting for the fetch to finish
-    if waiting_for_completion:
-        buffer, completion  = waiting_for_completion
-        if masklist[key]:
-            say('Got %s +%s masks.' %(len(masklist[key]), mode), buffer)
+    def _maskCallback(self, data, modifier, modifier_data, string):
+        """callback for irc_in_367 modifier, a single ban."""
+        debug(string)
+        channel, banmask, op, date = string.split()[-4:]
+        self[modifier_data, channel] = (banmask, op, date) # store temporally until irc_368 msg
+        if self._hide_msg:
+            return ''
         else:
-            say('No +%s masks found.' %mode, buffer)
-        cmpl_unban(buffer, server, channel, completion, masklist)
-        waiting_for_completion = None
-    if waiting_for_sync:
-        buffer, mode, channel = waiting_for_sync
-        cmd_showbans.callback('', buffer, '%s %s' %(mode, channel)) # XXX is there a better way?
-        waiting_for_sync = None
-    return ''
+            return string
+    
+    def _endCallback(self, data, modifier, modifier_data, string):
+        """callback for irc_in_368 modifier that marks the end of channel's ban list."""
+        debug(string)
+        L = string.split()
+        channel, mode = L[3], L[7]
+        server = modifier_data
+
+        try:
+            maskCache = self.getCache(mode)
+            for banmask, op, date in self[server, channel]:
+                maskCache.add(server, channel, banmask, operator=op, date=date)
+            masklist = maskCache[server, channel]
+        except KeyError:
+            masklist = maskCache[server, channel] = MaskList(server, channel)
+        finally:
+            if (server, channel) in self:
+                del self[server, channel]
+
+        masklist.synced = now()
+
+        # run finishing functions if any
+        if (server, channel) in self._execute:
+            self._execute[server, channel]()
+            del self._execute[server, channel]
+
+        try:
+            if self._hide_msg:
+                return ''
+            else:
+                return string
+        finally:
+            if self.queue:
+                next = self.queue.pop(0)
+                self._fetch(*next)
+            else:
+                self._hide_msg = False
+
+
+maskHandler = MaskHandler()
+maskHandler.addCache('b', 'ban', 'bans')
+maskHandler.addCache('q', 'quiet', 'quiets')
 
 
 # TODO refactor UserList and UserCache
@@ -1522,10 +1574,10 @@ class Ban(CommandWithOp):
     command = 'oban'
     completion = '%(chanop_nicks)|%(chanop_ban_mask)|%*'
 
-    masklist = banlist
     banmask = []
     _mode = 'b'
     _prefix = '+'
+    masklist = maskHandler.caches[_mode]
 
     def parser(self, *args):
         CommandWithOp.parser(self, *args)
@@ -1639,10 +1691,11 @@ class UnBan(Ban):
     _prefix = '-'
 
     def search_masks(self, s):
+        masklist = self.masklist[self.server, self.channel]
         if is_nick(s):
-            return self.masklist.searchByNick(s, self.server, self.channel)
+            return masklist.searchByNick(s)
         elif is_hostmask(s):
-            return self.masklist.searchByHostmask(s, self.server, self.channel)
+            return masklist.searchByHostmask(s)
         return []
 
     def execute_op(self):
@@ -1670,7 +1723,7 @@ class Quiet(Ban):
     completion = '%(chanop_nicks)|%(chanop_ban_mask)|%*'
 
     _mode = 'q'
-    masklist = quietlist
+    masklist = maskHandler.caches[_mode]
 
 
 class UnQuiet(UnBan):
@@ -1680,7 +1733,7 @@ class UnQuiet(UnBan):
     completion = '%(chanop_unquiet_mask)|%(chanop_nicks)|%*'
 
     _mode = 'q'
-    masklist = quietlist
+    masklist = maskHandler.caches[_mode]
 
 
 class BanKick(Ban, Kick):
@@ -1776,7 +1829,6 @@ class Mode(CommandWithOp):
         self.queue(cmd)
 
 
-waiting_for_sync = None
 class ShowBans(CommandChanop):
     description, usage, help = "Lists bans or quiets of a channel.", "(bans|quiets) [channel]", ""
     command = 'olist'
@@ -1792,13 +1844,10 @@ class ShowBans(CommandChanop):
         type, _, args = args.partition(' ')
         if not type:
             raise ValueError, 'missing argument'
-        if type in ('b', 'bans'):
-            self.type = 'bans'
-            self.mode = 'b'
-        elif type in ('q', 'quiets'):
-            self.type = 'quiets'
-            self.mode = 'q'
-        else:
+        try:
+            self.maskCache = maskHandler.getCache(type)
+            self.type = type
+        except KeyError:
             raise ValueError, 'incorrect argument'
         self.args = args.strip()
 
@@ -1849,29 +1898,28 @@ class ShowBans(CommandChanop):
 
     def execute(self):
         self.showbuffer = ''
-        if self.mode not in supported_modes(self.server):
+        if self.maskCache.mode not in supported_modes(self.server):
             self.clear()
             self.prnt("\n%sNetwork '%s' doesn't support %s" %(color_channel, self.server,
                 self.type))
             return
-        masklist = maskModes[self.mode]
         if self.args:
             key = (self.server, self.args)
         else:
             key = (self.server, self.channel)
         try:
-            masks = masklist[key]
+            masklist = self.maskCache[key]
         except KeyError:
             if not (weechat.info_get('irc_is_channel', key[1]) and self.server):
                 error("Command /%s must be used in an IRC buffer." %self.command)
                 return
-            masks = None
+            masklist = None
         self.clear()
         mask_count = 0
-        if masks:
-            mask_count = len(masks)
+        if masklist:
+            mask_count = len(masklist)
             self.prnt('\n%s[%s %s]' %(color_channel, key[0], key[1]))
-            masks = [ m for m in masks.itervalues() ]
+            masks = [ m for m in masklist.itervalues() ]
             masks.sort(key=lambda x: x.date)
             for ban in masks:
                 op = self.server
@@ -1883,11 +1931,9 @@ class ShowBans(CommandChanop):
                 self.prnt_ban(ban.mask, op, ban.date, ban.hostmask)
         else:
             self.prnt('No known %s for %s.%s' %(self.type, key[0], key[1]))
-        if masks is None or not masklist[key].synced:
+        if masklist is None or not masklist.synced:
             self.prnt("\n%sList not synced, please wait ..." %color_channel)
-            global waiting_for_sync
-            waiting_for_sync = (self.buffer, self.mode, key[1])
-            masklist.fetch(*key)
+            self.maskCache.fetch(key[0], key[1], lambda: self.execute())
         self.set_title('List of %s known by chanop in %s.%s (total: %s)' %(self.type,
                                                                            key[0],
                                                                            key[1],
@@ -2034,8 +2080,8 @@ def mode_cb(server, channel, nick, data, signal, signal_data):
     # check if channel is in watchlist
     key = (server, channel)
     allkeys = CaseInsensibleSet()
-    for masklist in maskModes.itervalues():
-        allkeys.update(masklist)
+    for maskCache in maskHandler.caches.itervalues():
+        allkeys.update(maskCache)
         if key not in allkeys and key not in chanopChannels:
             # from a channel we're not tracking
             return WEECHAT_RC_OK
@@ -2072,7 +2118,7 @@ def mode_cb(server, channel, nick, data, signal, signal_data):
     affected_users = []
     # update masklist
     for action, mode, mask in chanmode_list:
-        masklist = maskModes[mode]
+        masklist = maskHandler.caches[mode]
         #debug('MODE: %s%s %s %s', action, mode, mask, op)
         if action == '+':
             hostmask = hostmask_pattern_match(mask, userCache[key].itervalues())
@@ -2124,7 +2170,7 @@ def garbage_collector_cb(data, counter):
     This takes care of purging users and masks from channels not in watchlist, and
     expired users that parted.
     """
-    for masklist in maskModes.itervalues():
+    for masklist in maskHandler.caches.itervalues():
         masklist.purge()
 
     userCache.purge()
@@ -2132,7 +2178,7 @@ def garbage_collector_cb(data, counter):
     if weechat.config_get_plugin('debug'):
         user_count = sum(map(len, userCache.itervalues()))
         temp_user_count = sum(map(lambda x: len(x._temp_users), userCache.itervalues()))
-        for mode, masklist in maskModes.iteritems():
+        for mode, masklist in maskHandler.caches.iteritems():
             mask_count = sum(map(len, masklist.itervalues()))
             mask_chan = len(masklist)
             debug("%s '%s' cached masks in %s channels", mask_count, mode, mask_chan)
@@ -2184,52 +2230,50 @@ def cmpl_get_irc_users(f):
         return f(users, data, completion_item, buffer, completion)
     return decorator
 
-global waiting_for_completion, cmpl_mask_args
-waiting_for_completion = None
-cmpl_mask_args = None
 def unban_mask_cmpl(mode, completion_item, buffer, completion):
     """Completion for applied banmasks, for commands like /ounban /ounquiet"""
-    masklist = maskModes[mode]
+    maskCache = maskHandler.caches[mode]
     key = irc_buffer(buffer)
     if not key:
         return WEECHAT_RC_OK
     server, channel = key
-    if key not in masklist or not masklist[key].synced:
-        # do completion in masklist_end_cb function
-        global waiting_for_completion
-        masklist.fetch(server, channel)
-        # check if it's fetching a banlist
-        if MaskCache.hook_fetch and not waiting_for_completion:
-            waiting_for_completion = (buffer, completion)
-            say('Fetching +%s masks in %s, please wait...' %(mode, channel), buffer)
-        else:
-            # fetch in progress, do nothing.
-            pass
-    else:
-        # mask list updated, do completion
-        cmpl_unban(buffer, server, channel, completion, masklist)
-    return WEECHAT_RC_OK
 
-def cmpl_unban(buffer, server, channel, completion, masklist):
-    """Updates input with masks if pattern given or feeds the completion list"""
-    masks = masklist[server, channel]
-    input = weechat.buffer_get_string(buffer, 'input')
-    if input[-1] != ' ':
-        input, _, pattern = input.rpartition(' ')
-    else:
-        pattern = ''
-    #debug('%s %s', repr(input), repr(pattern))
-    if pattern:
-        L = masklist.search(pattern, server, channel)
-        if L:
-            input = '%s %s ' %(input, ' '.join(L))
-            weechat.buffer_set(buffer, 'input', input)
-            weechat.buffer_set(buffer, 'input_pos', str(len(input)))
+    def cmpl_unban(masklist):
+        input = weechat.buffer_get_string(buffer, 'input')
+        if input[-1] != ' ':
+            input, _, pattern = input.rpartition(' ')
+        else:
+            pattern = ''
+        #debug('%s %s', repr(input), repr(pattern))
+        if pattern:
+            L = masklist.search(pattern)
+            if L:
+                input = '%s %s ' %(input, ' '.join(L))
+                weechat.buffer_set(buffer, 'input', input)
+                weechat.buffer_set(buffer, 'input_pos', str(len(input)))
+                return
+        elif not masklist:
             return
-    elif not masks:
-        return
-    for mask in masks.iterkeys():
-        weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_END)
+        for mask in masklist.iterkeys():
+            weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_END)
+
+    if key not in maskCache or not maskCache[key].synced:
+        # do completion after fetching marks
+        if not maskHandler.queue:
+            def execute():
+                masklist = maskCache[key]
+                if masklist:
+                    say('Got %s +%s masks.' %(len(masklist), maskCache.mode), buffer)
+                else:
+                    say('No +%s masks found.' %maskCache.mode, buffer)
+                cmpl_unban(masklist)
+
+            maskCache.fetch(server, channel, execute)
+            say('Fetching +%s masks in %s, please wait...' %(mode, channel), buffer)
+    else:
+        # mask list is up to date, do completion
+        cmpl_unban(maskCache[key])
+    return WEECHAT_RC_OK
 
 @cmpl_get_irc_users
 def ban_mask_cmpl(users, data, completion_item, buffer, completion):
@@ -2352,6 +2396,8 @@ if __name__ == '__main__' and import_ok and \
     Mode().hook()
     Voice().hook()
     DeVoice().hook()
+
+    maskHandler.hook()
 
     weechat.hook_config('plugins.var.python.%s.enable_multi_kick' %SCRIPT_NAME,
             'enable_multi_kick_conf_cb', '')
