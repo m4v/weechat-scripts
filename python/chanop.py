@@ -188,7 +188,6 @@
 #    - support for bans with channel forward
 #    - support for extbans (?)
 #   * Refactor /oop /odeop /ovoice /odevoice commands, should use MODE.
-#   * Update banmask cache with regular /ban command
 #   * Sort completions by user activity
 #
 #
