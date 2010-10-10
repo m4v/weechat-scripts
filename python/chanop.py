@@ -1073,7 +1073,6 @@ class MaskHandler(ServerChannelDict):
                 return
         except KeyError:
             pass
-        #    maskCache[key] = masklist = MaskList(*key)
         
         if not self.queue:
             self._fetch(server, channel, mode)
@@ -1088,13 +1087,13 @@ class MaskHandler(ServerChannelDict):
         if not buffer:
             return
         cmd = '/mode %s %s' %(channel, mode)
-        say('Fetching %s masks (+%s channelmode).' %(channel, mode))
+        #say('Fetching %s masks (+%s channelmode).' %(channel, mode))
         self._hide_msg = True
         weechat.command(buffer, cmd)
 
     def _maskCallback(self, data, modifier, modifier_data, string):
         """callback for irc_in_367 modifier, a single ban."""
-        debug(string)
+        #debug(string)
         channel, banmask, op, date = string.split()[-4:]
         self[modifier_data, channel] = (banmask, op, date) # store temporally until irc_368 msg
         if self._hide_msg:
@@ -1104,7 +1103,7 @@ class MaskHandler(ServerChannelDict):
     
     def _endCallback(self, data, modifier, modifier_data, string):
         """callback for irc_in_368 modifier that marks the end of channel's ban list."""
-        debug(string)
+        #debug(string)
         L = string.split()
         channel, mode = L[3], L[7]
         server = modifier_data
@@ -1444,7 +1443,7 @@ class Op(CommandChanop):
     command = 'oop'
     completion = '%(nicks)'
 
-    _prefix = '+'
+    prefix = '+'
 
     def execute(self):
         op = self.get_op()
@@ -1465,7 +1464,7 @@ class Op(CommandChanop):
         max_modes = supported_maxmodes(self.server)
         for n in range(0, len(nicks), max_modes):
             slice = nicks[n:n+max_modes]
-            cmd = '/mode %s%s %s' %(self._prefix, 'o'*len(slice), ' '.join(slice))
+            cmd = '/mode %s%s %s' %(self.prefix, 'o'*len(slice), ' '.join(slice))
             self.queue(cmd)
 
 
@@ -1475,7 +1474,7 @@ class Deop(CommandWithOp, Op):
     command = 'odeop'
     completion = '%(nicks)'
     
-    _prefix = '-'
+    prefix = '-'
 
     def parser(self, data, buffer, args):
         """Override CommandWithOp.parser so it doesn't do /help if no args are supplied."""
@@ -1575,9 +1574,9 @@ class Ban(CommandWithOp):
     completion = '%(chanop_nicks)|%(chanop_ban_mask)|%*'
 
     banmask = []
-    _mode = 'b'
-    _prefix = '+'
-    masklist = maskHandler.caches[_mode]
+    mode = 'b'
+    prefix = '+'
+    maskCache = maskHandler.caches[mode]
 
     def parser(self, *args):
         CommandWithOp.parser(self, *args)
@@ -1660,20 +1659,20 @@ class Ban(CommandWithOp):
             self.queue_clear()
 
     def mode_is_supported(self):
-        return self._mode in supported_modes(self.server)
+        return self.mode in supported_modes(self.server)
 
     def ban(self, *banmasks, **kwargs):
-        if self._mode != 'b' and not self.mode_is_supported():
+        if self.mode != 'b' and not self.mode_is_supported():
             error("%s doesn't seem to support channel mode '%s', using regular ban." %(self.server,
-                self._mode))
+                self.mode))
             mode = 'b'
         else:
-            mode = self._mode
+            mode = self.mode
         max_modes = supported_maxmodes(self.server)
         for n in range(0, len(banmasks), max_modes):
             slice = banmasks[n:n+max_modes]
             bans = ' '.join(slice)
-            cmd = '/mode %s%s %s' %(self._prefix, mode*len(slice), bans)
+            cmd = '/mode %s%s %s' %(self.prefix, mode*len(slice), bans)
             self.queue(cmd, **kwargs)
 
 
@@ -1688,10 +1687,13 @@ class UnBan(Ban):
     "/%(cmd)s *192.168*<tab>\n"\
     "  Will autocomplete with all bans matching *192.168*" %{'cmd':command}
     completion = '%(chanop_unban_mask)|%(chanop_nicks)|%*'
-    _prefix = '-'
+    prefix = '-'
 
     def search_masks(self, s):
-        masklist = self.masklist[self.server, self.channel]
+        try:
+            masklist = self.maskCache[self.server, self.channel]
+        except KeyError:
+            return []
         if is_nick(s):
             return masklist.searchByNick(s)
         elif is_hostmask(s):
@@ -1722,8 +1724,8 @@ class Quiet(Ban):
     command = 'oquiet'
     completion = '%(chanop_nicks)|%(chanop_ban_mask)|%*'
 
-    _mode = 'q'
-    masklist = maskHandler.caches[_mode]
+    mode = 'q'
+    maskCache = maskHandler.caches[mode]
 
 
 class UnQuiet(UnBan):
@@ -1732,8 +1734,8 @@ class UnQuiet(UnBan):
     help = "Works exactly like /ounban, but only for quiets. See /help ounban"
     completion = '%(chanop_unquiet_mask)|%(chanop_nicks)|%*'
 
-    _mode = 'q'
-    masklist = maskHandler.caches[_mode]
+    mode = 'q'
+    maskCache = maskHandler.caches[mode]
 
 
 class BanKick(Ban, Kick):
@@ -2116,17 +2118,17 @@ def mode_cb(server, channel, nick, data, signal, signal_data):
             del args[0]
 
     affected_users = []
-    # update masklist
+    # update masks
     for action, mode, mask in chanmode_list:
-        masklist = maskHandler.caches[mode]
+        maskCache = maskHandler.caches[mode]
         #debug('MODE: %s%s %s %s', action, mode, mask, op)
         if action == '+':
             hostmask = hostmask_pattern_match(mask, userCache[key].itervalues())
             if hostmask:
                 affected_users.extend(hostmask)
-            masklist.add(server, channel, mask, operator=op, hostmask=hostmask)
+            maskCache.add(server, channel, mask, operator=op, hostmask=hostmask)
         elif action == '-':
-            masklist.remove(server, channel, mask)
+            maskCache.remove(server, channel, mask)
     if affected_users and get_config_boolean('display_affected',
             get_function=get_config_specific, server=server, channel=channel):
         buffer = weechat.buffer_search('irc', '%s.%s' %key)
@@ -2170,17 +2172,17 @@ def garbage_collector_cb(data, counter):
     This takes care of purging users and masks from channels not in watchlist, and
     expired users that parted.
     """
-    for masklist in maskHandler.caches.itervalues():
-        masklist.purge()
+    for maskCache in maskHandler.caches.itervalues():
+        maskCache.purge()
 
     userCache.purge()
 
     if weechat.config_get_plugin('debug'):
         user_count = sum(map(len, userCache.itervalues()))
         temp_user_count = sum(map(lambda x: len(x._temp_users), userCache.itervalues()))
-        for mode, masklist in maskHandler.caches.iteritems():
-            mask_count = sum(map(len, masklist.itervalues()))
-            mask_chan = len(masklist)
+        for mode, maskCache in maskHandler.caches.iteritems():
+            mask_count = sum(map(len, maskCache.itervalues()))
+            mask_chan = len(maskCache)
             debug("%s '%s' cached masks in %s channels", mask_count, mode, mask_chan)
         debug('%s cached users in %s channels', user_count, len(userCache))
         debug('%s users about to be purged', temp_user_count)
