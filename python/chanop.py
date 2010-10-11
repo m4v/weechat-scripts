@@ -1365,10 +1365,13 @@ class CommandChanop(Command):
     def drop_op(self):
         op = self.has_op()
         if op is True:
-            value = self.get_config('deop_command')
-            if not value:
-                value = '/deop'
-            self.queue(self.replace_vars(value))
+            self._drop_op()
+
+    def _drop_op(self):
+        value = self.get_config('deop_command')
+        if not value:
+            value = '/deop'
+        self.queue(self.replace_vars(value))
 
     def voice(self, args):
         cmd = '/voice %s' %args
@@ -1412,7 +1415,7 @@ class CommandWithOp(CommandChanop):
                 self.deopHooks[buffer] = weechat.hook_timer(delay * 1000, 0, 1,
                         callback(self.deopCallback), buffer)
             else:
-                self.drop_op()
+                self._drop_op()
 
     def execute_op(self, *args):
         """Commands in this method will be run with op privileges."""
@@ -1424,7 +1427,8 @@ class CommandWithOp(CommandChanop):
             self.deopHooks[buffer] = weechat.hook_timer(5000, 0, 1,
                     callback(self.deopCallback), buffer)
         else:
-            self.drop_op()
+            self._drop_op()
+            weechat_queue.run()
             del self.deopHooks[buffer]
         return WEECHAT_RC_OK
 
