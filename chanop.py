@@ -840,11 +840,11 @@ class IrcCommands(ConfigOptions):
     @safe_check
     def run(self):
         while self.commands:
+            self.commands.pop(0)()
             if self.interrupt:
                 debug("Interrupting queue")
                 self.interrupt = False
                 break
-            self.commands.pop(0)()
 
     def clear(self):
         self.commands = []
@@ -878,6 +878,9 @@ class Message(ConfigOptions):
         if weechat.config_get_plugin('debug'):
             debug('sending: %r', cmd)
         weechat.command(self.opt.buffer, cmd)
+
+    def __repr__(self):
+        return 'Message<%s>' %self.payload()
 
 
 
@@ -1337,7 +1340,7 @@ class CommandChanop(Command, ConfigOptions):
     def parser(self, data, buffer, args):
         self.setup(buffer)
         self.args = args
-        self.users = userCache[(self.server, self.channel)]
+        self.users = userCache[self.server, self.channel]
 
     def _nick_infolist(self):
         # reuse the same infolist instead of creating it many times
@@ -1500,7 +1503,8 @@ class Deop(CommandWithOp, Op):
                 CommandWithOp.execute(self, nicks)
         else:
             self.opt.autodeop = True
-            irc.Deop()
+            if self.has_op():
+                irc.Deop()
 
     def execute_op(self, nicks):
         self.op(nicks)
