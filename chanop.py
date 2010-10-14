@@ -794,6 +794,11 @@ class IrcCommands(ConfigOptions):
         self.queue(msg)
 
     def Deop(self):
+        if self.get_config_int('autodeop_delay') == 0:
+            # use Mode so it can be merged
+            self.Mode('-o', self.nick)
+            return
+
         class DeopMessage(Message):
             command = 'mode'
             args = ('-o', self.nick)
@@ -804,8 +809,36 @@ class IrcCommands(ConfigOptions):
         msg = DeopMessage()
         self.queue(msg)
 
-    def Mode(self, mode, args, wait=0):
-        msg = Message('mode', (mode, args), wait=wait)
+    def Mode(self, mode, args=None, wait=0):
+        class ModeMessage(Message):
+            command = 'mode'
+            def __init__(self, modeChar, args=None, **kwargs):
+                self.modeChar = [ modeChar ]
+                self.args = [ args ]
+                Message.__init__(self, **kwargs)
+
+            def payload(self):
+                args = []
+                modeChar = []
+                prefix = ''
+                for m, a in zip(self.modeChar, self.args):
+                    if a: args.append(a)
+                    if m[0] != prefix:
+                        prefix = m[0]
+                        modeChar.append(prefix)
+                    modeChar.append(m[1])
+                args.insert(0, ''.join(modeChar))
+                self.args = args
+                return Message.payload(self)
+
+        if self.commands:
+            max_modes = supported_maxmodes(self.server)
+            msg = self.commands[-1]
+            if msg.command == 'mode' and len(msg.modeChar) < max_modes:
+                msg.modeChar.append(mode)
+                msg.args.append(args)
+                return
+        msg = ModeMessage(mode, args, wait=wait)
         self.queue(msg)
 
     def Kick(self, nick, reason=None, wait=0):
@@ -1475,10 +1508,9 @@ class Op(CommandChanop):
             self.op(nicks)
 
     def op(self, nicks):
-        max_modes = supported_maxmodes(self.server)
-        for n in range(0, len(nicks), max_modes):
-            slice = nicks[n:n+max_modes]
-            irc.Mode('%s%s' %(self.prefix, 'o'*len(slice)), ' '.join(slice))
+        mode = self.prefix + 'o'
+        for nick in nicks:
+            irc.Mode(mode, nick)
 
 
 class Deop(CommandWithOp, Op):
@@ -1672,11 +1704,9 @@ class Ban(CommandWithOp):
             mode = 'b'
         else:
             mode = self.mode
-        max_modes = supported_maxmodes(self.server)
-        for n in range(0, len(banmasks), max_modes):
-            slice = banmasks[n:n+max_modes]
-            bans = ' '.join(slice)
-            irc.Mode('%s%s' %(self.prefix, mode*len(slice)), bans, **kwargs)
+        mode = self.prefix + mode
+        for mask in banmasks:
+            irc.Mode(mode, mask, **kwargs)
 
 
 class UnBan(Ban):
@@ -1781,7 +1811,8 @@ class MultiBanKick(BanKick):
                 if hostmask:
                     banmask = self.make_banmask(hostmask)
                     self.ban(banmask)
-                    irc.Kick(nick, reason, wait=1)
+            for nick in nicks:
+                irc.Kick(nick, reason, wait=1)
         else:
             say("Sorry, found nothing to bankick.", buffer=self.buffer)
             irc.clear()
