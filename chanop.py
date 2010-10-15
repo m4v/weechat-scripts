@@ -182,7 +182,6 @@
 #   * ban expire time
 #   * save ban.mask and ban.hostmask across reloads
 #   * allow to override quiet command (for quiet with ChanServ)
-#   * rewrite the queue message stuff
 #   * multiple-channel ban (?)
 #   * freenode:
 #    - support for bans with channel forward
@@ -287,6 +286,7 @@ def debug(s, *args):
         s = s %args
     prnt('', '%s\t%s' %(script_nick, s))
 
+
 ##############
 ### Config ###
 
@@ -356,13 +356,15 @@ def get_config_specific(config, server='', channel=''):
     return value
 
 
-class GlobalOptionsDict(dict):
-    def __init__(self):
-        # CommandWithOp classes
-        self['autodeop'] = True
-        # used in OpMessage class
-        self['hook'] = None
-        self['timeout'] = None
+class EnviromentVars(dict):
+    def __init__(self, buffer):
+        self.buffer = buffer
+        self.irc = IrcCommands(buffer)
+        self.autodeop = True
+        self.deopHook = self.opHook = self.opTimeout = None
+        self.server = weechat.buffer_get_string(buffer, 'localvar_server')
+        self.channel = weechat.buffer_get_string(buffer, 'localvar_channel')
+        self.nick = weechat.info_get('irc_nick', self.server)
 
     def __getattr__(self, k):
         return self[k]
@@ -370,36 +372,40 @@ class GlobalOptionsDict(dict):
     def __setattr__(self, k, v):
         self[k] = v
 
-    def setup(self, buffer):
-        self['buffer'] = buffer
-        self['server'] = server = weechat.buffer_get_string(buffer, 'localvar_server')
-        self['channel'] = weechat.buffer_get_string(buffer, 'localvar_channel')
-        self['nick'] = weechat.info_get('irc_nick', server)
-
 
 class ConfigOptions(object):
-    opt = GlobalOptionsDict()
-
+    buffer = ''
+    _env = {}
     def __getattr__(self, k):
-        return self.opt[k]
+        return self._env[self.buffer][k]
 
     def setup(self, buffer):
-        self.opt.setup(buffer)
+        self.buffer = buffer
+        if buffer not in self._env:
+            self._env[buffer] = EnviromentVars(buffer)
+
+    @property
+    def env(self):
+        return self._env[self.buffer]
+
+    def envOf(self, buffer):
+        return self._env[buffer]
 
     def replace_vars(self, s):
         try:
-            return weechat.buffer_string_replace_local_var(self.opt.buffer, s)
+            return weechat.buffer_string_replace_local_var(self.buffer, s)
         except AttributeError:
             if '$channel' in s:
-                s = s.replace('$channel', self.opt.channel)
+                s = s.replace('$channel', self.channel)
             if '$nick' in s:
-                s = s.replace('$nick', self.opt.nick)
+                s = s.replace('$nick', self.nick)
             if '$server' in s:
-                s = s.replace('$server', self.opt.server)
+                s = s.replace('$server', self.server)
             return s
 
     def get_config(self, config):
-        return get_config_specific(config, self.opt.server, self.opt.channel)
+        debug('config: %s' %config)
+        return get_config_specific(config, self.server, self.channel)
 
     def get_config_boolean(self, config):
         return get_config_boolean(config, self.get_config)
@@ -609,6 +615,7 @@ def callback(method):
     # set our callback
     import __main__
     setattr(__main__, name, method)
+    debug('callback: %s', name)
     return name
 
 class Infolist(object):
@@ -625,7 +632,7 @@ class Infolist(object):
 
     def __init__(self, name, args=''):
         self.cursor = 0
-        debug('Generating infolist %s:' %name)
+        debug('Generating infolist %r', name)
         self.pointer = weechat.infolist_get(name, '', args)
         if self.pointer == '':
             raise Exception("Infolist initialising failed (name:'%s' args:'%s')" %(name, args))
@@ -699,7 +706,7 @@ class Command(object):
     def parser(self, data, buffer, args):
         """Argument parsing, override if needed."""
         self.buffer = buffer
-        self.args = args.split()
+        self.args = args
 
     def execute(self):
         """This method is called when the command is run, override this."""
@@ -729,161 +736,6 @@ class Command(object):
 ##########################
 ### IRC messages queue ###
 
-class IrcCommands(ConfigOptions):
-    """Class that manages and sends the script's commands to WeeChat."""
-    commands = []
-    interrupt = False
-
-    def checkOp(self):
-        infolist = nick_infolist(self.server, self.channel)
-        while infolist.next():
-            if infolist['name'] == self.nick:
-                return bool(infolist['flags'] & 8)
-        return False
-
-    def Op(self):
-        class OpMessage(Message):
-            def send(self, cmd):
-                if irc.checkOp():
-                    # nothing to do
-                    return
-
-                Message.send(self, cmd)
-                irc.interrupt = True
-                if self.hook:
-                    weechat.unhook(self.hook)
-                if self.timeout:
-                    weechat.unhook(self.timeout)
-
-                def modeOpCallback(data, signal, signal_data):
-                    signal = signal_data.split(None, 1)[1]
-                    if signal == data:
-                        debug('We got op')
-                        # add this channel to our watchlist
-                        config = 'watchlist.%s' %self.server
-                        channels = CaseInsensibleSet(get_config_list(config))
-                        if self.channel not in channels:
-                            channels.add(self.channel)
-                            value = ','.join(channels)
-                            weechat.config_set_plugin(config, value)
-                        weechat.unhook(self.hook)
-                        weechat.unhook(self.timeout)
-                        self.opt.timeout = self.opt.hook = None
-                        irc.run()
-                    return WEECHAT_RC_OK
-
-                def timeoutCallback(channel, count):
-                    error("Couldn't get op in '%s', purging command queue..." %channel)
-                    weechat.unhook(self.hook)
-                    self.opt.timeout = self.opt.hook = None
-                    irc.clear()
-                    return WEECHAT_RC_OK
-
-                # wait for 30 secs before timing out.
-                data = '%s.%s' %(self.server, self.channel)
-                self.opt.timeout = weechat.hook_timer(30*1000, 0, 1, callback(timeoutCallback), data)
-    
-                data = 'MODE %s +o %s' %(self.channel, self.nick)
-                self.opt.hook = weechat.hook_signal('%s,irc_in2_MODE' %self.server,
-                        callback(modeOpCallback), data)
-
-        value = self.replace_vars(self.get_config('op_command'))
-        if not value:
-            raise Exception, "No command defined for get op."
-        msg = OpMessage(value)
-        self.queue(msg)
-
-    def Deop(self):
-        if self.get_config_int('autodeop_delay') == 0:
-            # use Mode so it can be merged
-            self.Mode('-o', self.nick)
-            return
-
-        class DeopMessage(Message):
-            command = 'mode'
-            args = ('-o', self.nick)
-            def send(self, cmd):
-                if irc.checkOp():
-                    Message.send(self, cmd)
-
-        msg = DeopMessage()
-        self.queue(msg)
-
-    def Mode(self, mode, args=None, wait=0):
-        class ModeMessage(Message):
-            command = 'mode'
-            def __init__(self, modeChar, args=None, **kwargs):
-                self.modeChar = [ modeChar ]
-                self.args = [ args ]
-                Message.__init__(self, **kwargs)
-
-            def payload(self):
-                args = []
-                modeChar = []
-                prefix = ''
-                for m, a in zip(self.modeChar, self.args):
-                    if a: args.append(a)
-                    if m[0] != prefix:
-                        prefix = m[0]
-                        modeChar.append(prefix)
-                    modeChar.append(m[1])
-                args.insert(0, ''.join(modeChar))
-                self.args = args
-                return Message.payload(self)
-
-        if self.commands:
-            max_modes = supported_maxmodes(self.server)
-            msg = self.commands[-1]
-            if msg.command == 'mode' and len(msg.modeChar) < max_modes:
-                msg.modeChar.append(mode)
-                msg.args.append(args)
-                return
-        msg = ModeMessage(mode, args, wait=wait)
-        self.queue(msg)
-
-    def Kick(self, nick, reason=None, wait=0):
-        if not reason:
-            reason = self.get_config('kick_reason')
-        if self.get_config_boolean('enable_remove'):
-            cmd = '/quote remove %s %s :%s' %(self.channel, nick, reason)
-            msg = Message(cmd, wait=wait)
-        else:
-            msg = Message('kick', (nick, reason), wait=wait)
-        self.queue(msg)
-
-    def Voice(self, nick):
-        self.Mode('+v', nick)
-
-    def Devoice(self, nick):
-        self.Mode('-v', nick)
-
-    def queue(self, message):
-        self.commands.append(message)
-
-    # it happened once and it wasn't pretty
-    def safe_check(f):
-        def abort_if_too_many_commands(self):
-            if len(self.commands) > 10:
-                error("Limit of 10 commands in queue reached, aborting.")
-                self.clear()
-            else:
-                f(self)
-        return abort_if_too_many_commands
-
-    @safe_check
-    def run(self):
-        while self.commands:
-            self.commands.pop(0)()
-            if self.interrupt:
-                debug("Interrupting queue")
-                self.interrupt = False
-                break
-
-    def clear(self):
-        self.commands = []
-
-irc = IrcCommands()
-
 class Message(ConfigOptions):
     command = None
     args = ()
@@ -903,6 +755,9 @@ class Message(ConfigOptions):
             cmd = '/wait %s ' %self.wait + cmd
         return cmd
 
+    def register(self, buffer):
+        self.buffer = buffer
+
     def __call__(self):
         cmd = self.payload()
         self.send(cmd)
@@ -910,11 +765,169 @@ class Message(ConfigOptions):
     def send(self, cmd):
         if weechat.config_get_plugin('debug'):
             debug('sending: %r', cmd)
-        weechat.command(self.opt.buffer, cmd)
+        weechat.command(self.buffer, cmd)
 
     def __repr__(self):
         return 'Message<%s>' %self.payload()
 
+
+class IrcCommands(ConfigOptions):
+    """Class that manages and sends the script's commands to WeeChat."""
+
+    # Special message classes
+    class OpMessage(Message):
+        def send(self, cmd):
+            if self.irc.checkOp():
+                # nothing to do
+                return
+
+            self.irc.interrupt = True
+            Message.send(self, cmd)
+
+            def modeOpCallback(data, signal, signal_data):
+                signal = signal_data.split(None, 1)[1]
+                if signal == data:
+                    debug('We got op')
+                    # add this channel to our watchlist
+                    config = 'watchlist.%s' %self.server
+                    channels = CaseInsensibleSet(get_config_list(config))
+                    if self.channel not in channels:
+                        channels.add(self.channel)
+                        value = ','.join(channels)
+                        weechat.config_set_plugin(config, value)
+                    weechat.unhook(self.opHook)
+                    weechat.unhook(self.opTimeout)
+                    self.env.opTimeout = self.env.opHook = None
+                    self.irc.interrupt = False
+                    self.irc.run()
+                return WEECHAT_RC_OK
+
+            def timeoutCallback(channel, count):
+                error("Couldn't get op in '%s', purging command queue..." %channel)
+                weechat.unhook(self.opHook)
+                self.env.opTimeout = self.env.opHook = None
+                self.irc.interrupt = False
+                self.irc.clear()
+                return WEECHAT_RC_OK
+
+            # wait for a while before timing out.
+            data = '%s.%s' %(self.server, self.channel)
+            self.env.opTimeout = weechat.hook_timer(30*1000, 0, 1, callback(timeoutCallback), data)
+
+            data = 'MODE %s +o %s' %(self.channel, self.nick)
+            self.env.opHook = weechat.hook_signal('%s,irc_in2_MODE' %self.server,
+                    callback(modeOpCallback), data)
+
+
+    class ModeMessage(Message):
+        command = 'mode'
+        def __init__(self, char=None, args=None, **kwargs):
+            self.chars = [ char ]
+            self.charargs = [ args ]
+            Message.__init__(self, **kwargs)
+
+        def payload(self):
+            args = []
+            modeChar = []
+            prefix = ''
+            for m, a in zip(self.chars, self.charargs):
+                if a: args.append(a)
+                if m[0] != prefix:
+                    prefix = m[0]
+                    modeChar.append(prefix)
+                modeChar.append(m[1])
+            args.insert(0, ''.join(modeChar))
+            self.args = args
+            return Message.payload(self)
+
+
+    class DeopMessage(ModeMessage):
+        def send(self, cmd):
+            if self.irc.checkOp():
+                Message.send(self, cmd)
+
+    # IrcCommands methods
+    def __init__(self, buffer):
+        self.interrupt = False
+        self.commands = []
+        self.buffer = buffer
+
+    def checkOp(self):
+        infolist = nick_infolist(self.server, self.channel)
+        while infolist.next():
+            if infolist['name'] == self.nick:
+                return bool(infolist['flags'] & 8)
+        return False
+
+    def Op(self):
+        if self.opHook and self.opTimeout:
+            # already send command, wait for timeout
+            return
+
+        value = self.replace_vars(self.get_config('op_command'))
+        if not value:
+            raise Exception, "No command defined for get op."
+        msg = self.OpMessage(value)
+        self.queue(msg)
+
+    def Deop(self):
+        msg = self.DeopMessage('-o', self.nick)
+        self.queue(msg)
+
+    def Mode(self, mode, args=None, wait=0):
+        msg = self.ModeMessage(mode, args, wait=wait)
+        self.queue(msg)
+
+    def Kick(self, nick, reason=None, wait=0):
+        if not reason:
+            reason = self.get_config('kick_reason')
+        if self.get_config_boolean('enable_remove'):
+            cmd = '/quote remove %s %s :%s' %(self.channel, nick, reason)
+            msg = Message(cmd, wait=wait)
+        else:
+            msg = Message('kick', (nick, reason), wait=wait)
+        self.queue(msg)
+
+    def Voice(self, nick):
+        self.Mode('+v', nick)
+
+    def Devoice(self, nick):
+        self.Mode('-v', nick)
+
+    def queue(self, message):
+        debug('queuing: %s', message)
+        # merge /modes
+        if self.commands and message.command == 'mode':
+            max_modes = supported_maxmodes(self.server)
+            msg = self.commands[-1]
+            if msg.command == 'mode' and len(msg.chars) < max_modes:
+                msg.chars.append(message.chars[0])
+                msg.charargs.append(message.charargs[0])
+                return
+        self.commands.append(message)
+
+    # it happened once and it wasn't pretty
+    def safe_check(f):
+        def abort_if_too_many_commands(self):
+            if len(self.commands) > 10:
+                error("Limit of 10 commands in queue reached, aborting.")
+                self.clear()
+            else:
+                f(self)
+        return abort_if_too_many_commands
+
+    @safe_check
+    def run(self):
+        while self.commands and not self.interrupt:
+            msg = self.commands.pop(0)
+            msg.register(self.buffer)
+            msg()
+            if self.interrupt:
+                debug("Interrupting queue")
+                break
+
+    def clear(self):
+        self.commands = []
 
 
 #########################
@@ -1359,88 +1372,64 @@ userCache = UserCache()
 class CommandChanop(Command, ConfigOptions):
     """Base class for our commands, with config and general functions."""
     infolist = None
-    def callback(self, *args):
+
+    def callback(self, data, buffer, args):
+        self.setup(buffer)
         try:
-            self.parser(*args)  # argument parsing
+            self.parser(data, buffer, args)  # argument parsing
         except Exception, e:
             error('Argument error, %s' %e)
             return WEECHAT_RC_OK
+        self.users = userCache[self.server, self.channel]
         self.execute()          # call our command and queue messages for WeeChat
-        irc.run()               # run queued messages
+        self.irc.run()               # run queued messages
         self.infolist = None    # free irc_nick infolist
         return WEECHAT_RC_OK    # make WeeChat happy
 
-    def parser(self, data, buffer, args):
-        self.setup(buffer)
-        self.args = args
-        self.users = userCache[self.server, self.channel]
-
-    def _nick_infolist(self):
+    def nick_infolist(self):
         # reuse the same infolist instead of creating it many times
         # per __call__() (like with MultiKick)
         if not self.infolist:
-            self.infolist = Infolist('irc_nick', '%s,%s' %(self.server, self.channel))
-            return self.infolist
+            self.infolist = nick_infolist(self.server, self.channel)
         else:
             self.infolist.reset()
-            return self.infolist
+        return self.infolist
 
-    def has_op(self, nick=None):
-        if not nick:
-            nick = self.nick
+    def has_op(self, nick):
         try:
-            nicks = self._nick_infolist()
+            nicks = self.nick_infolist()
             while nicks.next():
                 if nicks['name'] == nick:
-                    if nicks['flags'] & 8:
-                        return True
-                    else:
-                        return False
+                    return bool(nicks['flags'] & 8)
         except:
             error('Not in a IRC channel.')
 
-    def has_voice(self, nick=None):
-        if not nick:
-            nick = self.nick
+    def has_voice(self, nick):
         try:
-            nicks = self._nick_infolist()
+            nicks = self.nick_infolist()
             while nicks.next():
                 if nicks['name'] == nick:
-                    if nicks['flags'] & 32:
-                        return True
-                    else:
-                        return False
+                    return bool(nicks['flags'] & 32)
         except:
             error('Not in a IRC channel.')
 
     def is_nick(self, nick):
         return nick in self.users
 
-    def get_host(self, name=None):
+    def get_host(self, name):
         try:
-            if name is None:
-                return self.users[self.nick]
-            host = self.users[name]
-            return host
+            return self.users[name]
         except KeyError:
             pass
 
-    def get_op(self):
-        op = self.has_op()
-        if op is False:
-            irc.Op()
-        return op
-
-    def drop_op(self):
-        op = self.has_op()
-        if op is True:
-            irc.Deop()
+    def set_mode(self, *nicks):
+        mode = self.prefix + self.mode
+        for nick in nicks:
+            self.irc.Mode(mode, nick)
 
 
 class CommandWithOp(CommandChanop):
     """Base class for all the commands that requires op status for work."""
-    deopHooks = {}
-
     def parser(self, data, buffer, args):
         """Show help if nothing to parse."""
         CommandChanop.parser(self, data, buffer, args)
@@ -1448,35 +1437,36 @@ class CommandWithOp(CommandChanop):
             weechat.command('', '/help %s' %self.command)
 
     def execute(self, *args):
-        irc.Op()
+        self.irc.Op()
         self.execute_op(*args)
-        buffer = self.buffer
 
         if self.autodeop and self.get_config_boolean('autodeop'):
             delay = self.get_config_int('autodeop_delay')
             if delay > 0:
-                if buffer in self.deopHooks:
-                    weechat.unhook(self.deopHooks[buffer])
-                self.deopHooks[buffer] = weechat.hook_timer(delay * 1000, 0, 1,
-                        callback(self.deopCallback), buffer)
+                if self.deopHook:
+                    weechat.unhook(self.deopHook)
+                self.env.deopHook = weechat.hook_timer(delay * 1000, 0, 1,
+                        callback(self.deopCallback), self.buffer)
             else:
-                irc.Deop()
+                self.irc.Deop()
 
     def execute_op(self, *args):
         """Commands in this method will be run with op privileges."""
         pass
 
     def deopCallback(self, buffer, count):
-        if self.autodeop:
-            if irc.commands:
+        debug('deop %s', buffer)
+        env = self.envOf(buffer)
+        if env.autodeop:
+            if env.irc.commands:
                 # there are commands in queue yet, wait some more
-                self.deopHooks[buffer] = weechat.hook_timer(1000, 0, 1,
+                env.deopHook = weechat.hook_timer(1000, 0, 1,
                         callback(self.deopCallback), buffer)
                 return WEECHAT_RC_OK
             else:
-                irc.Deop()
-                irc.run()
-        del self.deopHooks[buffer]
+                env.irc.Deop()
+                env.irc.run()
+        env.deopHook = None
         return WEECHAT_RC_OK
 
 
@@ -1494,23 +1484,17 @@ class Op(CommandChanop):
     completion = '%(nicks)'
 
     prefix = '+'
+    mode = 'o'
 
     def execute(self):
-        irc.Op()
+        self.irc.Op()
         # /oop was used, we assume that the user wants
         # to stay opped permanently
-        self.opt.autodeop = False
+        self.env.autodeop = False
         if self.args:
-            nicks = []
             for nick in self.args.split():
-                if is_nick(nick) and not self.has_op(nick):
-                    nicks.append(nick)
-            self.op(nicks)
-
-    def op(self, nicks):
-        mode = self.prefix + 'o'
-        for nick in nicks:
-            irc.Mode(mode, nick)
+                if self.is_nick(nick) and not self.has_op(nick):
+                    self.set_mode(nick)
 
 
 class Deop(CommandWithOp, Op):
@@ -1534,12 +1518,12 @@ class Deop(CommandWithOp, Op):
             if nicks:
                 CommandWithOp.execute(self, nicks)
         else:
-            self.opt.autodeop = True
-            if self.has_op():
-                irc.Deop()
+            self.env.autodeop = True
+            if self.has_op(self.nick):
+                self.irc.Deop()
 
     def execute_op(self, nicks):
-        self.op(nicks)
+        self.set_mode(*nicks)
 
 
 class Kick(CommandWithOp):
@@ -1551,11 +1535,9 @@ class Kick(CommandWithOp):
     command = 'okick'
     completion = '%(nicks)'
 
-    def execute_op(self, args=None):
-        if not args:
-            args = self.args
-        nick, s, reason = args.partition(' ')
-        irc.Kick(nick, reason)
+    def execute_op(self):
+        nick, s, reason = self.args.partition(' ')
+        self.irc.Kick(nick, reason)
 
 
 class MultiKick(Kick):
@@ -1566,10 +1548,8 @@ class MultiKick(Kick):
     "first word in reason it will be kicked."
     completion = '%(nicks)|%*'
 
-    def execute_op(self, args=None):
-        if not args:
-            args = self.args
-        args = args.split()
+    def execute_op(self):
+        args = self.args.split()
         nicks = []
         #debug('multikick: %s' %str(args))
         while(args):
@@ -1581,10 +1561,10 @@ class MultiKick(Kick):
         reason = ' '.join(args).lstrip(':')
         if nicks:
             for nick in nicks:
-                irc.Kick(nick, reason)
+                self.irc.Kick(nick, reason)
         else:
             say("Sorry, found nothing to kick.", buffer=self.buffer)
-            irc.clear()
+            self.irc.clear()
 
 
 class Ban(CommandWithOp):
@@ -1685,14 +1665,14 @@ class Ban(CommandWithOp):
                 if hostmask:
                     mask = self.make_banmask(hostmask)
                     if self.has_voice(arg):
-                        irc.Devoice(arg)
+                        self.irc.Devoice(arg)
             banmasks.append(mask)
         if banmasks:
             banmasks = set(banmasks) # remove duplicates
             self.ban(*banmasks)
         else:
             say("Sorry, found nothing to ban.", buffer=self.buffer)
-            irc.clear()
+            self.irc.clear()
 
     def mode_is_supported(self):
         return self.mode in supported_modes(self.server)
@@ -1706,7 +1686,7 @@ class Ban(CommandWithOp):
             mode = self.mode
         mode = self.prefix + mode
         for mask in banmasks:
-            irc.Mode(mode, mask, **kwargs)
+            self.irc.Mode(mode, mask, **kwargs)
 
 
 class UnBan(Ban):
@@ -1743,12 +1723,10 @@ class UnBan(Ban):
             else:
                 banmasks.append(arg)
         if banmasks:
-            self.unban(*banmasks)
+            self.ban(*banmasks)
         else:
             say("Couldn't find any mask for remove with '%s'" %self.args, buffer=self.buffer)
-            irc.clear()
-
-    unban = Ban.ban
+            self.irc.clear()
 
 
 class Quiet(Ban):
@@ -1784,10 +1762,10 @@ class BanKick(Ban, Kick):
         if hostmask:
             banmask = self.make_banmask(hostmask)
             self.ban(banmask)
-            irc.Kick(nick, reason, wait=1)
+            self.irc.Kick(nick, reason, wait=1)
         else:
             say("Sorry, found nothing to bankick.", buffer=self.buffer)
-            irc.clear()
+            self.irc.clear()
 
 
 class MultiBanKick(BanKick):
@@ -1812,10 +1790,10 @@ class MultiBanKick(BanKick):
                     banmask = self.make_banmask(hostmask)
                     self.ban(banmask)
             for nick in nicks:
-                irc.Kick(nick, reason, wait=1)
+                self.irc.Kick(nick, reason, wait=1)
         else:
             say("Sorry, found nothing to bankick.", buffer=self.buffer)
-            irc.clear()
+            self.irc.clear()
 
 
 class Topic(CommandWithOp):
@@ -1825,27 +1803,31 @@ class Topic(CommandWithOp):
     completion = '%(irc_channel_topic)||-delete'
 
     def execute_op(self):
-        self.topic(self.args)
-
-    def topic(self, topic):
-        irc.queue(Message('/topic %s' %topic))
+        self.irc.queue(Message('/topic %s' %self.args))
 
 
 class Voice(CommandWithOp):
     description, usage, help = "Gives voice to somebody.", "nick", ""
     command = 'ovoice'
-    completion = '%(nicks)'
+    completion = '%(nicks)|%*'
+
+    prefix = '+'
+    mode = 'v'
 
     def execute_op(self):
-        irc.Voice(self.args)
+        for nick in self.args.split():
+            if self.is_nick(nick) and not self.has_voice(nick):
+                self.set_mode(nick)
 
 
 class DeVoice(Voice):
     description = "Removes voice from somebody."
     command = 'odevoice'
 
-    def execute_op(self):
-        irc.Devoice(self.args)
+    prefix = '-'
+
+    def has_voice(self, nick):
+        return not Voice.has_voice(self, nick)
 
 
 class Mode(CommandWithOp):
@@ -1853,8 +1835,8 @@ class Mode(CommandWithOp):
     command = 'omode'
 
     def execute_op(self):
-        mode, args = self.args.split(None, 1)
-        irc.Mode(mode, args)
+        mode, _, args = self.args.partition(' ')
+        self.irc.Mode(mode, args)
 
 
 class ShowBans(CommandChanop):
@@ -2363,6 +2345,7 @@ if __name__ == '__main__' and import_ok and \
         SCRIPT_DESC, '', ''):
 
     try:
+        # custom debug module I use, allows me to inspect script's objects.
         from weeutils import DebugBuffer
         debug = DebugBuffer('chanop_debugging', globals())
         debug.create()
