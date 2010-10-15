@@ -186,7 +186,6 @@
 #   * freenode:
 #    - support for bans with channel forward
 #    - support for extbans (?)
-#   * Refactor /oop /odeop /ovoice /odevoice commands, should use MODE.
 #   * Sort completions by user activity
 #
 #
@@ -354,64 +353,6 @@ def get_config_specific(config, server='', channel=''):
     if not value:
         value = weechat.config_get_plugin(config)
     return value
-
-
-class EnviromentVars(dict):
-    def __init__(self, buffer):
-        self.buffer = buffer
-        self.irc = IrcCommands(buffer)
-        self.autodeop = True
-        self.deopHook = self.opHook = self.opTimeout = None
-        self.server = weechat.buffer_get_string(buffer, 'localvar_server')
-        self.channel = weechat.buffer_get_string(buffer, 'localvar_channel')
-        self.nick = weechat.info_get('irc_nick', self.server)
-
-    def __getattr__(self, k):
-        return self[k]
-
-    def __setattr__(self, k, v):
-        self[k] = v
-
-
-class ConfigOptions(object):
-    buffer = ''
-    _env = {}
-    def __getattr__(self, k):
-        return self._env[self.buffer][k]
-
-    def setup(self, buffer):
-        self.buffer = buffer
-        if buffer not in self._env:
-            self._env[buffer] = EnviromentVars(buffer)
-
-    @property
-    def env(self):
-        return self._env[self.buffer]
-
-    def envOf(self, buffer):
-        return self._env[buffer]
-
-    def replace_vars(self, s):
-        try:
-            return weechat.buffer_string_replace_local_var(self.buffer, s)
-        except AttributeError:
-            if '$channel' in s:
-                s = s.replace('$channel', self.channel)
-            if '$nick' in s:
-                s = s.replace('$nick', self.nick)
-            if '$server' in s:
-                s = s.replace('$server', self.server)
-            return s
-
-    def get_config(self, config):
-        debug('config: %s' %config)
-        return get_config_specific(config, self.server, self.channel)
-
-    def get_config_boolean(self, config):
-        return get_config_boolean(config, self.get_config)
-
-    def get_config_int(self, config):
-        return get_config_int(config, self.get_config)
 
 
 #############
@@ -602,16 +543,17 @@ def irc_buffer(buffer):
 def callback(method):
     """This function will take a bound method or function and make it a callback."""
     # try to create a descriptive and unique name.
+    func = method.func_name
     try:
-        func = method.__name__
+        im_self = method.im_self
         try:
-            inst = method.im_self.__name__
+            inst = im_self.__name__
         except AttributeError:
-            inst = method.im_self.__class__.__name__
+            inst = im_self.__class__.__name__
         name = '%s_%s' %(inst, func)
     except AttributeError:
         # not a bound method
-        name = method.func_name
+        name = func
     # set our callback
     import __main__
     setattr(__main__, name, method)
@@ -731,6 +673,67 @@ class Command(object):
             weechat.unhook(self._pointer)
             self._pointer = ''
             self._callback = ''
+
+
+############################
+### Per buffer variables ###
+
+class EnviromentVars(dict):
+    def __init__(self, buffer):
+        self.buffer = buffer
+        self.irc = IrcCommands(buffer)
+        self.autodeop = True
+        self.deopHook = self.opHook = self.opTimeout = None
+        self.server = weechat.buffer_get_string(buffer, 'localvar_server')
+        self.channel = weechat.buffer_get_string(buffer, 'localvar_channel')
+        self.nick = weechat.info_get('irc_nick', self.server)
+
+    def __getattr__(self, k):
+        return self[k]
+
+    def __setattr__(self, k, v):
+        self[k] = v
+
+
+class ConfigOptions(object):
+    buffer = ''
+    _env = {}
+    def __getattr__(self, k):
+        return self._env[self.buffer][k]
+
+    def setup(self, buffer):
+        self.buffer = buffer
+        if buffer not in self._env:
+            self._env[buffer] = EnviromentVars(buffer)
+
+    @property
+    def env(self):
+        return self._env[self.buffer]
+
+    def envOf(self, buffer):
+        return self._env[buffer]
+
+    def replace_vars(self, s):
+        try:
+            return weechat.buffer_string_replace_local_var(self.buffer, s)
+        except AttributeError:
+            if '$channel' in s:
+                s = s.replace('$channel', self.channel)
+            if '$nick' in s:
+                s = s.replace('$nick', self.nick)
+            if '$server' in s:
+                s = s.replace('$server', self.server)
+            return s
+
+    def get_config(self, config):
+        debug('config: %s' %config)
+        return get_config_specific(config, self.server, self.channel)
+
+    def get_config_boolean(self, config):
+        return get_config_boolean(config, self.get_config)
+
+    def get_config_int(self, config):
+        return get_config_int(config, self.get_config)
 
 
 ##########################
@@ -1388,7 +1391,6 @@ class CommandChanop(Command, ConfigOptions):
 
     def nick_infolist(self):
         # reuse the same infolist instead of creating it many times
-        # per __call__() (like with MultiKick)
         if not self.infolist:
             self.infolist = nick_infolist(self.server, self.channel)
         else:
@@ -2397,8 +2399,7 @@ if __name__ == '__main__' and import_ok and \
     # hook /oban /ounban /olist
     Ban().hook()
     UnBan().hook()
-    cmd_showbans = ShowBans()
-    cmd_showbans.hook()
+    ShowBans().hook()
     # hook /oquiet /ounquiet
     Quiet().hook()
     UnQuiet().hook()
