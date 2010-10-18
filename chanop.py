@@ -191,7 +191,7 @@
 #
 #   History:
 #   2010-
-#   * ban cache is updated with /ban
+#   * ban cache is updated with /ban or /mode #channel b
 #   * deop_command option removed
 #
 #   2010-09-20
@@ -395,44 +395,31 @@ def time_elapsed(elapsed, ret=None, level=2):
 #################
 ### IRC utils ###
 
-# XXX a regexp would be better?
+_hostmaskRe = re.compile(r'^:?\S+!\S+@\S+') # poor but good enough
 def is_hostmask(s):
-    """Returns whether or not the string s is a valid User hostmask."""
-    n = s.find('!')
-    m = s.find('@')
-    if n < m-1 and n >= 1 and m >= 3 and len(s) > m+1:
-        return True
-    else:
-        return False
+    """Returns whether or not the string s starts with something like a hostmask."""
+    return _hostmaskRe.match(s) is not None
 
 def is_ip(s):
     """Returns whether or not a given string is an IPV4 address."""
-    if s.count('.') != 3:
-        return False
     import socket
     try:
         return bool(socket.inet_aton(s))
     except socket.error:
         return False
 
-# XXX I hate this, find a simpler way.
 _valid_label = re.compile(r'^[a-z\d\-]+$', re.I)
 def is_hostname(s):
-    """
-    Checks if 's' is a valid hostname."""
-    # I did like a simpler method, I don't think I need to be this strict
-    if not s or len(s) > 255:
+    """Checks if 's' is a valid hostname."""
+    if not s:
         return False
-    if s[-1] == '.': # strip tailing dot
-        s = s[:-1]
     for label in s.split('.'):
-        if not label or len(label) > 63 \
-                or label[0] == '-' or label[-1] == '-' \
-                or not _valid_label.search(label):
+        if not label or not _valid_label.match(label):
             return False
     return True
 
 def hostmask_pattern_match(pattern, strings):
+    # XXX try assert is_hostmask?
     if is_hostmask(pattern):
         return pattern_match(pattern, strings)
     return []
@@ -462,46 +449,26 @@ def pattern_match(pattern, strings):
     return [ s for s in strings if s and regexp.search(s) ]
 
 def get_nick(s):
-    """
-    'nick!user@host' => 'nick'
-    ':nick!user@host' => 'nick'"""
-    n = s.find('!')
-    if n < 1:
-        raise ValueError, "Invalid usermask: %s" %s
-    if s[0] == ':':
-        return s[1:n]
-    return s[:n]
+    """':nick!user@host' => 'nick'"""
+    assert is_hostmask(s)
+    return weechat.info_get('irc_nick_from_host', s)
 
 def get_user(s, trim=False):
-    """
-    'nick!user@host' => 'user'"""
-    n = s.find('!')
-    m = s.find('@')
-    if n > 0 and m > 2 and m > n:
-        s = s[n+1:m]
-        if trim:
-            # remove the stuff not part of the username.
-            if s[0] == '~':
-                return s[1:]
-            elif s[:2] in ('i=', 'n='):
-                return s[2:]
-            else:
-                return s
-        else:
-            return s
-    raise ValueError, "Invalid usermask: %s" %s
+    """'nick!user@host' => 'user'"""
+    assert is_hostmask(s)
+    s = s[s.find('!') + 1:s.find('@')]
+    if trim:
+        # remove the stuff not part of the username.
+        if s[0] == '~':
+            return s[1:]
+        elif s[:2] in ('i=', 'n='):
+            return s[2:]
+    return s
 
 def get_host(s):
-    """
-    'nick!user@host' => 'host'"""
-    n = s.find('@')
-    if n < 3:
-        # not a valid hostmask
-        raise ValueError, "Invalid usermask: %s" %s
-    m = s.find(' ')
-    if m > 0 and m > n:
-        return s[n+1:m]
-    return s[n+1:]
+    """'nick!user@host' => 'host'"""
+    assert is_hostmask(s)
+    return s[s.find('@') + 1:]
 
 def is_channel(s):
     return weechat.info_get('irc_is_channel', s)
@@ -516,10 +483,7 @@ def _is_nick(s):
     return bool(_nickRe.match(s))
 
 def hex_to_ip(s):
-    """
-    '7f000001' => '127.0.0.1'"""
-    if not len(s) == 8:
-        return ''
+    """'7f000001' => '127.0.0.1'"""
     try:
         ip = map(lambda n: s[n:n+2], range(0, len(s), 2))
         ip = map(lambda n: int(n, 16), ip)
@@ -529,11 +493,11 @@ def hex_to_ip(s):
 
 def irc_buffer(buffer):
     """Returns pair (server, channel) or None if buffer isn't an irc channel"""
-    buffer_get_string = weechat.buffer_get_string
-    if buffer_get_string(buffer, 'plugin') == 'irc' \
-            and buffer_get_string(buffer, 'localvar_type') == 'channel':
-        channel = buffer_get_string(buffer, 'localvar_channel')
-        server = buffer_get_string(buffer, 'localvar_server')
+    get_string = weechat.buffer_get_string
+    if get_string(buffer, 'plugin') == 'irc' \
+            and get_string(buffer, 'localvar_type') == 'channel':
+        channel = get_string(buffer, 'localvar_channel')
+        server = get_string(buffer, 'localvar_server')
         return (server, channel)
 
 
@@ -1719,15 +1683,11 @@ class Ban(CommandWithOp):
                 hostmask = self.get_host(arg)
                 if hostmask:
                     mask = self.make_banmask(hostmask)
-                    if self.has_voice(arg):
-                        self.irc.Devoice(arg)
+            if self.has_voice(arg):
+                self.irc.Devoice(arg)
             banmasks.append(mask)
-        if banmasks:
-            banmasks = set(banmasks) # remove duplicates
-            self.ban(*banmasks)
-        else:
-            say("Sorry, found nothing to ban.", buffer=self.buffer)
-            self.irc.clear()
+        banmasks = set(banmasks) # remove duplicates
+        self.ban(*banmasks)
 
     def mode_is_supported(self):
         return self.mode in supported_modes(self.server)
@@ -1777,11 +1737,7 @@ class UnBan(Ban):
                 banmasks.extend(masks)
             else:
                 banmasks.append(arg)
-        if banmasks:
-            self.ban(*banmasks)
-        else:
-            say("Couldn't find any mask for remove with '%s'" %self.args, buffer=self.buffer)
-            self.irc.clear()
+        self.ban(*banmasks)
 
 
 class Quiet(Ban):
@@ -1813,14 +1769,18 @@ class BanKick(Ban, Kick):
 
     def execute_op(self):
         nick, s, reason = self.args.partition(' ')
+        if not self.is_nick(nick):
+            say("Sorry, found nothing to bankick.", buffer=self.buffer)
+            self.irc.clear()
+            return
+
         hostmask = self.get_host(nick)
         if hostmask:
             banmask = self.make_banmask(hostmask)
             self.ban(banmask)
-            self.irc.Kick(nick, reason, wait=1)
         else:
-            say("Sorry, found nothing to bankick.", buffer=self.buffer)
-            self.irc.clear()
+            self.ban(nick)
+        self.irc.Kick(nick, reason, wait=1)
 
 
 class MultiBanKick(BanKick):
@@ -1838,17 +1798,20 @@ class MultiBanKick(BanKick):
                 break
             nicks.append(args.pop(0))
         reason = ' '.join(args).lstrip(':')
-        if nicks:
-            for nick in nicks:
-                hostmask = self.get_host(nick)
-                if hostmask:
-                    banmask = self.make_banmask(hostmask)
-                    self.ban(banmask)
-            for nick in nicks:
-                self.irc.Kick(nick, reason, wait=1)
-        else:
+        if not nicks:
             say("Sorry, found nothing to bankick.", buffer=self.buffer)
             self.irc.clear()
+            return
+
+        for nick in nicks:
+            hostmask = self.get_host(nick)
+            if hostmask:
+                banmask = self.make_banmask(hostmask)
+                self.ban(banmask)
+            else:
+                self.ban(nick)
+        for nick in nicks:
+            self.irc.Kick(nick, reason, wait=1)
 
 
 class Topic(CommandWithOp):
