@@ -96,7 +96,7 @@
 #     /oban, /obankick or /oquiet
 #     You can use several keywords for build a banmask, each keyword defines how
 #     the banmask will be generated for a given hostmask, see /help oban.
-#     Valid keywords are: nick, user, host, exact and webchat
+#     Valid keywords are: nick, user, host and exact.
 #     Default: 'host'
 #
 #     Examples:
@@ -193,6 +193,7 @@
 #   2010-
 #   * ban cache is updated with /ban or /mode #channel b
 #   * deop_command option removed
+#   * removed --webchat switch, freenode's updates made it superfluous.
 #
 #   2010-09-20
 #   version 0.2: major update
@@ -318,7 +319,7 @@ def get_config_int(config, get_function=None):
         error("'%s' is not a number." %value)
         return int(default)
 
-valid_banmask = set(('nick', 'user', 'host', 'exact', 'webchat'))
+valid_banmask = set(('nick', 'user', 'host', 'exact'))
 def get_config_banmask(config='default_banmask', get_function=None):
     if get_function and callable(get_function):
         value = get_function(config)
@@ -1589,16 +1590,13 @@ class MultiKick(Kick):
 class Ban(CommandWithOp):
     description = "Ban user or hostmask."
     usage = \
-    "<nick|mask> [<nick|mask> ..] [ [--host] [--user] [--nick] | --exact | --webchat ]"
+    "<nick|mask> [<nick|mask> ..] [ [--host] [--user] [--nick] | --exact ]"
     help = \
     "Mask options:\n"\
     " -h  --host: Match hostname (*!*@host)\n"\
     " -n  --nick: Match nick     (nick!*@*)\n"\
     " -u  --user: Match username (*!user@*)\n"\
     " -e --exact: Use exact hostmask. Can't be combined with other options.\n"\
-    " -w --webchat: Like --host, but for webchat's users, it will match "\
-    "username if hostname isn't valid and username is a hexed ip. "\
-    "Can't be combined with other options.\n"\
     "\n"\
     "If no mask options are supplied, configured defaults are used.\n"\
     "\n"\
@@ -1620,24 +1618,17 @@ class Ban(CommandWithOp):
     def _parser(self, *args):
         args = self.args.split()
         try:
-            (opts, args) = getopt.gnu_getopt(args, 'hunew', ('host', 'user', 'nick', 'exact',
-                'webchat'))
+            (opts, args) = getopt.gnu_getopt(args, 'hune', ('host', 'user', 'nick', 'exact'))
         except getopt.GetoptError, e:
             raise Exception, e
         self.banmask = []
         for k, v in opts:
             if k in ('-h', '--host'):
                 self.banmask.append('host')
-            elif k == '--host2':
-                self.banmask.append('host2')
-            elif k == '--host1':
-                self.banmask.append('host1')
             elif k in ('-u', '--user'):
                 self.banmask.append('user')
             elif k in ('-n', '--nick'):
                 self.banmask.append('nick')
-            elif k in ('-w', '--webchat'):
-                self.banmask.append('webchat')
             elif k in ('-e', '--exact'):
                 self.banmask = ['exact']
                 break
@@ -1653,16 +1644,6 @@ class Ban(CommandWithOp):
         assert is_hostmask(hostmask), "Invalid hostmask: %s" %hostmask
         if 'exact' in self.banmask:
             return hostmask
-        elif 'webchat' in self.banmask:
-            user = get_user(hostmask, trim=True)
-            decoded_ip = hex_to_ip(user)
-            host = get_host(hostmask)
-            if not is_hostname(host) \
-                    and is_ip(decoded_ip) \
-                    and decoded_ip not in host:
-                return '*!%s@*' %get_user(hostmask)
-            else:
-                return '*!*@%s' %host
         nick = user = host = '*'
         if 'nick' in self.banmask:
             nick = get_nick(hostmask)
@@ -1762,7 +1743,7 @@ class UnQuiet(UnBan):
 
 class BanKick(Ban, Kick):
     description = "Bankicks nick."
-    usage = "<nick> [<reason>] [ [--host] [--user] [--nick] | --exact | --webchat ]"
+    usage = "<nick> [<reason>] [ [--host] [--user] [--nick] | --exact ]"
     help = "Combines /oban and /okick commands. See /help oban and /help okick."
     command = 'obankick'
     completion = '%(chanop_nicks)'
@@ -1786,7 +1767,7 @@ class BanKick(Ban, Kick):
 class MultiBanKick(BanKick):
     description = "Bankicks one or more nicks."
     usage = \
-    "<nick> [<nick> ..] [:] [<reason>] [ [--host)] [--user] [--nick] | --exact | --webchat ]"
+    "<nick> [<nick> ..] [:] [<reason>] [ [--host)] [--user] [--nick] | --exact ]"
     completion = '%(chanop_nicks)|%*'
 
     def execute_op(self):
