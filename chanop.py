@@ -396,7 +396,7 @@ def time_elapsed(elapsed, ret=None, level=2):
 #################
 ### IRC utils ###
 
-_hostmaskRe = re.compile(r'^:?\S+!\S+@\S+') # poor but good enough
+_hostmaskRe = re.compile(r':?\S+!\S+@\S+') # poor but good enough
 def is_hostmask(s):
     """Returns whether or not the string s starts with something like a hostmask."""
     return _hostmaskRe.match(s) is not None
@@ -420,7 +420,6 @@ def is_hostname(s):
     return True
 
 def hostmask_pattern_match(pattern, strings):
-    # XXX try assert is_hostmask?
     if is_hostmask(pattern):
         return pattern_match(pattern, strings)
     return []
@@ -447,7 +446,7 @@ def pattern_match(pattern, strings):
 
     if isinstance(strings, str):
         strings = [strings]
-    return [ s for s in strings if s and regexp.search(s) ]
+    return [ s for s in strings if s and regexp.match(s) ]
 
 def get_nick(s):
     """':nick!user@host' => 'nick'"""
@@ -469,7 +468,9 @@ def get_user(s, trim=False):
 def get_host(s):
     """'nick!user@host' => 'host'"""
     assert is_hostmask(s)
-    return s[s.find('@') + 1:]
+    if ' ' in s:
+        return s[s.find('@'):s.find(' ')]
+    return s[s.find('@'):]
 
 def is_channel(s):
     return weechat.info_get('irc_is_channel', s)
@@ -993,12 +994,12 @@ chanopChannels = ChannelWatchlistSet()
 
 
 class ServerChannelDict(CaseInsensibleDict):
-    def getKeys(self, server, item=None):
-        """Return a list of keys that match server and has item if given"""
+    def getChannels(self, server, item=None):
+        """Return a list of channels that match server and has item if given"""
         if item:
-            return [ key for key in self if key[0] == server and item in self[key] ]
+            return [ chan for serv, chan in self if serv == server and item in self[serv, chan] ]
         else:
-            return [ key for key in self if key[0] == server ]
+            return [ chan for serv, chan in self if serv == server ]
 
     def purge(self):
         for key in self.keys():
@@ -1253,15 +1254,20 @@ class UserObject(object):
 
 
 class UserList(CaseInsensibleDict):
-    def __init__(self, server, channel=None):
+    def __init__(self, server, channel=None, purge=0):
         self.server = server
         self.channel = channel
+        self._purge_list = {}
+        if not purge:
+            purge = 3600*3 # 3 hours
+        self._purge_time = purge
 
-    def __getitem__(self, nick):
-        user = CaseInsensibleDict.__getitem__(self, nick)
-        if not user and self.channel:
-            userCache.who(self.server, self.channel)
-        return user
+    def remove(self, nick):
+        try:
+            user = self[nick]
+            self._purge_list[nick] = user
+        except KeyError:
+            pass
 
     def values(self):
         if not all(self.itervalues()) and self.channel:
@@ -1284,15 +1290,22 @@ class UserList(CaseInsensibleDict):
         try:
             return self[nick].hostmask
         except KeyError:
-            return userCache._cache[self.server][nick].hostmask
+            return userCache[self.server][nick].hostmask
 
     def purge(self):
         """Purge old nicks"""
-        pass
+        n = now()
+        for nick, user in self._purge_list.items():
+            if (n - user.seen) > self._purge_time:
+                try:
+                    del self._purge_list[nick]
+                    del self[nick]
+                except KeyError:
+                    pass
 
 
 class UserCache(ServerChannelDict):
-    _cache = CaseInsensibleDict()
+    servercache = CaseInsensibleDict()
     _hook_who = _hook_end = None
 
     def generateCache(self, server, channel):
@@ -1311,16 +1324,12 @@ class UserCache(ServerChannelDict):
                 hostmask = '%s!%s' %(nick, host)
             else:
                 hostmask = ''
-            users[nick] = self.setUser(server, nick, hostmask)
+            users[nick] = self.addUser(server, nick, hostmask)
         self[server, channel] = users
         return users
 
-    def setUser(self, server, nick, hostmask):
-        try:
-            cache = self._cache[server]
-        except KeyError:
-            cache = self._cache[server] = UserList(server)
-
+    def addUser(self, server, nick, hostmask):
+        cache = self[server]
         try:
             user = cache[nick]
             user.update(hostmask)
@@ -1330,23 +1339,17 @@ class UserCache(ServerChannelDict):
         return user
 
     def __getitem__(self, k):
-        try:
-            return ServerChannelDict.__getitem__(self, k)
-        except KeyError:
-            return self.generateCache(*k)
-
-    def add(self, server, channel, nick, hostmask):
-        users = self[server, channel]
-        user = self.setUser(server, nick, hostmask)
-        users[nick] = user
-
-    def remove(self, server, channel, nick):
-        cache = self[server, channel]
-        try:
-            cache[nick].update()
-            del cache[nick]
-        except KeyError:
-            pass
+        if isinstance(k, tuple):
+            try:
+                return ServerChannelDict.__getitem__(self, k)
+            except KeyError:
+                return self.generateCache(*k)
+        elif isinstance(k, str):
+            try:
+                return self.servercache[k]
+            except KeyError:
+                cache = self.servercache[k] = UserList(k, purge=3600*6)
+                return cache
 
     def getHostmask(self, nick, server, channel=None):
         """Returns hostmask of nick."""
@@ -1354,7 +1357,7 @@ class UserCache(ServerChannelDict):
             users = self[server, channel]
             if nick in users:
                 return users[nick].hostmask
-        return self._cache[server][nick].hostmask
+        return self[server][nick].hostmask
 
     def who(self, server, channel):
         if self._hook_who:
@@ -1374,7 +1377,7 @@ class UserCache(ServerChannelDict):
         nick, user, host = data[7], data[4], data[5]
         hostmask = '%s!%s@%s' %(nick, user, host)
         #debug('WHO: %s', hostmask)
-        self.setUser(server, nick, hostmask)
+        self.addUser(server, nick, hostmask)
         return ''
 
     def _endWhoCallback(self, data, modifier, modifier_data, string):
@@ -1962,12 +1965,10 @@ def signal_parse(f):
         if (server, channel) not in chanopChannels:
             # signals only processed for channels in watchlist
             return WEECHAT_RC_OK
-        try:
-            nick = get_nick(signal_data)
-        except ValueError:
-            return WEECHAT_RC_OK
+        nick = get_nick(signal_data)
+        hostmask = signal_data[1:signal_data.find(' ')]
         #debug('%s %s %s', data, signal, signal_data)
-        return f(server, channel, nick, data, signal, signal_data)
+        return f(server, channel, nick, hostmask, signal_data)
     decorator.func_name = f.func_name
     return decorator
 
@@ -1975,10 +1976,11 @@ def signal_parse_no_channel(f):
     def decorator(data, signal, signal_data):
         server = signal[:signal.find(',')]
         nick = get_nick(signal_data)
-        keys = userCache.getKeys(server, nick)
-        if keys:
+        channels = userCache.getChannels(server, nick)
+        if channels:
+            hostmask = signal_data[1:signal_data.find(' ')]
             #debug('%s %s %s', data, signal, signal_data)
-            return f(keys, nick, data, signal, signal_data)
+            return f(server, channels, nick, hostmask, signal_data)
         return WEECHAT_RC_OK
     decorator.func_name = f.func_name
     return decorator
@@ -2071,7 +2073,7 @@ def print_affected_users(buffer, *hostmasks):
 
 # Masks list tracking
 @signal_parse
-def mode_cb(server, channel, nick, data, signal, signal_data):
+def mode_cb(server, channel, nick, opHostmask, signal_data):
     """Keep the banmask list updated when somebody changes modes"""
     #:m4v!~znc@unaffiliated/m4v MODE #test -bo+v asd!*@* m4v dude
     pair = signal_data.split(' ', 4)[3:]
@@ -2105,7 +2107,6 @@ def mode_cb(server, channel, nick, data, signal, signal_data):
     action = ''
     chanmode_list = []
     args = args.split()
-    op = signal_data[1:signal_data.find(' ')]
     
     # user channel mode, such as +v or +o, get only the letters and not the prefixes
     usermodes = ''.join(map(lambda c: c.isalpha() and c or '', prefix))
@@ -2133,7 +2134,7 @@ def mode_cb(server, channel, nick, data, signal, signal_data):
             hostmask = hostmask_pattern_match(mask, userCache[key].hostmasks())
             if hostmask:
                 affected_users.extend(hostmask)
-            maskCache.add(server, channel, mask, operator=op, hostmask=hostmask)
+            maskCache.add(server, channel, mask, operator=opHostmask, hostmask=hostmask)
         elif action == '-':
             maskCache.remove(server, channel, mask)
     if affected_users and get_config_boolean('display_affected',
@@ -2145,32 +2146,33 @@ def mode_cb(server, channel, nick, data, signal, signal_data):
 
 # User cache
 @signal_parse
-def join_cb(server, channel, nick, data, signal, signal_data):
-    hostname = signal_data[1:signal_data.find(' ')]
-    userCache.add(server, channel, nick, hostname)
+def join_cb(server, channel, nick, hostmask, signal_data):
+    user = userCache.addUser(server, nick, hostmask)
+    userCache[server, channel][nick] = user
     return WEECHAT_RC_OK
 
 @signal_parse
-def part_cb(server, channel, nick, data, signal, signal_data):
-    # TODO update user hostmask
-    userCache.remove(server, channel, nick)
+def part_cb(server, channel, nick, hostmask, signal_data):
+    userCache.addUser(server, nick, hostmask)
+    userCache[server, channel].remove(nick)
     return WEECHAT_RC_OK
 
 @signal_parse_no_channel
-def quit_cb(keys, nick, data, signal, signal_data):
-    # TODO update user hostmask
-    for server, channel in keys:
-        userCache.remove(server, channel, nick)
+def quit_cb(server, channels, nick, hostmask, signal_data):
+    userCache.addUser(server, nick, hostmask)
+    for channel in channels:
+        userCache[server, channel].remove(nick)
     return WEECHAT_RC_OK
 
 @signal_parse_no_channel
-def nick_cb(keys, nick, data, signal, signal_data):
-    hostname = signal_data[1:signal_data.find(' ')]
+def nick_cb(server, channels, nick, hostmask, signal_data):
     newnick = signal_data[signal_data.rfind(' ')+2:]
-    newhostname = '%s!%s' %(newnick, hostname[hostname.find('!')+1:])
-    for server, channel in keys:
-        userCache.remove(server, channel, nick)
-        userCache.add(server, channel, newnick, newhostname)
+    newhostmask = '%s!%s' %(newnick, hostmask[hostmask.find('!')+1:])
+    userCache.addUser(server, nick, hostmask)
+    user = userCache.addUser(server, newnick, newhostmask)
+    for channel in channels:
+        userCache[server, channel].remove(nick)
+        userCache[server, channel][nick] = user
     return WEECHAT_RC_OK
 
 
@@ -2186,14 +2188,14 @@ def garbage_collector_cb(data, counter):
     userCache.purge()
 
     if weechat.config_get_plugin('debug'):
-        user_count = sum(map(len, userCache._cache.itervalues()))
-#        temp_user_count = sum(map(lambda x: len(x._temp_users), userCache.itervalues()))
+        user_count = sum(map(len, userCache.servercache.itervalues()))
+        temp_user_count = sum(map(lambda x: len(x._purge_list), userCache.itervalues()))
         for mode, maskCache in maskHandler.caches.iteritems():
             mask_count = sum(map(len, maskCache.itervalues()))
             mask_chan = len(maskCache)
             debug("%s '%s' cached masks in %s channels", mask_count, mode, mask_chan)
-        debug('%s cached users in %s serverss', user_count, len(userCache._cache))
- #       debug('%s users about to be purged', temp_user_count)
+        debug('%s cached users in %s servers', user_count, len(userCache.servercache))
+        debug('%s users about to be purged', temp_user_count)
         debug('%s cached regexps', len(_regexp_cache))
     return WEECHAT_RC_OK
 
