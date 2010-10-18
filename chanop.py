@@ -1363,8 +1363,9 @@ class UserCache(ServerChannelDict):
         if self._hook_who:
             return
         
-        self._hook_who = weechat.hook_modifier('irc_in_352', callback(self._whoCallback), '')
-        self._hook_end = weechat.hook_modifier('irc_in_315', callback(self._endWhoCallback), '')
+        key = ('%s.%s' %(server, channel)).lower()
+        self._hook_who = weechat.hook_modifier('irc_in_352', callback(self._whoCallback), key)
+        self._hook_end = weechat.hook_modifier('irc_in_315', callback(self._endWhoCallback), key)
 
         debug('WHO: %s', channel)
         buffer = weechat.buffer_search('irc', 'server.%s' %server)
@@ -1372,9 +1373,13 @@ class UserCache(ServerChannelDict):
 
     def _whoCallback(self, data, modifier, modifier_data, string):
         #debug('%s %s %s', modifier, modifier_data, string)
-        server = modifier_data
-        data = string.split()
-        nick, user, host = data[7], data[4], data[5]
+        args = string.split()
+        server, channel = modifier_data, args[3]
+        key = ('%s.%s' %(server, channel)).lower()
+        if key != data:
+            return string
+
+        nick, user, host = args[7], args[4], args[5]
         hostmask = '%s!%s@%s' %(nick, user, host)
         #debug('WHO: %s', hostmask)
         self.addUser(server, nick, hostmask)
@@ -1382,6 +1387,11 @@ class UserCache(ServerChannelDict):
 
     def _endWhoCallback(self, data, modifier, modifier_data, string):
         debug('end WHO')
+        server, channel = modifier_data, args[3]
+        key = ('%s.%s' %(server, channel)).lower()
+        if key != data:
+            return string
+
         weechat.unhook(self._hook_who)
         weechat.unhook(self._hook_end)
         self._hook_who = self._hook_end = None
