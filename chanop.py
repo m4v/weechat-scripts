@@ -191,7 +191,7 @@
 #
 #   History:
 #   2010-
-#   * ban cache is updated with /ban or /mode #channel b
+#   version 0.2.1: refactoring mostly
 #   * deop_command option removed
 #   * removed --webchat switch, freenode's updates made it superfluous.
 #
@@ -232,7 +232,7 @@
 
 SCRIPT_NAME    = "chanop"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.3-dev"
+SCRIPT_VERSION = "0.2.1"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Helper script for IRC Channel Operators"
 
@@ -469,8 +469,8 @@ def get_host(s):
     """'nick!user@host' => 'host'"""
     assert is_hostmask(s)
     if ' ' in s:
-        return s[s.find('@'):s.find(' ')]
-    return s[s.find('@'):]
+        return s[s.find('@') + 1:s.find(' ')]
+    return s[s.find('@') + 1:]
 
 def is_channel(s):
     return weechat.info_get('irc_is_channel', s)
@@ -540,7 +540,7 @@ class Infolist(object):
 
     def __init__(self, name, args=''):
         self.cursor = 0
-        debug('Generating infolist %r', name)
+        debug('Generating infolist %r %r', name, args)
         self.pointer = weechat.infolist_get(name, '', args)
         if self.pointer == '':
             raise Exception("Infolist initialising failed (name:'%s' args:'%s')" %(name, args))
@@ -1004,7 +1004,7 @@ class ServerChannelDict(CaseInsensibleDict):
     def purge(self):
         for key in self.keys():
             if key not in chanopChannels:
-                #debug('Removing %s.%s list, not in watchlist. (%s items)', key[0], key[1], len(self[key]))
+                debug('Removing %s.%s list, not in watchlist. (%s items)', key[0], key[1], len(self[key]))
                 del self[key]
         for data in self.itervalues():
             data.purge()
@@ -1024,7 +1024,7 @@ class MaskObject(object):
         self.expires = expires
 
     def __repr__(self):
-        return "<MaskObject %s %s >" %(self.mask, self.date)
+        return "MaskObject<%s>" %self.mask
 
 
 class MaskList(CaseInsensibleDict):
@@ -1235,11 +1235,12 @@ maskHandler.addCache('q', 'quiet', 'quiets')
 
 # Users
 class UserObject(object):
-    __slots__ = ('nick', 'hostmask', 'seen')
+    __slots__ = ('nick', 'hostmask', 'seen', 'channels')
     def __init__(self, nick, hostmask):
         self.nick = nick
         self.hostmask = hostmask
         self.seen = now()
+        self.channels = 0
 
     def update(self, hostmask=None):
         if hostmask:
@@ -1253,38 +1254,60 @@ class UserObject(object):
         return 'UserObject<%s>' %(self.hostmask or self.nick)
 
 
-class UserList(CaseInsensibleDict):
-    def __init__(self, server, channel=None, purge=0):
+class ServerUserList(CaseInsensibleDict):
+    def __init__(self, server):
+        self.server = server
+        self._purge_time = 3600*4 # 4 hours
+
+    def getHostmask(self, nick):
+        return self[nick].hostmask
+
+    def purge(self):
+        """Purge old nicks"""
+        n = now()
+        for nick, user in self.items():
+            if user.channels < 1 and (n - user.seen) > self._purge_time:
+                debug('purging user: %s' %user)
+                del self[nick]
+
+
+class UserList(ServerUserList):
+    def __init__(self, server, channel):
         self.server = server
         self.channel = channel
         self._purge_list = {}
-        if not purge:
-            purge = 3600*3 # 3 hours
-        self._purge_time = purge
+        self._purge_time = 3600*2 # 2 hours
 
     def remove(self, nick):
         try:
             user = self[nick]
             self._purge_list[nick] = user
+            user.channels -= 1
         except KeyError:
             pass
 
+    def __getitem__(self, nick):
+        user = CaseInsensibleDict.__getitem__(self, nick)
+        if not user.hostmask:
+            userCache.who(self.server, self.channel)
+        return user
+
     def values(self):
-        if not all(self.itervalues()) and self.channel:
+        if not all(self.itervalues()):
             userCache.who(self.server, self.channel)
         L = list(self.itervalues())
         L.sort(key=lambda x:x.seen)
         return reversed(L)
 
+    def hostmasks(self):
+        return [ user.hostmask for user in self.values() if user ]
+
     def nicks(self):
-        if not all(self.itervalues()) and self.channel:
+        if not all(self.itervalues()):
             userCache.who(self.server, self.channel)
         L = list(self.iteritems())
         L.sort(key=lambda x:x[1].seen)
         return reversed([x[0] for x in L])
-
-    def hostmasks(self):
-        return [ user.hostmask for user in self.values() if user ]
 
     def getHostmask(self, nick):
         try:
@@ -1307,8 +1330,10 @@ class UserList(CaseInsensibleDict):
 class UserCache(ServerChannelDict):
     servercache = CaseInsensibleDict()
     _hook_who = _hook_end = None
+    _channels = CaseInsensibleSet()
 
     def generateCache(self, server, channel):
+        debug('generateCache: %s %s', server, channel)
         users = UserList(server, channel)
         try:
             infolist = nick_infolist(server, channel)
@@ -1324,7 +1349,9 @@ class UserCache(ServerChannelDict):
                 hostmask = '%s!%s' %(nick, host)
             else:
                 hostmask = ''
-            users[nick] = self.addUser(server, nick, hostmask)
+            user = self.addUser(server, nick, hostmask)
+            user.channels += 1
+            users[nick] = user
         self[server, channel] = users
         return users
 
@@ -1332,7 +1359,8 @@ class UserCache(ServerChannelDict):
         cache = self[server]
         try:
             user = cache[nick]
-            user.update(hostmask)
+            if hostmask:
+                user.update(hostmask)
         except KeyError:
             user = UserObject(nick, hostmask)
             cache[nick] = user
@@ -1348,7 +1376,7 @@ class UserCache(ServerChannelDict):
             try:
                 return self.servercache[k]
             except KeyError:
-                cache = self.servercache[k] = UserList(k, purge=3600*6)
+                cache = self.servercache[k] = ServerUserList(k)
                 return cache
 
     def getHostmask(self, nick, server, channel=None):
@@ -1362,6 +1390,11 @@ class UserCache(ServerChannelDict):
     def who(self, server, channel):
         if self._hook_who:
             return
+
+        if (server, channel) in self._channels:
+            return
+
+        self._channels.add((server, channel))
         
         key = ('%s.%s' %(server, channel)).lower()
         self._hook_who = weechat.hook_modifier('irc_in_352', callback(self._whoCallback), key)
@@ -1386,16 +1419,22 @@ class UserCache(ServerChannelDict):
         return ''
 
     def _endWhoCallback(self, data, modifier, modifier_data, string):
-        debug('end WHO')
+        args = string.split()
         server, channel = modifier_data, args[3]
         key = ('%s.%s' %(server, channel)).lower()
         if key != data:
             return string
 
+        debug('end WHO')
         weechat.unhook(self._hook_who)
         weechat.unhook(self._hook_end)
         self._hook_who = self._hook_end = None
         return ''
+
+    def purge(self):
+        ServerChannelDict.purge(self)
+        for cache in self.servercache.itervalues():
+            cache.purge()
 
 userCache = UserCache()
 
@@ -1416,7 +1455,7 @@ class CommandChanop(Command, ConfigOptions):
             return WEECHAT_RC_OK
         self.users = userCache[self.server, self.channel]
         self.execute()          # call our command and queue messages for WeeChat
-        self.irc.run()               # run queued messages
+        self.irc.run()          # run queued messages
         self.infolist = None    # free irc_nick infolist
         return WEECHAT_RC_OK    # make WeeChat happy
 
@@ -2158,6 +2197,7 @@ def mode_cb(server, channel, nick, opHostmask, signal_data):
 @signal_parse
 def join_cb(server, channel, nick, hostmask, signal_data):
     user = userCache.addUser(server, nick, hostmask)
+    user.channels += 1
     userCache[server, channel][nick] = user
     return WEECHAT_RC_OK
 
@@ -2182,6 +2222,7 @@ def nick_cb(server, channels, nick, hostmask, signal_data):
     user = userCache.addUser(server, newnick, newhostmask)
     for channel in channels:
         userCache[server, channel].remove(nick)
+        user.channels += 1
         userCache[server, channel][nick] = user
     return WEECHAT_RC_OK
 
