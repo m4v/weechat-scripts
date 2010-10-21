@@ -403,6 +403,7 @@ def strip_home(s, dir=''):
 ### Messages ###
 script_nick = SCRIPT_NAME
 def debug(s, *args):
+    if not weechat.config_get_plugin('debug'): return
     if not isinstance(s, basestring):
         s = str(s)
     if args:
@@ -1274,7 +1275,8 @@ def cmd_grep_parsing(args, buffer=''):
             if callable(template):
                 r = template(buffer, tmpl_args)
                 if not r:
-                    error("Template %s returned empty string." %t)
+                    error("Template %s returned empty string "\
+                          "(WeeChat doesn't have enough data)." %t)
                 return r
             else:
                 return template
