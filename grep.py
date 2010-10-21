@@ -1521,20 +1521,16 @@ def completion_grep_args(data, completion_item, buffer, completion):
 ### Templates ###
 # template placeholder
 _tmplRe = re.compile(r'.?%\{(\w+.*?)\}')
-# stolen from urlbar
-octet = r'(?:2(?:[0-4]\d|5[0-5])|1\d\d|\d{1,2})'
-ipAddress = r'%s(?:\.%s){3}' % (octet, octet)
-#label = r'[0-9a-z][-0-9a-z]*[0-9a-z]?'
-label = r'[\w][-\w]*[\w]?'
-#domain = r'%s(?:\.%s)*\.[a-z][-0-9a-z]*[a-z]?' % (label, label)
-domain = r'%s(?:\.%s)*\.[\w][-\w]*[\w]?' % (label, label)
-url = r'(\w+://(?:%s|%s)(?::\d+)?(?:/[^\])>\s]*)?)' % (domain, ipAddress)
+# will match 999.999.999.999 but I don't care
+ipAddress = r'\\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\\b'
+domain = r'\\b[\w-]{2,}(?:\.[\w-]{2,})*\.[a-z]{2,}\\b'
+url = r'\\b\w+://(?:%s|%s)(?::\d+)?(?:/[^\])>\s]*)?\\b' % (domain, ipAddress)
 
 def make_url_regexp(buffer, args):
     #debug('make url: %s', args)
     if args:
         words = r'(?:%s)' %'|'.join(map(re.escape, args.split()))
-        return r'((?:\w+://|www\.)[^\s]*%s[^\s]*(?:/[^\])>\s]*)?)' %words
+        return r'\\b(?:\w+://|www\.)[^\s]*%s[^\s]*(?:/[^\])>\s]*)?\\b' %words
     else:
         return url
 
@@ -1549,7 +1545,7 @@ def make_host_regexp(buffer, args):
         host = host[host.find('@')+1:]
         regexp.append(re.escape(host))
     if regexp:
-        return '|'.join(regexp)
+        return r'\\b%s\\b' %'|'.join(regexp)
     return ''
 
 def make_username_regexp(buffer, args):
@@ -1562,7 +1558,7 @@ def make_username_regexp(buffer, args):
         if not user: continue
         regexp.append(re.escape(user))
     if regexp:
-        return '|'.join(regexp)
+        return r'\\b%s\\b' %'|'.join(regexp)
     return ''
 
 def make_simple_regexp(buffer, pattern):
