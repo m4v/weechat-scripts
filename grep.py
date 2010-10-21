@@ -1272,7 +1272,10 @@ def cmd_grep_parsing(args, buffer=''):
         try:
             template = templates[tmpl_key]
             if callable(template):
-                return template(buffer, tmpl_args)
+                r = template(buffer, tmpl_args)
+                if not r:
+                    error("Template %s returned empty string." %t)
+                return r
             else:
                 return template
         except:
@@ -1591,7 +1594,7 @@ def get_host(buffer, nick):
             host = weechat.infolist_string(nick_infolist, 'host')
             break
     weechat.infolist_free(nick_infolist)
-    debug('get_host %s', host)
+    #debug('get_host %s', host)
     return host
 
 templates = {
