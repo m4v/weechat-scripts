@@ -906,7 +906,7 @@ def show_matching_lines():
             quotify = lambda s: '"%s"' %s
             files_string = ', '.join(map(quotify, search_in_files))
 
-            cmd = grep_proccess_cmd %dict(logs=files_string, head=head, pattern=pattern, tail=tail,
+            cmd = grep_process_cmd %dict(logs=files_string, head=head, pattern=pattern, tail=tail,
                     hilight=hilight, after_context=after_context, before_context=before_context,
                     exact=exact, matchcase=matchcase, home_dir=home_dir, script_path=script_path,
                     count=count, invert=invert, bytecode=bytecode)
@@ -921,7 +921,7 @@ def show_matching_lines():
         buffer_update()
 
 # defined here for commodity
-grep_proccess_cmd = """python -%(bytecode)sc '
+grep_process_cmd = """python -%(bytecode)sc '
 import sys, cPickle, tempfile, os
 sys.path.append("%(script_path)s") # add WeeChat script dir so we can import grep
 from grep import make_regexp, grep_file, strip_home
