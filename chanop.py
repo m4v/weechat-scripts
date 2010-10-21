@@ -194,6 +194,7 @@
 #   version 0.2.1: refactoring mostly
 #   * deop_command option removed
 #   * removed --webchat switch, freenode's updates made it superfluous.
+#   * if WeeChat doesn't know a hostmask, use /userhost or /who if needed.
 #
 #   2010-09-20
 #   version 0.2: major update
@@ -737,7 +738,7 @@ class Message(ConfigOptions):
         weechat.command(self.buffer, cmd)
 
     def __repr__(self):
-        return 'Message<%s>' %self.payload()
+        return '<Message(%s, %s)>' %(self.command, self.args)
 
 
 class IrcCommands(ConfigOptions):
@@ -796,6 +797,7 @@ class IrcCommands(ConfigOptions):
         def __init__(self, char=None, args=None, **kwargs):
             self.chars = [ char ]
             self.charargs = [ args ]
+            self.args = (char, args)
             Message.__init__(self, **kwargs)
 
         def payload(self):
@@ -803,7 +805,10 @@ class IrcCommands(ConfigOptions):
             modeChar = []
             prefix = ''
             for m, a in zip(self.chars, self.charargs):
-                if a: args.append(a)
+                if a:
+                    if callable(a):
+                        a = a()
+                    args.append(a)
                 if m[0] != prefix:
                     prefix = m[0]
                     modeChar.append(prefix)
@@ -1011,8 +1016,8 @@ class ServerChannelDict(CaseInsensibleDict):
 
 # Masks
 class MaskObject(object):
-    __slots__ = ('mask', 'hostmask', 'operator', 'date', 'expires')
-    def __init__(self, mask, hostmask=None, operator=None, date=None, expires=None):
+    __slots__ = ('mask', 'hostmask', 'operator', 'date')#, 'expires')
+    def __init__(self, mask, hostmask=None, operator=None, date=None):#, expires=None):
         self.mask = mask
         self.hostmask = hostmask
         self.operator = operator
@@ -1021,7 +1026,7 @@ class MaskObject(object):
         else:
             date = now()
         self.date = date
-        self.expires = expires
+#        self.expires = expires
 
     def __repr__(self):
         return "MaskObject<%s>" %self.mask
@@ -1260,7 +1265,11 @@ class ServerUserList(CaseInsensibleDict):
         self._purge_time = 3600*4 # 4 hours
 
     def getHostmask(self, nick):
-        return self[nick].hostmask
+        user = self[nick]
+        if not user.hostmask:
+            userCache.userhost(self.server, nick)
+            return lambda: user.hostmask or user.nick
+        return user.hostmask
 
     def purge(self):
         """Purge old nicks"""
@@ -1286,34 +1295,35 @@ class UserList(ServerUserList):
         except KeyError:
             pass
 
-    def __getitem__(self, nick):
-        user = CaseInsensibleDict.__getitem__(self, nick)
-        if not user.hostmask:
-            userCache.who(self.server, self.channel)
-        return user
-
     def values(self):
         if not all(self.itervalues()):
             userCache.who(self.server, self.channel)
         L = list(self.itervalues())
         L.sort(key=lambda x:x.seen)
         return reversed(L)
-
-    def hostmasks(self):
+    
+    def hostmasks_sorted(self):
         return [ user.hostmask for user in self.values() if user ]
 
+    def hostmasks(self):
+        return [ user.hostmask for user in self.itervalues() if user ]
+
     def nicks(self):
-        if not all(self.itervalues()):
-            userCache.who(self.server, self.channel)
+#        if not all(self.itervalues()):
+#            userCache.who(self.server, self.channel)
         L = list(self.iteritems())
         L.sort(key=lambda x:x[1].seen)
         return reversed([x[0] for x in L])
 
     def getHostmask(self, nick):
         try:
-            return self[nick].hostmask
+            user = self[nick]
         except KeyError:
-            return userCache[self.server][nick].hostmask
+            user = userCache[self.server][nick]
+        if not user.hostmask:
+            userCache.userhost(self.server, nick)
+            return lambda: user.hostmask or user.nick
+        return user.hostmask
 
     def purge(self):
         """Purge old nicks"""
@@ -1329,7 +1339,9 @@ class UserList(ServerUserList):
 
 class UserCache(ServerChannelDict):
     servercache = CaseInsensibleDict()
-    _hook_who = _hook_end = None
+    _hook_who = _hook_who_end = None
+    _hook_userhost = None
+    _hook_userhost_nick = []
     _channels = CaseInsensibleSet()
 
     def generateCache(self, server, channel):
@@ -1397,8 +1409,10 @@ class UserCache(ServerChannelDict):
         self._channels.add((server, channel))
         
         key = ('%s.%s' %(server, channel)).lower()
-        self._hook_who = weechat.hook_modifier('irc_in_352', callback(self._whoCallback), key)
-        self._hook_end = weechat.hook_modifier('irc_in_315', callback(self._endWhoCallback), key)
+        self._hook_who = weechat.hook_modifier(
+                'irc_in_352', callback(self._whoCallback), key)
+        self._hook_who_end = weechat.hook_modifier(
+                'irc_in_315', callback(self._endWhoCallback), key)
 
         debug('WHO: %s', channel)
         buffer = weechat.buffer_search('irc', 'server.%s' %server)
@@ -1427,9 +1441,39 @@ class UserCache(ServerChannelDict):
 
         debug('end WHO')
         weechat.unhook(self._hook_who)
-        weechat.unhook(self._hook_end)
-        self._hook_who = self._hook_end = None
+        weechat.unhook(self._hook_who_end)
+        self._hook_who = self._hook_who_end = None
         return ''
+
+    def hookUserhost(self):
+        self._hook_userhost = weechat.hook_modifier(
+                'irc_in_302', callback(self._userhostCallback), '')
+
+    def userhost(self, server, nick):
+        if nick in self._hook_userhost_nick:
+            return
+        if not self._hook_userhost_nick:
+            self._userhost(server, nick)
+        self._hook_userhost_nick.append(nick)
+
+    def _userhost(self, server, nick):
+        debug('USERHOST: %s', nick)
+        buffer = weechat.buffer_search('irc', 'server.%s' %server)
+        weechat.command(buffer, '/USERHOST %s' %nick)
+
+    def _userhostCallback(self, data, modifier, modifier_data, string):
+        nick, host = string.rsplit(None, 1)[1].split('=')
+        nick, host = nick.strip(':*'), host[1:]
+        hostmask = '%s!%s' %(nick, host)
+        debug('USERHOST: %s %s', nick, hostmask)
+        self.addUser(modifier_data, nick, hostmask)
+        if nick in self._hook_userhost_nick:
+            del self._hook_userhost_nick[0]
+            if self._hook_userhost_nick:
+                nick = self._hook_userhost_nick[0]
+                self._userhost(modifier_data, nick)
+            return ''
+        return string
 
     def purge(self):
         ServerChannelDict.purge(self)
@@ -1693,19 +1737,25 @@ class Ban(CommandWithOp):
 
     def make_banmask(self, hostmask):
         assert self.banmask
-        assert is_hostmask(hostmask), "Invalid hostmask: %s" %hostmask
-        if 'exact' in self.banmask:
-            return hostmask
-        nick = user = host = '*'
-        if 'nick' in self.banmask:
-            nick = get_nick(hostmask)
-        if 'user' in self.banmask:
-            user = get_user(hostmask)
-        if 'host' in self.banmask:
-            host = get_host(hostmask)
-        banmask = '%s!%s@%s' %(nick, user, host)
-        assert is_hostmask(banmask), "Invalid banmask: %s" %banmask
-        return banmask
+        template = self.banmask
+        def banmask(s):
+            if not is_hostmask(s):
+                return s
+            if 'exact' in template:
+                return s
+            nick = user = host = '*'
+            if 'nick' in template:
+                nick = get_nick(s)
+            if 'user' in template:
+                user = get_user(s)
+            if 'host' in template:
+                host = get_host(s)
+            s = '%s!%s@%s' %(nick, user, host)
+            assert is_hostmask(s), "Invalid banmask: %s" %s
+            return s
+        if callable(hostmask):
+            return lambda: banmask(hostmask())
+        return banmask(hostmask)
 
     def execute_op(self):
         args = self.args.split()
@@ -2356,16 +2406,18 @@ def ban_mask_cmpl(users, data, completion_item, buffer, completion):
         # complete *!*@hostname
         prefix = pattern[:pattern.find('@')]
         make_mask = lambda mask : '%s@%s' %(prefix, mask[mask.find('@')+1:])
+        masks = lambda: pattern_match(search_pattern, users.hostmasks_sorted())
     elif '!' in pattern:
         # complete *!username@*
         prefix = pattern[:pattern.find('!')]
         make_mask = lambda mask : '%s!%s@*' %(prefix, mask[mask.find('!')+1:mask.find('@')])
+        masks = lambda: pattern_match(search_pattern, users.hostmasks_sorted())
     else:
         # complete nick!*@*
-        make_mask = lambda mask : '%s!*@*' %get_nick(mask)
+        make_mask = lambda mask : '%s!*@*' %mask
+        masks = lambda: pattern_match(search_pattern, users.nicks())
 
-    masks = pattern_match(search_pattern, users.hostmasks())
-    for mask in masks:
+    for mask in masks():
         mask = make_mask(mask)
         weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_END)
     return WEECHAT_RC_OK
@@ -2379,14 +2431,14 @@ def nicks_cmpl(users, data, completion_item, buffer, completion):
 
 @cmpl_get_irc_users
 def hosts_cmpl(users, data, completion_item, buffer, completion):
-    for hostmask in users.hostmasks():
+    for hostmask in users.hostmasks_sorted():
         weechat.hook_completion_list_add(completion, get_host(hostmask), 0,
                 weechat.WEECHAT_LIST_POS_SORT)
     return WEECHAT_RC_OK
 
 @cmpl_get_irc_users
 def users_cmpl(users, data, completion_item, buffer, completion):
-    for hostmask in users.hostmasks():
+    for hostmask in users.hostmasks_sorted():
         user = get_user(hostmask)
         weechat.hook_completion_list_add(completion, user, 0, weechat.WEECHAT_LIST_POS_END)
     return WEECHAT_RC_OK
@@ -2461,6 +2513,7 @@ if __name__ == '__main__' and import_ok and \
     DeVoice().hook()
 
     maskHandler.hook()
+    userCache.hookUserhost()
 
     weechat.hook_config('plugins.var.python.%s.enable_multi_kick' %SCRIPT_NAME,
             'enable_multi_kick_conf_cb', '')
