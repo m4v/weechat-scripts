@@ -451,7 +451,7 @@ def pattern_match(pattern, strings):
 
 def get_nick(s):
     """':nick!user@host' => 'nick'"""
-    assert is_hostmask(s)
+    #assert is_hostmask(s) # not all are valid hostmasks, like server.freenode.net
     return weechat.info_get('irc_nick_from_host', s)
 
 def get_user(s, trim=False):
