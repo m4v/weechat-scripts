@@ -174,7 +174,7 @@ except ImportError:
 
 SCRIPT_NAME    = "grep"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.6.8"
+SCRIPT_VERSION = "0.7-dev"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Search in buffers and logs"
 SCRIPT_COMMAND = "grep"
@@ -281,6 +281,11 @@ class linesList(list):
         s = self._sep
         if (self and self[-1] != s) or not self:
             self.append(s)
+
+    def onlyUniq(self):
+        s = set(self)
+        del self[:]
+        self.extend(s)
 
     def count_match(self, item=None):
         if item is None or isinstance(item, str):
@@ -997,7 +1002,7 @@ def get_grep_file_status():
 ### Grep buffer ###
 def buffer_update():
     """Updates our buffer with new lines."""
-    global pattern_tmpl, matched_lines, pattern, count, hilight, invert
+    global pattern_tmpl, matched_lines, pattern, count, hilight, invert, exact
     time_grep = now()
 
     buffer = buffer_create()
@@ -1068,6 +1073,8 @@ def buffer_update():
                 if not count:
                     # print lines
                     weechat_format = True
+                    if exact:
+                        lines.onlyUniq()
                     for line in lines:
                         #debug(repr(line))
                         if line == linesList._sep:
