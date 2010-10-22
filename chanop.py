@@ -913,18 +913,12 @@ class IrcCommands(ConfigOptions):
 class CaseInsensibleString(str):
     def __init__(self, s=''):
         self.lowered = s.lower()
+    
+    lower    = lambda self: self.lowered
+    __eq__   = lambda self, s: self.lowered == s.lower()
+    __ne__   = lambda self, s: not self == s
+    __hash__ = lambda self: hash(self.lowered)
 
-    def __eq__(self, s):
-        try:
-            return self.lowered == s.lower()
-        except:
-            return False
-
-    def __ne__(self, s):
-        return not self == s
-
-    def __hash__(self):
-        return hash(self.lowered)
 
 def caseInsensibleKey(k):
     if isinstance(k, str):
