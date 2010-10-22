@@ -1391,6 +1391,13 @@ class UserCache(ServerChannelDict):
                 cache = self.servercache[k] = ServerUserList(k)
                 return cache
 
+    def __delitem__(self, k):
+        # when we delete a channel, we need to reduce user.channels count
+        # so they can be purged later.
+        for user in self[k].itervalues():
+            user.channels -= 1
+        ServerChannelDict.__delitem__(self, k)
+
     def getHostmask(self, nick, server, channel=None):
         """Returns hostmask of nick."""
         if channel:
