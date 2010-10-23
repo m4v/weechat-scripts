@@ -1264,9 +1264,6 @@ def cmd_grep_parsing(args, buffer=''):
 
     def tmplReplacer(match):
         """This function will replace templates with regexps"""
-        t = match.group()
-        if t[0] == '\\':
-            return t[1:]
         s = match.groups()[0]
         tmpl_args = s.split()
         tmpl_key, _, tmpl_args = s.partition(' ')
@@ -1520,7 +1517,7 @@ def completion_grep_args(data, completion_item, buffer, completion):
 
 ### Templates ###
 # template placeholder
-_tmplRe = re.compile(r'.?%\{(\w+.*?)\}')
+_tmplRe = re.compile(r'%\{(\w+.*?)\}')
 # will match 999.999.999.999 but I don't care
 ipAddress = r'\\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\\b'
 domain = r'\\b[\w-]{2,}(?:\.[\w-]{2,})*\.[a-z]{2,}\\b'
