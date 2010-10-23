@@ -138,11 +138,12 @@ class DebugBuffer(Buffer):
     def input(self, data, buffer, input):
         """Python code evaluation."""
         try:
+            self.prnt(weechat.color('lightgreen') + input)
             s = eval(input, self.globals)
             self.prnt(s)
         except:
             trace = traceback.format_exc()
-            self.prnt(trace)
+            self.prnt(weechat.color('lightred') + trace)
         return WEECHAT_RC_OK
 
 
