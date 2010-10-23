@@ -2236,6 +2236,10 @@ def mode_cb(server, channel, nick, opHostmask, signal_data):
             if hostmask:
                 affected_users.extend(hostmask)
             maskCache.add(server, channel, mask, operator=opHostmask, hostmask=hostmask)
+            weechat.hook_signal_send("%s,chanop_mode_%s" %(server, mode),
+                    weechat.WEECHAT_HOOK_SIGNAL_STRING,
+                    "%s %s %s %s" %(opHostmask, channel, mask, ','.join(hostmask)))
+
         elif action == '-':
             maskCache.remove(server, channel, mask)
     if affected_users and get_config_boolean('display_affected',
@@ -2449,6 +2453,24 @@ def users_cmpl(users, data, completion_item, buffer, completion):
     return WEECHAT_RC_OK
 
 
+# info hooks
+def info_hostmask_from_nick(data, info_name, arguments):
+    #debug('INFO: %s %s', info_name, arguments)
+    server, channel, nick = arguments.split(',')
+    hostmask = userCache.getHostmask(nick, server, channel)
+    if callable(hostmask):
+        # can't wait for the /userhost to complete
+        return ''
+    return hostmask
+
+def info_pattern_match(data, info_name, arguments):
+    #debug('INFO: %s %s', info_name, arguments)
+    pattern, string = arguments.split(',')
+    if pattern_match(pattern, string):
+        return '1'
+    return ''
+
+
 # Register script
 if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
@@ -2540,6 +2562,14 @@ if __name__ == '__main__' and import_ok and \
 
     # run our cleaner function every 30 min.
     weechat.hook_timer(30*60*1000, 0, 0, 'garbage_collector_cb', '')
+
+    weechat.hook_info("chanop_hostmask_from_nick",
+            "Returns nick's hostmask if is known. Returns '' otherwise.",
+            "server,channel,nick", "info_hostmask_from_nick", "")
+
+    weechat.hook_info("chanop_pattern_match",
+            "Returns nick's hostmask if is known. Returns '' otherwise.",
+            "server,channel,nick", "info_pattern_match", "")
 
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
