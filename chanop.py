@@ -261,7 +261,6 @@ except ImportError:
 
 import getopt, re
 from time import time
-now = lambda : int(time())
 
 ################
 ### Messages ###
@@ -359,6 +358,8 @@ def get_config_specific(config, server='', channel=''):
 
 #############
 ### Utils ###
+
+now = lambda: int(time())
 
 def time_elapsed(elapsed, ret=None, level=2):
     time_hour = 3600
@@ -2286,20 +2287,23 @@ def garbage_collector_cb(data, counter):
     """
     for maskCache in maskHandler.caches.itervalues():
         maskCache.purge()
-
     userCache.purge()
-
-    if weechat.config_get_plugin('debug'):
-        user_count = sum(map(len, userCache.servercache.itervalues()))
-        temp_user_count = sum(map(lambda x: len(x._purge_list), userCache.itervalues()))
-        for mode, maskCache in maskHandler.caches.iteritems():
-            mask_count = sum(map(len, maskCache.itervalues()))
-            mask_chan = len(maskCache)
-            debug("%s '%s' cached masks in %s channels", mask_count, mode, mask_chan)
-        debug('%s cached users in %s servers', user_count, len(userCache.servercache))
-        debug('%s users about to be purged', temp_user_count)
-        debug('%s cached regexps', len(_regexp_cache))
     return WEECHAT_RC_OK
+
+def print_chanop_stats():
+    purge_users = mask_count = mask_chan = 0
+    for maskCache in maskHandler.caches.itervalues():
+        mask_count += sum(map(len, maskCache.itervalues()))
+        mask_chan += len(maskCache)
+    for server in userCache.servercache.itervalues():
+        purge_users += len([ u for u in server.itervalues() if not u.channels ]) 
+    user_count = sum(map(len, userCache.servercache.itervalues()))
+    temp_user_count = sum(map(lambda x: len(x._purge_list), userCache.itervalues()))
+    debug("%s cached masks in %s channels", mask_count, mask_chan)
+    debug('%s cached users in %s servers', user_count, len(userCache.servercache))
+    debug('%s users that parted channels', temp_user_count)
+    debug('%s users to be purged', purge_users)
+    debug('%s cached regexps', len(_regexp_cache))
 
 
 # Config callbacks
@@ -2406,19 +2410,19 @@ def ban_mask_cmpl(users, data, completion_item, buffer, completion):
     if '@' in pattern:
         # complete *!*@hostname
         prefix = pattern[:pattern.find('@')]
-        make_mask = lambda mask : '%s@%s' %(prefix, mask[mask.find('@')+1:])
-        masks = lambda: pattern_match(search_pattern, users.hostmasks_sorted())
+        make_mask = lambda mask: '%s@%s' %(prefix, mask[mask.find('@') + 1:])
+        get_list = users.hostmasks_sorted
     elif '!' in pattern:
         # complete *!username@*
         prefix = pattern[:pattern.find('!')]
-        make_mask = lambda mask : '%s!%s@*' %(prefix, mask[mask.find('!')+1:mask.find('@')])
-        masks = lambda: pattern_match(search_pattern, users.hostmasks_sorted())
+        make_mask = lambda mask: '%s!%s@*' %(prefix, mask[mask.find('!') + 1:mask.find('@')])
+        get_list = users.hostmasks_sorted
     else:
         # complete nick!*@*
-        make_mask = lambda mask : '%s!*@*' %mask
-        masks = lambda: pattern_match(search_pattern, users.nicks())
+        make_mask = lambda mask: '%s!*@*' %mask
+        get_list = users.nicks
 
-    for mask in masks():
+    for mask in pattern_match(search_pattern, get_list()):
         mask = make_mask(mask)
         weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_END)
     return WEECHAT_RC_OK
