@@ -422,7 +422,7 @@ def is_hostname(s):
     return True
 
 def hostmask_pattern_match(pattern, strings):
-    if is_hostmask(pattern):
+    if is_hostmask(pattern): # is this good at all? XXX
         return pattern_match(pattern, strings)
     return []
 
@@ -448,6 +448,7 @@ def pattern_match(pattern, strings):
 
     if isinstance(strings, str):
         strings = [strings]
+    # FIXME don't always return a list
     return [ s for s in strings if s and regexp.match(s) ]
 
 def get_nick(s):
@@ -1051,6 +1052,7 @@ class MaskList(CaseInsensibleDict):
 
     def searchByNick(self, nick):
         try:
+            # FIXME hostmask can be a lambda function fix it!
             hostmask = userCache.getHostmask(nick, self.server, self.channel)
             return self.searchByHostmask(hostmask)
         except KeyError:
@@ -1396,10 +1398,8 @@ class UserCache(ServerChannelDict):
     def getHostmask(self, nick, server, channel=None):
         """Returns hostmask of nick."""
         if channel:
-            users = self[server, channel]
-            if nick in users:
-                return users[nick].hostmask
-        return self[server][nick].hostmask
+            return self[server, channel].getHostmask(nick)
+        return self[server].getHostmask(nick)
 
     def who(self, server, channel):
         if self._hook_who:
