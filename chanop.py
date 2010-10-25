@@ -920,6 +920,10 @@ class IrcCommands(ConfigOptions):
         self.commands = []
 
 
+#########################
+### User/Mask classes ###
+
+class CaseInsensibleString(str):
     def __init__(self, s=''):
         self.lowered = s.lower()
     
