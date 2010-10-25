@@ -1025,7 +1025,7 @@ class MaskObject(object):
 #        self.expires = expires
 
     def __repr__(self):
-        return "MaskObject<%s>" %self.mask
+        return "<MaskObject(%s)>" %self.mask
 
 
 class MaskList(CaseInsensibleDict):
@@ -1052,8 +1052,10 @@ class MaskList(CaseInsensibleDict):
 
     def searchByNick(self, nick):
         try:
-            # FIXME hostmask can be a lambda function fix it!
             hostmask = userCache.getHostmask(nick, self.server, self.channel)
+            if callable(hostmask):
+                # can't wait for /userhost
+                return []
             return self.searchByHostmask(hostmask)
         except KeyError:
             return []
@@ -1253,7 +1255,7 @@ class UserObject(object):
         return len(self.hostmask)
 
     def __repr__(self):
-        return 'UserObject<%s>' %(self.hostmask or self.nick)
+        return '<UserObject(%s)>' %(self.hostmask or self.nick)
 
 
 class ServerUserList(CaseInsensibleDict):
@@ -1555,6 +1557,9 @@ class CommandWithOp(CommandChanop):
             weechat.command('', '/help %s' %self.command)
 
     def execute(self, *args):
+        if not self.args:
+            return
+
         self.irc.Op()
         self.execute_op(*args)
 
@@ -2457,7 +2462,10 @@ def users_cmpl(users, data, completion_item, buffer, completion):
 def info_hostmask_from_nick(data, info_name, arguments):
     #debug('INFO: %s %s', info_name, arguments)
     server, channel, nick = arguments.split(',')
-    hostmask = userCache.getHostmask(nick, server, channel)
+    try:
+        hostmask = userCache.getHostmask(nick, server, channel)
+    except KeyError:
+        return ''
     if callable(hostmask):
         # can't wait for the /userhost to complete
         return ''
@@ -2480,7 +2488,8 @@ if __name__ == '__main__' and import_ok and \
         # custom debug module I use, allows me to inspect script's objects.
         from weeutils import DebugBuffer
         debug = DebugBuffer('chanop_debugging', globals())
-        debug.create()
+        if weechat.config_get_plugin('debug'):
+            debug.create()
     except:
         pass
 
