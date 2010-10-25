@@ -195,6 +195,8 @@
 #   * deop_command option removed
 #   * removed --webchat switch, freenode's updates made it superfluous.
 #   * if WeeChat doesn't know a hostmask, use /userhost or /who if needed.
+#   * /oban and /oquiet without arguments show ban/quiet list.
+#   * most commands allows '-o' option, that forces immediate deop (without configured delay).
 #
 #   2010-09-20
 #   version 0.2: major update
@@ -589,6 +591,13 @@ def nick_infolist(server, channel):
     return Infolist('irc_nick', '%s,%s' %(server, channel))
 
 
+class NoArguments(Exception):
+    pass
+
+class ArgumentError(Exception):
+    pass
+
+
 class Command(object):
     """Class for hook WeeChat commands."""
     description, usage, help = "WeeChat command.", "[define usage template]", "detailed help here"
@@ -604,20 +613,22 @@ class Command(object):
     def __call__(self, *args):
         return self.callback(*args)
 
-    def callback(self, *args):
+    def callback(self, data, buffer, args):
         """Called by WeeChat when /command is used."""
+        self.data, self.buffer, self.args = data, buffer, args
         try:
-            self.parser(*args)  # argument parsing
-        except Exception, e:
+            self.parser(args)  # argument parsing
+        except ArgumentError, e:
             error('Argument error, %s' %e)
-            return WEECHAT_RC_OK
-        self.execute()
+        except NoArguments:
+            pass
+        else:
+            self.execute()
         return WEECHAT_RC_OK
 
-    def parser(self, data, buffer, args):
+    def parser(self, args):
         """Argument parsing, override if needed."""
-        self.buffer = buffer
-        self.args = args
+        pass
 
     def execute(self):
         """This method is called when the command is run, override this."""
@@ -909,10 +920,6 @@ class IrcCommands(ConfigOptions):
         self.commands = []
 
 
-#########################
-### User/Mask classes ###
-
-class CaseInsensibleString(str):
     def __init__(self, s=''):
         self.lowered = s.lower()
     
@@ -1494,18 +1501,20 @@ class CommandChanop(Command, ConfigOptions):
     """Base class for our commands, with config and general functions."""
     infolist = None
 
-    def callback(self, data, buffer, args):
-        self.setup(buffer)
-        try:
-            self.parser(data, buffer, args)  # argument parsing
-        except Exception, e:
-            error('Argument error, %s' %e)
-            return WEECHAT_RC_OK
+    def parser(self, args):
+        if not args:
+            weechat.command('', '/help %s' %self.command)
+            raise NoArguments
+        self.setup(self.buffer)
+
+    def execute(self):
         self.users = userCache[self.server, self.channel]
-        self.execute()          # call our command and queue messages for WeeChat
+        self.execute_chanop()   # call our command and queue messages for WeeChat
         self.irc.run()          # run queued messages
         self.infolist = None    # free irc_nick infolist
-        return WEECHAT_RC_OK    # make WeeChat happy
+
+    def execute_chanop(self):
+        pass
 
     def nick_infolist(self):
         # reuse the same infolist instead of creating it many times
@@ -1550,22 +1559,27 @@ class CommandChanop(Command, ConfigOptions):
 
 class CommandWithOp(CommandChanop):
     """Base class for all the commands that requires op status for work."""
-    def parser(self, data, buffer, args):
-        """Show help if nothing to parse."""
-        CommandChanop.parser(self, data, buffer, args)
+    def setup(self, buffer):
+        self.deopNow = False
+        CommandChanop.setup(self, buffer)
+    
+    def parser(self, args):
+        CommandChanop.parser(self, args)
+        args = args.split()
+        if '-o' in args:
+            self.deopNow = True
+            del args[args.index('-o')]
+            self.args = ' '.join(args)
         if not self.args:
-            weechat.command('', '/help %s' %self.command)
+            raise NoArguments
 
-    def execute(self, *args):
-        if not self.args:
-            return
-
+    def execute_chanop(self, *args):
         self.irc.Op()
         self.execute_op(*args)
 
         if self.autodeop and self.get_config_boolean('autodeop'):
             delay = self.get_config_int('autodeop_delay')
-            if delay > 0:
+            if delay > 0 and not self.deopNow:
                 if self.deopHook:
                     weechat.unhook(self.deopHook)
                 self.env.deopHook = weechat.hook_timer(delay * 1000, 0, 1,
@@ -1609,7 +1623,11 @@ class Op(CommandChanop):
     prefix = '+'
     mode = 'o'
 
-    def execute(self):
+    def parser(self, args):
+        # dont show /help if no args
+        self.setup(self.buffer)
+
+    def execute_chanop(self):
         self.irc.Op()
         # /oop was used, we assume that the user wants
         # to stay opped permanently
@@ -1620,7 +1638,7 @@ class Op(CommandChanop):
                     self.set_mode(nick)
 
 
-class Deop(CommandWithOp, Op):
+class Deop(Op, CommandWithOp):
     description, usage, help = \
     "Removes operator privileges from yourself or users.", "[nick [nick ... ]]", ""
     command = 'odeop'
@@ -1628,18 +1646,14 @@ class Deop(CommandWithOp, Op):
     
     prefix = '-'
 
-    def parser(self, data, buffer, args):
-        """Override CommandWithOp.parser so it doesn't do /help if no args are supplied."""
-        CommandChanop.parser(self, data, buffer, args)
-
-    def execute(self):
+    def execute_chanop(self):
         if self.args:
             nicks = []
             for nick in self.args.split():
                 if is_nick(nick) and self.has_op(nick):
                     nicks.append(nick)
             if nicks:
-                CommandWithOp.execute(self, nicks)
+                CommandWithOp.execute_chanop(self, nicks)
         else:
             self.env.autodeop = True
             if self.has_op(self.nick):
@@ -1650,7 +1664,7 @@ class Deop(CommandWithOp, Op):
 
 
 class Kick(CommandWithOp):
-    description, usage = "Kick nick.", "<nick> [<reason>]"
+    description, usage = "Kick nick.", "<nick> [<reason>] [-o]"
     help = \
     "On freenode, you can set this command to use /remove instead of /kick, users"\
     " will see it as if the user parted and it can bypass autojoin-on-kick scripts."\
@@ -1664,7 +1678,7 @@ class Kick(CommandWithOp):
 
 
 class MultiKick(Kick):
-    description, usage = "Kick one or more nicks.", "<nick> [<nick> ..] [:] [<reason>]"
+    description, usage = "Kick one or more nicks.", "<nick> [<nick> ... ] [:] [<reason>] [-o]"
     help = Kick.help + "\n\n"\
     "Note: Is not needed, but use ':' as a separator between nicks and "\
     "the reason. Otherwise, if there's a nick in the channel matching the "\
@@ -1693,7 +1707,7 @@ class MultiKick(Kick):
 class Ban(CommandWithOp):
     description = "Ban user or hostmask."
     usage = \
-    "<nick|mask> [<nick|mask> ..] [ [--host] [--user] [--nick] | --exact ]"
+    "<nick|mask> [<nick|mask> ... ] [ [--host] [--user] [--nick] | --exact ] [-o]"
     help = \
     "Mask options:\n"\
     " -h  --host: Match hostname (*!*@host)\n"\
@@ -1702,6 +1716,7 @@ class Ban(CommandWithOp):
     " -e --exact: Use exact hostmask. Can't be combined with other options.\n"\
     "\n"\
     "If no mask options are supplied, configured defaults are used.\n"\
+    " -o: Forces deop immediately (without configured delay).\n"\
     "\n"\
     "Example:\n"\
     "/oban somebody --user --host\n"\
@@ -1714,16 +1729,19 @@ class Ban(CommandWithOp):
     prefix = '+'
     maskCache = maskHandler.caches[mode]
 
-    def parser(self, *args):
-        CommandWithOp.parser(self, *args)
-        self._parser(*args)
+    def parser(self, args):
+        if not args:
+            showBans.callback(self.data, self.buffer, self.mode)
+            raise NoArguments
+        CommandWithOp.parser(self, args)
+        self._parser(self.args)
 
-    def _parser(self, *args):
-        args = self.args.split()
+    def _parser(self, args):
+        args = args.split()
         try:
             (opts, args) = getopt.gnu_getopt(args, 'hune', ('host', 'user', 'nick', 'exact'))
         except getopt.GetoptError, e:
-            raise Exception, e
+            raise ArgumentError, e
         self.banmask = []
         for k, v in opts:
             if k in ('-h', '--host'):
@@ -1795,11 +1813,12 @@ class Ban(CommandWithOp):
 
 
 class UnBan(Ban):
-    description, usage = "Remove bans.", "<nick|mask> [<nick|mask> ..]"
+    description, usage = "Remove bans.", "<nick|mask> [<nick|mask> ... ] [-o]"
     command = 'ounban'
     help = \
     "Autocompletion will use channel's bans, patterns allowed for autocomplete multiple"\
     " bans.\n"\
+    " -o: Forces deop immediately (without configured delay).\n"\
     "\n"\
     "Example:\n"\
     "/%(cmd)s *192.168*<tab>\n"\
@@ -1876,7 +1895,7 @@ class BanKick(Ban, Kick):
 class MultiBanKick(BanKick):
     description = "Bankicks one or more nicks."
     usage = \
-    "<nick> [<nick> ..] [:] [<reason>] [ [--host)] [--user] [--nick] | --exact ]"
+    "<nick> [<nick> ... ] [:] [<reason>] [ [--host)] [--user] [--nick] | --exact ] [-o]"
     completion = '%(chanop_nicks)|%*'
 
     def execute_op(self):
@@ -1905,7 +1924,7 @@ class MultiBanKick(BanKick):
 
 
 class Topic(CommandWithOp):
-    description, usage = "Changes channel topic.", "[-delete | topic]"
+    description, usage = "Changes channel topic.", "[-delete | topic] [-o]"
     help = "Clear topic if '-delete' is the new topic."
     command = 'otopic'
     completion = '%(irc_channel_topic)||-delete'
@@ -1915,7 +1934,8 @@ class Topic(CommandWithOp):
 
 
 class Voice(CommandWithOp):
-    description, usage, help = "Gives voice to somebody.", "nick", ""
+    description, usage = "Gives voice to somebody.", "nick [nick ... ] [-o]"
+    help = " -o: Forces deop immediately (without configured delay)."
     command = 'ovoice'
     completion = '%(nicks)|%*'
 
@@ -1939,7 +1959,8 @@ class DeVoice(Voice):
 
 
 class Mode(CommandWithOp):
-    description, usage, help = "Changes channel modes.", "<channel modes>", ""
+    description, usage = "Changes channel modes.", "<channel modes> [-o]"
+    help = " -o: Forces deop immediately (without configured delay)."
     command = 'omode'
 
     def execute_op(self):
@@ -1955,8 +1976,7 @@ class ShowBans(CommandChanop):
 
     padding = 40
 
-    def parser(self, data, buffer, args):
-        self.buffer = buffer
+    def parser(self, args):
         self.server = weechat.buffer_get_string(self.buffer, 'localvar_server')
         self.channel = weechat.buffer_get_string(self.buffer, 'localvar_channel')
         type, _, args = args.partition(' ')
@@ -1964,7 +1984,12 @@ class ShowBans(CommandChanop):
             raise ValueError, 'missing argument'
         try:
             self.maskCache = maskHandler.getCache(type)
-            self.type = type
+            if type == 'b':
+                self.type = 'bans'
+            elif type == 'q':
+                self.type = 'quiets'
+            else:
+                self.type = type
         except KeyError:
             raise ValueError, 'incorrect argument'
         self.args = args.strip()
@@ -2538,7 +2563,8 @@ if __name__ == '__main__' and import_ok and \
     # hook /oban /ounban /olist
     Ban().hook()
     UnBan().hook()
-    ShowBans().hook()
+    showBans = ShowBans()
+    showBans.hook()
     # hook /oquiet /ounquiet
     Quiet().hook()
     UnQuiet().hook()
