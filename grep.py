@@ -1517,7 +1517,7 @@ def completion_grep_args(data, completion_item, buffer, completion):
 
 ### Templates ###
 # template placeholder
-_tmplRe = re.compile(r'%\{(\w+.*?)\}')
+_tmplRe = re.compile(r'%\{(\w+.*?)(?:\}|$)')
 # will match 999.999.999.999 but I don't care
 ipAddress = r'\\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\\b'
 domain = r'\\b[\w-]{2,}(?:\.[\w-]{2,})*\.[a-z]{2,}\\b'
