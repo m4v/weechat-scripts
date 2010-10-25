@@ -526,7 +526,7 @@ def callback(method):
     # set our callback
     import __main__
     setattr(__main__, name, method)
-    debug('callback: %s', name)
+    #debug('callback: %s', name)
     return name
 
 class Infolist(object):
@@ -543,7 +543,7 @@ class Infolist(object):
 
     def __init__(self, name, args=''):
         self.cursor = 0
-        debug('Generating infolist %r %r', name, args)
+        #debug('Generating infolist %r %r', name, args)
         self.pointer = weechat.infolist_get(name, '', args)
         if self.pointer == '':
             raise Exception("Infolist initialising failed (name:'%s' args:'%s')" %(name, args))
@@ -695,7 +695,7 @@ class ConfigOptions(object):
             return s
 
     def get_config(self, config):
-        debug('config: %s' %config)
+        #debug('config: %s' %config)
         return get_config_specific(config, self.server, self.channel)
 
     def get_config_boolean(self, config):
@@ -759,7 +759,7 @@ class IrcCommands(ConfigOptions):
             def modeOpCallback(data, signal, signal_data):
                 signal = signal_data.split(None, 1)[1]
                 if signal == data:
-                    debug('We got op')
+                    #debug('We got op')
                     # add this channel to our watchlist
                     config = 'watchlist.%s' %self.server
                     channels = CaseInsensibleSet(get_config_list(config))
@@ -874,7 +874,7 @@ class IrcCommands(ConfigOptions):
         self.Mode('-v', nick)
 
     def queue(self, message):
-        debug('queuing: %s', message)
+        #debug('queuing: %s', message)
         # merge /modes
         if self.commands and message.command == 'mode':
             max_modes = supported_maxmodes(self.server)
@@ -902,7 +902,7 @@ class IrcCommands(ConfigOptions):
             msg.register(self.buffer)
             msg()
             if self.interrupt:
-                debug("Interrupting queue")
+                #debug("Interrupting queue")
                 break
 
     def clear(self):
@@ -1005,7 +1005,7 @@ class ServerChannelDict(CaseInsensibleDict):
     def purge(self):
         for key in self.keys():
             if key not in chanopChannels:
-                debug('Removing %s.%s list, not in watchlist. (%s items)', key[0], key[1], len(self[key]))
+                #debug('Removing %s.%s list, not in watchlist. (%s items)', key[0], key[1], len(self[key]))
                 del self[key]
         for data in self.itervalues():
             data.purge()
@@ -1275,7 +1275,7 @@ class ServerUserList(CaseInsensibleDict):
         n = now()
         for nick, user in self.items():
             if user.channels < 1 and (n - user.seen) > self._purge_time:
-                debug('purging user: %s' %user)
+                #debug('purging user: %s' %user)
                 del self[nick]
 
 
@@ -1344,7 +1344,7 @@ class UserCache(ServerChannelDict):
     _channels = CaseInsensibleSet()
 
     def generateCache(self, server, channel):
-        debug('generateCache: %s %s', server, channel)
+        #debug('generateCache: %s %s', server, channel)
         users = UserList(server, channel)
         try:
             infolist = nick_infolist(server, channel)
@@ -1418,7 +1418,7 @@ class UserCache(ServerChannelDict):
         self._hook_who_end = weechat.hook_modifier(
                 'irc_in_315', callback(self._endWhoCallback), key)
 
-        debug('WHO: %s', channel)
+        #debug('WHO: %s', channel)
         buffer = weechat.buffer_search('irc', 'server.%s' %server)
         weechat.command(buffer, '/WHO %s' %channel)
 
@@ -1443,7 +1443,7 @@ class UserCache(ServerChannelDict):
         if key != data:
             return string
 
-        debug('end WHO')
+        #debug('end WHO')
         weechat.unhook(self._hook_who)
         weechat.unhook(self._hook_who_end)
         self._hook_who = self._hook_who_end = None
@@ -1461,7 +1461,7 @@ class UserCache(ServerChannelDict):
         self._hook_userhost_nick.append(nick)
 
     def _userhost(self, server, nick):
-        debug('USERHOST: %s', nick)
+        #debug('USERHOST: %s', nick)
         buffer = weechat.buffer_search('irc', 'server.%s' %server)
         weechat.command(buffer, '/USERHOST %s' %nick)
 
@@ -1469,7 +1469,7 @@ class UserCache(ServerChannelDict):
         nick, host = string.rsplit(None, 1)[1].split('=')
         nick, host = nick.strip(':*'), host[1:]
         hostmask = '%s!%s' %(nick, host)
-        debug('USERHOST: %s %s', nick, hostmask)
+        #debug('USERHOST: %s %s', nick, hostmask)
         self.addUser(modifier_data, nick, hostmask)
         if nick in self._hook_userhost_nick:
             del self._hook_userhost_nick[0]
@@ -1578,7 +1578,7 @@ class CommandWithOp(CommandChanop):
         pass
 
     def deopCallback(self, buffer, count):
-        debug('deop %s', buffer)
+        #debug('deop %s', buffer)
         env = self.envOf(buffer)
         if env.autodeop:
             if env.irc.commands:
