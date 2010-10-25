@@ -435,13 +435,20 @@ def pattern_match(pattern, strings):
     if pattern in _regexp_cache:
         regexp = _regexp_cache[pattern]
     else:
-        # XXX doesn't account IRC case insensitive-ness
         s = '^'
         for c in pattern:
             if c == '*':
                 s += '.*'
             elif c == '?':
                 s += '.'
+            elif c in '[{':
+                s += r'[\[{]'
+            elif c in ']}':
+                s += r'[\]}]'
+            elif c in '|\\':
+                s += r'[|\\]'
+            elif c in '^~':
+                s += '[~^]'
             else:
                 s += re.escape(c)
         s += '$'
