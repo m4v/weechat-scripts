@@ -2326,6 +2326,8 @@ def garbage_collector_cb(data, counter):
     for maskCache in maskHandler.caches.itervalues():
         maskCache.purge()
     userCache.purge()
+    if weechat.config_get_plugin('debug'):
+        print_chanop_stats()
     return WEECHAT_RC_OK
 
 def print_chanop_stats():
