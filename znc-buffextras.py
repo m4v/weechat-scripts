@@ -136,8 +136,8 @@ def buffextras_cb(data, modifier, modifier_data, string):
                 IRC_COLOR_CHAT_CHANNEL,
                 channel,
                 IRC_COLOR_MESSAGE_JOIN)
-        weechat.hook_signal_send("%s,irc_in_JOIN" %server, WEECHAT_HOOK_SIGNAL_STRING,
-                ":%s JOIN :%s" %(hostmask, channel))
+#        weechat.hook_signal_send("%s,irc_in_JOIN" %server, WEECHAT_HOOK_SIGNAL_STRING,
+#                ":%s JOIN :%s" %(hostmask, channel))
         #debug(repr(s))
         return s
     elif action == 'parted':
@@ -159,8 +159,8 @@ def buffextras_cb(data, modifier, modifier_data, string):
                 IRC_COLOR_CHAT_CHANNEL,
                 channel,
                 IRC_COLOR_MESSAGE_QUIT)
-        weechat.hook_signal_send("%s,irc_in_PART" %server, WEECHAT_HOOK_SIGNAL_STRING,
-                ":%s PART %s" %(hostmask, channel))
+#        weechat.hook_signal_send("%s,irc_in_PART" %server, WEECHAT_HOOK_SIGNAL_STRING,
+#                ":%s PART %s" %(hostmask, channel))
         return s
     elif action.startswith('quit with message:'):
         IRC_COLOR_MESSAGE_QUIT = weechat.color(weechat.config_string(weechat.config_get(
@@ -184,8 +184,8 @@ def buffextras_cb(data, modifier, modifier_data, string):
                 IRC_COLOR_REASON_QUIT,
                 reason,
                 IRC_COLOR_CHAT_DELIMITERS)
-        weechat.hook_signal_send("%s,irc_in_QUIT" %server, WEECHAT_HOOK_SIGNAL_STRING,
-                ":%s QUIT :%s" %(hostmask, reason))
+#        weechat.hook_signal_send("%s,irc_in_QUIT" %server, WEECHAT_HOOK_SIGNAL_STRING,
+#                ":%s QUIT :%s" %(hostmask, reason))
         return s
     elif action.startswith('is now known as'):
         new_nick = action[16:]
