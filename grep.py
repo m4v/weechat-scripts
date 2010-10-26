@@ -61,19 +61,25 @@
 #   TODO:
 #   * try to figure out why hook_process chokes in long outputs (using a tempfile as a
 #   workaround now)
-#   * predefined regexp templates for common searches, like urls
 #   * possibly add option for defining time intervals
 #
 #
 #   History:
+#   2010-
+#   version 0.7:
+#   * added templates.
+#   * using --only-match shows only unique strings.
+#
 #   2010-10-14
 #   version 0.6.8: by xt <xt@bash.no>
 #   * supress highlights when printing in grep buffer
+#
 #   2010-10-06
 #   version 0.6.7: by xt <xt@bash.no> 
 #   * better temporary file:
 #    use tempfile.mkstemp. to create a temp file in log dir, 
 #    makes it safer with regards to write permission and multi user
+#
 #   2010-04-08
 #   version 0.6.6: bug fixes
 #   * use WEECHAT_LIST_POS_END in log file completion, makes completion faster
@@ -174,7 +180,7 @@ except ImportError:
 
 SCRIPT_NAME    = "grep"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.7-dev"
+SCRIPT_VERSION = "0.7"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Search in buffers and logs"
 SCRIPT_COMMAND = "grep"
@@ -1245,7 +1251,7 @@ def cmd_init():
     cache_dir = {} # for avoid walking the dir tree more than once per command
     nick_dict = {} # nick cache for don't calculate nick color every time
 
-def cmd_grep_parsing(args, buffer=''):
+def cmd_grep_parsing(args):
     """Parses args for /grep and grep input buffer."""
     global pattern_tmpl, pattern, matchcase, number, count, exact, hilight, invert
     global tail, head, after_context, before_context
@@ -1270,7 +1276,7 @@ def cmd_grep_parsing(args, buffer=''):
         try:
             template = templates[tmpl_key]
             if callable(template):
-                r = template(buffer, tmpl_args)
+                r = template(tmpl_args)
                 if not r:
                     error("Template %s returned empty string "\
                           "(WeeChat doesn't have enough data)." %t)
@@ -1392,7 +1398,7 @@ def cmd_grep(data, buffer, args):
 
     # parse
     try:
-        cmd_grep_parsing(args, buffer)
+        cmd_grep_parsing(args)
     except Exception, e:
         error('Argument error, %s' %e)
         return WEECHAT_RC_OK
@@ -1523,7 +1529,7 @@ ipAddress = r'\\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\\b'
 domain = r'\\b[\w-]{2,}(?:\.[\w-]{2,})*\.[a-z]{2,}\\b'
 url = r'\\b\w+://(?:%s|%s)(?::\d+)?(?:/[^\])>\s]*)?\\b' % (domain, ipAddress)
 
-def make_url_regexp(buffer, args):
+def make_url_regexp(args):
     #debug('make url: %s', args)
     if args:
         words = r'(?:%s)' %'|'.join(map(re.escape, args.split()))
@@ -1531,35 +1537,8 @@ def make_url_regexp(buffer, args):
     else:
         return url
 
-def make_host_regexp(buffer, args):
-    #debug('make host: %s', args)
-    if not buffer:
-        return ''
-    regexp = []
-    for nick in args.split():
-        host = get_host(buffer, nick)
-        if not host: continue
-        host = host[host.find('@')+1:]
-        regexp.append(re.escape(host))
-    if regexp:
-        return r'\\b%s\\b' %'|'.join(regexp)
-    return ''
-
-def make_username_regexp(buffer, args):
-    #debug('make username: %s', args)
-    if not buffer:
-        return ''
-    regexp = []
-    for nick in args.split():
-        user = get_username(buffer, nick)
-        if not user: continue
-        regexp.append(re.escape(user))
-    if regexp:
-        return r'\\b%s\\b' %'|'.join(regexp)
-    return ''
-
-def make_simple_regexp(buffer, pattern):
-    s = '^'
+def make_simple_regexp(pattern):
+    s = ''
     for c in pattern:
         if c == '*':
             s += '.*'
@@ -1567,37 +1546,12 @@ def make_simple_regexp(buffer, pattern):
             s += '.'
         else:
             s += re.escape(c)
-    s += '$'
     return s
 
-def get_username(buffer, nick):
-    host = get_host(buffer, nick)
-    if host:
-        return host[:host.find('@')]
-    return ''
-
-def get_host(buffer, nick):
-    channel = weechat.buffer_get_string(buffer, 'localvar_channel')
-    server = weechat.buffer_get_string(buffer, 'localvar_server')
-    nick_infolist = weechat.infolist_get('irc_nick', '', '%s,%s' %(server, channel))
-    if not nick_infolist:
-        return None
-    host = None
-    nick = nick.lower()
-    while weechat.infolist_next(nick_infolist):
-        if nick == weechat.infolist_string(nick_infolist, 'name').lower():
-            host = weechat.infolist_string(nick_infolist, 'host')
-            break
-    weechat.infolist_free(nick_infolist)
-    #debug('get_host %s', host)
-    return host
-
 templates = {
-        'ip'   :ipAddress,
-        'url'  :make_url_regexp,
-        'host' :make_host_regexp,
-        'user' :make_username_regexp,
-        'escape': lambda b, s: re.escape(s),
+            'ip': ipAddress,
+           'url': make_url_regexp,
+        'escape': lambda s: re.escape(s),
         'simple': make_simple_regexp,
         'domain': domain,
         }
@@ -1647,7 +1601,7 @@ if __name__ == '__main__' and import_ok and \
      -c --count: Just count the number of matched lines instead of showing them.
  -m --matchcase: Don't do case insensible search.
    -H --hilight: Colour exact matches in output buffer.
--o --only-match: Print only the matching part of the line.
+-o --only-match: Print only the matching part of the line (unique matches).
  -v -i --invert: Print lines that don't match the regular expression.
       -t --tail: Print the last 10 matching lines.
       -h --head: Print the first 10 matching lines.
@@ -1664,6 +1618,19 @@ Grep buffer:
 
 Python regular expression syntax:
   See http://docs.python.org/lib/re-syntax.html
+
+Grep Templates:
+     %{url [text]}: Matches anything like an url, or an url with text.
+             %{ip}: Matches anything that looks like an ip.
+         %{domain}: Matches anything like a domain.
+    %{escape text}: Escapes text in pattern.
+ %{simple pattern}: Converts a pattern with '*' and '?' wildcards into a regexp.
+
+Examples:
+  Search for urls with the word 'weechat' said by 'nick'
+    /grep nick\t.*%{url weechat}
+  Search for '*.*' string
+    /grep %{escape *.*}
 """,
             # completion template
             "buffer %(buffers_names) %(grep_arguments)|%*"
