@@ -1632,7 +1632,7 @@ Grep Templates:
 
 Examples:
   Search for urls with the word 'weechat' said by 'nick'
-    /grep nick\t.*%{url weechat}
+    /grep nick\\t.*%{url weechat}
   Search for '*.*' string
     /grep %{escape *.*}
 """,
