@@ -1499,7 +1499,7 @@ def cmd_logs(data, buffer, args):
     print_line(msg, buffer, display=True)
     for file, size in file_list:
         separator = column_len and '.'*(column_len - len(file))
-        weechat.prnt(buffer, '%s %s %s' %(strip_home(file), separator, size))
+        prnt(buffer, '%s %s %s' %(strip_home(file), separator, size))
     if file_list:
         print_line(msg, buffer)
     return WEECHAT_RC_OK
