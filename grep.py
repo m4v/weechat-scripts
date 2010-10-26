@@ -65,10 +65,11 @@
 #
 #
 #   History:
-#   2010-
+#   2010-10-26
 #   version 0.7:
 #   * added templates.
 #   * using --only-match shows only unique strings.
+#   * fixed bug that inverted -B -A switches when used with -t
 #
 #   2010-10-14
 #   version 0.6.8: by xt <xt@bash.no>
@@ -665,15 +666,18 @@ def grep_file(file, head, tail, after_context, before_context, count, regexp, hi
         # memory if the log is too big, so we do this *only* for these options.
         file_lines = file_object.readlines()
 
-        if before_context:
-            before_context_range = range(1, before_context + 1)
-            before_context_range.reverse()
-
         if tail:
             # instead of searching in the whole file and later pick the last few lines, we
             # reverse the log, search until count reached and reverse it again, that way is a lot
             # faster
             file_lines.reverse()
+            # don't invert context switches
+            before_context, after_context = after_context, before_context
+
+        if before_context:
+            before_context_range = range(1, before_context + 1)
+            before_context_range.reverse()
+
         limit = tail or head
 
         line_idx = 0
