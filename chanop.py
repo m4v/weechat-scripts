@@ -2347,8 +2347,8 @@ def print_chanop_stats():
     user_count = sum(map(len, userCache.servercache.itervalues()))
     temp_user_count = sum(map(lambda x: len(x._purge_list), userCache.itervalues()))
     debug("%s cached masks in %s channels", mask_count, mask_chan)
-    debug('%s cached users in %s servers', user_count, len(userCache.servercache))
-    debug('%s users that parted channels', temp_user_count)
+    debug('%s cached users in %s servers', user_count - purge_users, len(userCache.servercache))
+    debug('%s users not in channel', temp_user_count)
     debug('%s users to be purged', purge_users)
     debug('%s cached regexps', len(_regexp_cache))
 
