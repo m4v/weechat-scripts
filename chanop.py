@@ -190,7 +190,7 @@
 #
 #
 #   History:
-#   2010-
+#   2010-10-28
 #   version 0.2.1: refactoring mostly
 #   * deop_command option removed
 #   * removed --webchat switch, freenode's updates made it superfluous.
@@ -247,7 +247,7 @@ settings = {
 'autodeop_delay'        :'180',
 'default_banmask'       :'host',
 'enable_remove'         :'off',
-'kick_reason'           :'kthxbye!',
+'kick_reason'           :'KTHXBYE',
 'enable_multi_kick'     :'off',
 'display_affected'      :'on',
 }
