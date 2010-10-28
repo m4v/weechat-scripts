@@ -197,6 +197,7 @@
 #   * if WeeChat doesn't know a hostmask, use /userhost or /who if needed.
 #   * /oban and /oquiet without arguments show ban/quiet list.
 #   * most commands allows '-o' option, that forces immediate deop (without configured delay).
+#   * updated for WeeChat 0.3.4 (irc_nick infolist changes)
 #
 #   2010-09-20
 #   version 0.2: major update
@@ -547,8 +548,11 @@ class Infolist(object):
             'value'       :'string',
             'host'        :'string',
             'flags'       :'integer',
+            'prefixes'    :'string',
             'is_connected':'integer',
             }
+
+    _use_flags = False
 
     def __init__(self, name, args=''):
         self.cursor = 0
@@ -570,8 +574,20 @@ class Infolist(object):
 
     def __getitem__(self, name):
         """Implement the evaluation of self[name]."""
-        type = self.fields[name]
-        return getattr(weechat, 'infolist_%s' %type)(self.pointer, name)
+        if self._use_flags and name == 'prefixes':
+            name = 'flags'
+        value = getattr(weechat, 'infolist_%s' %self.fields[name])(self.pointer, name)
+        if self._use_flags and name == 'flags':
+            value = self._flagsAsString(value)
+        return value
+
+    def _flagsAsString(self, n):
+        s = ''
+        if n & 32:
+            s += '+'
+        if n & 8:
+            s += '@'
+        return s
 
     def next(self):
         self.cursor = weechat.infolist_next(self.pointer)
@@ -853,7 +869,7 @@ class IrcCommands(ConfigOptions):
         infolist = nick_infolist(self.server, self.channel)
         while infolist.next():
             if infolist['name'] == self.nick:
-                return bool(infolist['flags'] & 8)
+                return '@' in infolist['prefixes']
         return False
 
     def Op(self):
@@ -1540,7 +1556,7 @@ class CommandChanop(Command, ConfigOptions):
             nicks = self.nick_infolist()
             while nicks.next():
                 if nicks['name'] == nick:
-                    return bool(nicks['flags'] & 8)
+                    return '@' in nicks['prefixes']
         except:
             error('Not in a IRC channel.')
 
@@ -1549,7 +1565,7 @@ class CommandChanop(Command, ConfigOptions):
             nicks = self.nick_infolist()
             while nicks.next():
                 if nicks['name'] == nick:
-                    return bool(nicks['flags'] & 32)
+                    return '+' in nicks['prefixes']
         except:
             error('Not in a IRC channel.')
 
@@ -2553,9 +2569,14 @@ if __name__ == '__main__' and import_ok and \
         version = 0
     #debug(version)
     if version < 0x30200:
+        error('WeeChat < 0.3.2: using irc_is_nick workaround.')
         is_nick = _is_nick # prior to 0.3.2 didn't have irc_is_nick info
     if version < 0x30300: # prior to 0.3.3 didn't have support for ISUPPORT msg
+        error('WeeChat < 0.3.3: using ISUPPORT workaround.')
         weechat.hook_signal('*,irc_in_005', 'isupport_cb', '')
+    if version < 0x30400: # irc_nick flags changed in 0.3.4
+        error('WeeChat < 0.3.4: using irc_nick infolist workaround.')
+        Infolist._use_flags = True
 
     for opt, val in settings.iteritems():
         if not weechat.config_is_set_plugin(opt):
