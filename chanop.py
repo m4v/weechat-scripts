@@ -1046,7 +1046,6 @@ class ServerChannelDict(CaseInsensibleDict):
 
 # Masks
 class MaskObject(object):
-    __slots__ = ('mask', 'hostmask', 'operator', 'date')#, 'expires')
     def __init__(self, mask, hostmask=None, operator=None, date=None):#, expires=None):
         self.mask = mask
         self.hostmask = hostmask
@@ -1273,7 +1272,6 @@ maskHandler.addCache('q', 'quiet', 'quiets')
 
 # Users
 class UserObject(object):
-    __slots__ = ('nick', 'hostmask', 'seen', 'channels')
     def __init__(self, nick, hostmask):
         self.nick = nick
         self.hostmask = hostmask
