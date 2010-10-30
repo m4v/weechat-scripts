@@ -282,14 +282,6 @@ def say(s, buffer=''):
     """normal msg"""
     prnt(buffer, '%s\t%s' %(script_nick, s))
 
-def debug(s, *args):
-    if not isinstance(s, basestring):
-        s = str(s)
-    if args:
-        s = s %args
-    prnt('', '%s\t%s' %(script_nick, s))
-
-
 ##############
 ### Config ###
 
@@ -2549,7 +2541,12 @@ if __name__ == '__main__' and import_ok and \
         if weechat.config_get_plugin('debug'):
             debug.create()
     except:
-        pass
+        def debug(s, *args):
+            if not isinstance(s, basestring):
+                s = str(s)
+            if args:
+                s = s %args
+            prnt('', '%s\t%s' %(script_nick, s))
 
     # colors
     color_delimiter = weechat.color('chat_delimiters')
