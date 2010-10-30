@@ -1220,7 +1220,13 @@ class MaskHandler(ServerChannelDict):
     def _maskCallback(self, data, modifier, modifier_data, string):
         """callback for irc_in_367 modifier, a single ban."""
         #debug(string)
-        channel, banmask, op, date = string.split()[-4:]
+        args = string.split()
+        channel, banmask, op, date = args[3], args[4], None, None
+        try:
+            op = args[5]
+            date = args[6]
+        except:
+            pass
         self[modifier_data, channel] = (banmask, op, date) # store temporally until irc_368 msg
         if self._hide_msg:
             return ''
