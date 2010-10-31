@@ -581,6 +581,12 @@ class Infolist(object):
             s += '@'
         return s
 
+    def __iter__(self):
+        def generator():
+            while self.next():
+                yield self
+        return generator()
+
     def next(self):
         self.cursor = weechat.infolist_next(self.pointer)
         return self.cursor
