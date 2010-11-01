@@ -257,8 +257,16 @@ if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
         SCRIPT_DESC, '', ''):
 
-    from weeutils import DebugBuffer
-    debug = DebugBuffer('znc_debugging', globals())
+    try:
+        from pydebug import DebugBuffer
+        debug = DebugBuffer('znc_debugging', globals())
+    except:
+        def debug(s, *args):
+            if not isinstance(s, basestring):
+                s = str(s)
+            if args:
+                s = s %args
+            prnt('', '%s\t%s' %(script_nick, s))
 
     # colors
     color_delimiter   = weechat.color('chat_delimiters')
