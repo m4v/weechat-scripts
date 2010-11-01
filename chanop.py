@@ -2345,7 +2345,7 @@ def nick_cb(server, channels, nick, hostmask, signal_data):
     for channel in channels:
         userCache[server, channel].remove(nick)
         user.channels += 1
-        userCache[server, channel][nick] = user
+        userCache[server, channel][newnick] = user
     return WEECHAT_RC_OK
 
 
