@@ -442,8 +442,6 @@ def pattern_match(pattern, strings):
                 s += r'[\]}]'
             elif c in '|\\':
                 s += r'[|\\]'
-            elif c in '^~':
-                s += '[~^]'
             else:
                 s += re.escape(c)
         s += '$'
