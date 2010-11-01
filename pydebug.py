@@ -23,7 +23,7 @@
 # For debug a script, insert these lines after script's register() call.
 #
 #
-# from weedebug import DebugBuffer
+# from pydebug import DebugBuffer
 # debug = DebugBuffer("any_name", globals())
 # debug.display()
 #
@@ -32,7 +32,7 @@
 # display the script's global functions and variables.
 # This module should be in your python scripts path.
 #
-# weedebug.py can be loaded as a script, but you will only able to test functions in WeeChat's API.
+# pydebug.py can be loaded as a script, but you will only able to test functions in WeeChat's API.
 #
 # Session example (loaded as a script):
 #
@@ -40,7 +40,7 @@
 # 0x9ca4ce0
 # >>> buffer_get('0x9ca4ce0', 'input')
 # Traceback (most recent call last):
-#   File "/home/m4v/.weechat/python/weedebug.py", line 153, in input
+#   File "/home/m4v/.weechat/python/pydebug.py", line 153, in input
 #     s = eval(input, self.globals)
 #   File "<string>", line 1, in <module>
 # NameError: name 'buffer_get' is not defined
@@ -63,7 +63,7 @@
 #   version 0.1: Initial release
 ###
 
-SCRIPT_NAME    = "weedebug"
+SCRIPT_NAME    = "pydebug"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
 SCRIPT_VERSION = "0.1"
 SCRIPT_LICENSE = "GPL3"
@@ -78,7 +78,6 @@ except ImportError:
     print "Get WeeChat now at: http://www.weechat.org/"
     import_ok = False
 
-import __main__
 import traceback
 
 def callback(method):
@@ -93,13 +92,14 @@ def callback(method):
             try:
                 inst = im_self.name
             except AttributeError:
-                inst = ''
+                raise Exception("Instance %s has no __name__ attribute" %im_self)
         cls = type(im_self).__name__
         name = '_'.join((cls, inst, func))
     except AttributeError:
         # not a bound method
         name = func
     # set our callback
+    import __main__
     setattr(__main__, name, method)
     return name
 
@@ -261,7 +261,7 @@ class DebugBuffer(Buffer):
         return WEECHAT_RC_OK
 
 
-class WeedebugCommand(Command):
+class PydebugCommand(Command):
     command = SCRIPT_NAME
     def execute(self):
         buffer.display()
@@ -284,7 +284,7 @@ if __name__ == '__main__' and import_ok and \
         globals['search_api'] = search_api
 
         buffer = DebugBuffer(SCRIPT_NAME, globals)
-        WeedebugCommand().hook()
+        PydebugCommand().hook()
 
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
