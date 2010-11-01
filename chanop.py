@@ -520,15 +520,18 @@ def callback(method):
         try:
             inst = im_self.__name__
         except AttributeError:
-            inst = im_self.__class__.__name__
-        name = '%s_%s' %(inst, func)
+            try:
+                inst = im_self.name
+            except AttributeError:
+                raise Exception("Instance of %s has no __name__ attribute" %type(im_self))
+        cls = type(im_self).__name__
+        name = '_'.join((cls, inst, func))
     except AttributeError:
         # not a bound method
         name = func
     # set our callback
     import __main__
     setattr(__main__, name, method)
-    #debug('callback: %s', name)
     return name
 
 class Infolist(object):
@@ -679,7 +682,8 @@ class Command(object):
 ############################
 ### Per buffer variables ###
 
-class EnviromentVars(dict):
+class BufferVariables(dict):
+    """Keeps variables and objects of a specific buffer."""
     def __init__(self, buffer):
         self.buffer = buffer
         self.irc = IrcCommands(buffer)
@@ -696,23 +700,24 @@ class EnviromentVars(dict):
         self[k] = v
 
 
-class ConfigOptions(object):
+class ChanopBuffers(object):
+    """Keeps track of BuffersVariables instances in chanop."""
     buffer = ''
-    _env = {}
+    _buffer = {} # must be shared across instances
     def __getattr__(self, k):
-        return self._env[self.buffer][k]
+        return self._buffer[self.buffer][k]
 
     def setup(self, buffer):
         self.buffer = buffer
-        if buffer not in self._env:
-            self._env[buffer] = EnviromentVars(buffer)
+        if buffer not in self._buffer:
+            self._buffer[buffer] = BufferVariables(buffer)
 
     @property
-    def env(self):
-        return self._env[self.buffer]
+    def vars(self):
+        return self._buffer[self.buffer]
 
-    def envOf(self, buffer):
-        return self._env[buffer]
+    def varsOf(self, buffer):
+        return self._buffer[buffer]
 
     def replace_vars(self, s):
         try:
@@ -740,7 +745,7 @@ class ConfigOptions(object):
 ##########################
 ### IRC messages queue ###
 
-class Message(ConfigOptions):
+class Message(ChanopBuffers):
     command = None
     args = ()
     wait = 0
@@ -775,7 +780,7 @@ class Message(ConfigOptions):
         return '<Message(%s, %s)>' %(self.command, self.args)
 
 
-class IrcCommands(ConfigOptions):
+class IrcCommands(ChanopBuffers):
     """Class that manages and sends the script's commands to WeeChat."""
 
     # Special message classes
@@ -801,7 +806,7 @@ class IrcCommands(ConfigOptions):
                         weechat.config_set_plugin(config, value)
                     weechat.unhook(self.opHook)
                     weechat.unhook(self.opTimeout)
-                    self.env.opTimeout = self.env.opHook = None
+                    self.vars.opTimeout = self.vars.opHook = None
                     self.irc.interrupt = False
                     self.irc.run()
                 return WEECHAT_RC_OK
@@ -811,18 +816,18 @@ class IrcCommands(ConfigOptions):
                 weechat.unhook(self.opHook)
                 if self.deopHook:
                     weechat.unhook(self.deopHook)
-                    self.env.deopHook = None
-                self.env.opTimeout = self.env.opHook = None
+                    self.vars.deopHook = None
+                self.vars.opTimeout = self.vars.opHook = None
                 self.irc.interrupt = False
                 self.irc.clear()
                 return WEECHAT_RC_OK
 
             # wait for a while before timing out.
             data = '%s.%s' %(self.server, self.channel)
-            self.env.opTimeout = weechat.hook_timer(30*1000, 0, 1, callback(timeoutCallback), data)
+            self.vars.opTimeout = weechat.hook_timer(30*1000, 0, 1, callback(timeoutCallback), data)
 
             data = 'MODE %s +o %s' %(self.channel, self.nick)
-            self.env.opHook = weechat.hook_signal('%s,irc_in2_MODE' %self.server,
+            self.vars.opHook = weechat.hook_signal('%s,irc_in2_MODE' %self.server,
                     callback(modeOpCallback), data)
 
 
@@ -1129,6 +1134,7 @@ class MaskCache(ServerChannelDict):
 
 
 class MaskHandler(ServerChannelDict):
+    __name__ = ''
     _hook_mask = ''
     _hook_end = ''
     _hide_msg = False
@@ -1373,6 +1379,7 @@ class UserList(ServerUserList):
 
 
 class UserCache(ServerChannelDict):
+    __name__ = ''
     servercache = CaseInsensibleDict()
     _hook_who = _hook_who_end = None
     _hook_userhost = None
@@ -1526,7 +1533,7 @@ userCache = UserCache()
 ### Chanop Command Classes ###
 
 # Base classes for chanop commands
-class CommandChanop(Command, ConfigOptions):
+class CommandChanop(Command, ChanopBuffers):
     """Base class for our commands, with config and general functions."""
     infolist = None
 
@@ -1611,7 +1618,7 @@ class CommandWithOp(CommandChanop):
             if delay > 0 and not self.deopNow:
                 if self.deopHook:
                     weechat.unhook(self.deopHook)
-                self.env.deopHook = weechat.hook_timer(delay * 1000, 0, 1,
+                self.vars.deopHook = weechat.hook_timer(delay * 1000, 0, 1,
                         callback(self.deopCallback), self.buffer)
             else:
                 self.irc.Deop()
@@ -1622,17 +1629,17 @@ class CommandWithOp(CommandChanop):
 
     def deopCallback(self, buffer, count):
         #debug('deop %s', buffer)
-        env = self.envOf(buffer)
-        if env.autodeop:
-            if env.irc.commands:
+        vars = self.varsOf(buffer)
+        if vars.autodeop:
+            if vars.irc.commands:
                 # there are commands in queue yet, wait some more
-                env.deopHook = weechat.hook_timer(1000, 0, 1,
+                vars.deopHook = weechat.hook_timer(1000, 0, 1,
                         callback(self.deopCallback), buffer)
                 return WEECHAT_RC_OK
             else:
-                env.irc.Deop()
-                env.irc.run()
-        env.deopHook = None
+                vars.irc.Deop()
+                vars.irc.run()
+        vars.deopHook = None
         return WEECHAT_RC_OK
 
 
@@ -1660,7 +1667,7 @@ class Op(CommandChanop):
         self.irc.Op()
         # /oop was used, we assume that the user wants
         # to stay opped permanently
-        self.env.autodeop = False
+        self.vars.autodeop = False
         if self.args:
             for nick in self.args.split():
                 if self.is_nick(nick) and not self.has_op(nick):
@@ -1684,7 +1691,7 @@ class Deop(Op, CommandWithOp):
             if nicks:
                 CommandWithOp.execute_chanop(self, nicks)
         else:
-            self.env.autodeop = True
+            self.vars.autodeop = True
             if self.has_op(self.nick):
                 self.irc.Deop()
 
@@ -2542,7 +2549,7 @@ if __name__ == '__main__' and import_ok and \
 
     try:
         # custom debug module I use, allows me to inspect script's objects.
-        from weeutils import DebugBuffer
+        from pydebug import DebugBuffer
         debug = DebugBuffer('chanop_debugging', globals())
         if weechat.config_get_plugin('debug'):
             debug.create()
