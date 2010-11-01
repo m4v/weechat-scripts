@@ -104,6 +104,71 @@ def callback(method):
     return name
 
 
+class NoArguments(Exception):
+    pass
+
+
+class ArgumentError(Exception):
+    pass
+
+
+class Command(object):
+    """Class for hook WeeChat commands."""
+    description, usage, help = "WeeChat command.", "[define usage template]", "detailed help here"
+    command = ''
+    completion = ''
+
+    def __init__(self):
+        assert self.command, "No command defined"
+        self.__name__ = self.command
+        self._pointer = ''   
+        self._callback = ''   
+
+    def __call__(self, *args):
+        return self.callback(*args)
+
+    def callback(self, data, buffer, args):
+        """Called by WeeChat when /command is used."""
+        self.data, self.buffer, self.args = data, buffer, args
+        try:
+            self.parser(args)  # argument parsing
+        except ArgumentError, e:
+            error('Argument error, %s' %e)
+        except NoArguments:
+            pass
+        else:
+            self.execute()
+        return WEECHAT_RC_OK
+
+    def parser(self, args):
+        """Argument parsing, override if needed."""
+        pass
+
+    def execute(self):
+        """This method is called when the command is run, override this."""
+        pass
+
+    def hook(self):
+        assert not self._pointer, \
+                "There's already a hook pointer, unhook first (%s)" %self.command
+        self._callback = callback(self.callback)
+        pointer = weechat.hook_command(self.command,
+                                       self.description,
+                                       self.usage,
+                                       self.help,
+                                       self.completion,
+                                       self._callback, '')
+        if pointer == '':
+            raise Exception, "hook_command failed: %s %s" %(SCRIPT_NAME, self.command)
+        self._pointer = pointer
+
+    def unhook(self):
+        if self._pointer:
+            weechat.unhook(self._pointer)
+            self._pointer = ''
+            self._callback = ''
+
+
 class SimpleBuffer(object):
     """WeeChat buffer. Only for displaying lines."""
     def __init__(self, name):
@@ -124,6 +189,12 @@ class SimpleBuffer(object):
         buffer = self._create()
         self._pointer = buffer
         return buffer
+
+    def title(self, s):
+        weechat.buffer_set(self._getBuffer(), 'title', s)
+
+    def clear(self):
+        weechat.buffer_clear(self._getBuffer())
 
     def __call__(self, s, *args, **kwargs):
         self.prnt(s, *args, **kwargs)
@@ -157,6 +228,7 @@ class Buffer(SimpleBuffer):
         return WEECHAT_RC_OK
 
     def close(self, data, buffer):
+        self._pointer = ''
         return WEECHAT_RC_OK
 
 
@@ -170,18 +242,30 @@ class DebugBuffer(Buffer):
         weechat.buffer_set(buffer, 'nicklist', '0')
         weechat.buffer_set(buffer, 'time_for_each_line', '0')
         weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
+        weechat.buffer_set(buffer, 'title', 'Debug buffer')
+        self.color_input = weechat.color('green')
+        self.color_exc = weechat.color('red')
         return buffer
 
     def input(self, data, buffer, input):
         """Python code evaluation."""
         try:
-            self.prnt(weechat.color('lightgreen') + '>>> ' + input)
+            self.prnt('%s>>> %s', self.color_input, input)
             s = eval(input, self.globals)
             self.prnt(s)
         except:
             trace = traceback.format_exc()
-            self.prnt(weechat.color('lightred') + trace)
+            # color traceback lines
+            self.prnt('\n'.join(
+                map(lambda s: self.color_exc + s, trace.split('\n'))))
         return WEECHAT_RC_OK
+
+
+class WeedebugCommand(Command):
+    command = SCRIPT_NAME
+    def execute(self):
+        buffer.display()
+        buffer.title("WeeChat API functions, use \"search_api()\" for a list.")
 
 
 if __name__ == '__main__' and import_ok and \
@@ -199,11 +283,8 @@ if __name__ == '__main__' and import_ok and \
 
         globals['search_api'] = search_api
 
-        myBuffer = DebugBuffer(SCRIPT_NAME, globals)
-        myBuffer("Test simple Python statements here.")
-        myBuffer("Example: \"buffer_search('python', '%s')\"" %SCRIPT_NAME)
-        myBuffer("For a list of WeeChat API functions, type \"search_api()\" or \"search_api('word')\"")
-        myBuffer.display()
+        buffer = DebugBuffer(SCRIPT_NAME, globals)
+        WeedebugCommand().hook()
 
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
