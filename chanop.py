@@ -417,7 +417,9 @@ def is_hostname(s):
     return True
 
 def hostmask_pattern_match(pattern, strings):
-    if is_hostmask(pattern): # is this good at all? XXX
+    if is_hostmask(pattern): # this prevents tryting to match with extbans
+        # the mask can end with '$#channel' (forward ban)
+        pattern, _, channel = pattern.partition('$')
         return pattern_match(pattern, strings)
     return []
 
