@@ -685,18 +685,19 @@ class Command(object):
 class BufferVariables(dict):
     """Keeps variables and objects of a specific buffer."""
     def __init__(self, buffer):
-        self.buffer = buffer
-        self.irc = IrcCommands(buffer)
-        self.autodeop = True
-        self.deopHook = self.opHook = self.opTimeout = None
-        self.server = weechat.buffer_get_string(buffer, 'localvar_server')
-        self.channel = weechat.buffer_get_string(buffer, 'localvar_channel')
-        self.nick = weechat.info_get('irc_nick', self.server)
+        self['buffer'] = buffer
+        self['irc'] = IrcCommands(buffer)
+        self['autodeop'] = True
+        self['deopHook'] = self.opHook = self.opTimeout = None
+        self['server'] = weechat.buffer_get_string(buffer, 'localvar_server')
+        self['channel'] = weechat.buffer_get_string(buffer, 'localvar_channel')
+        self['nick'] = weechat.info_get('irc_nick', self.server)
 
     def __getattr__(self, k):
         return self[k]
 
     def __setattr__(self, k, v):
+        debug('Buffer[%s] %s ... %s => %s', self.buffer, k, self.get(k), v)
         self[k] = v
 
 
