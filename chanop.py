@@ -262,7 +262,7 @@ except ImportError:
     print "Get WeeChat now at: http://www.weechat.org/"
     import_ok = False
 
-import getopt, re
+import getopt, re, string
 from time import time
 
 ################
@@ -991,12 +991,18 @@ class IrcCommands(ChanopBuffers):
 #########################
 ### User/Mask classes ###
 
+_rfc1459trans = string.maketrans(string.ascii_uppercase + r'\[]',
+                                 string.ascii_lowercase + r'|{}')
+def IRClower(s):
+    return s.translate(_rfc1459trans)
+
 class CaseInsensibleString(str):
     def __init__(self, s=''):
-        self.lowered = s.lower()
+        self.lowered = IRClower(s)
     
     lower    = lambda self: self.lowered
-    __eq__   = lambda self, s: self.lowered == s.lower()
+    translate = lambda self, trans: self.lowered
+    __eq__   = lambda self, s: self.lowered == IRClower(s)
     __ne__   = lambda self, s: not self == s
     __hash__ = lambda self: hash(self.lowered)
 
