@@ -830,6 +830,40 @@ class IrcCommands(ChanopBuffers):
             self.vars.opHook = weechat.hook_signal('%s,irc_in2_MODE' %self.server,
                     callback(modeOpCallback), data)
 
+    class UserhostMessage(Message):
+        def send(self, cmd):
+            self.irc.interrupt = True
+            Message.send(self, cmd)
+
+            def msgCallback(data, modifier, modifier_data, string):
+                if data != modifier_data:
+                    return string
+                nick, host = string.rsplit(None, 1)[1].split('=')
+                nick, host = nick.strip(':*'), host[1:]
+                hostmask = '%s!%s' %(nick, host)
+                debug('USERHOST: %s %s', nick, hostmask)
+                userCache.addUser(modifier_data, nick, hostmask)
+                weechat.unhook(self.msgHook)
+                weechat.unhook(self.msgTimeout)
+                self.vars.msgTimeout = self.vars.msgHook = None
+                self.irc.interrupt = False
+                self.irc.run()
+                return ''
+
+            def timeoutCallback(data, count):
+                weechat.unhook(self.msgHook)
+                self.vars.msgTimeout = self.vars.msgHook = None
+                self.irc.interrupt = False
+                self.irc.clear()
+                return WEECHAT_RC_OK
+
+            # wait for a while before timing out.
+            self.vars.msgTimeout = \
+                weechat.hook_timer(30*1000, 0, 1, callback(timeoutCallback), '')
+
+            self.vars.msgHook = weechat.hook_modifier('irc_in_302',
+                    callback(msgCallback), self.server)
+
 
     class ModeMessage(Message):
         command = 'mode'
@@ -910,8 +944,12 @@ class IrcCommands(ChanopBuffers):
     def Devoice(self, nick):
         self.Mode('-v', nick)
 
-    def queue(self, message):
-        #debug('queuing: %s', message)
+    def Userhost(self, nick):
+        msg = self.UserhostMessage('USERHOST', (nick, ))
+        self.queue(msg, insert=True) # USERHOST should be sent first
+
+    def queue(self, message, insert=False):
+        debug('queuing: %s', message)
         # merge /modes
         if self.commands and message.command == 'mode':
             max_modes = supported_maxmodes(self.server)
@@ -920,7 +958,10 @@ class IrcCommands(ChanopBuffers):
                 msg.chars.append(message.chars[0])
                 msg.charargs.append(message.charargs[0])
                 return
-        self.commands.append(message)
+        if insert:
+            self.commands.insert(0, message)
+        else:
+            self.commands.append(message)
 
     # it happened once and it wasn't pretty
     def safe_check(f):
@@ -1089,9 +1130,6 @@ class MaskList(CaseInsensibleDict):
     def searchByNick(self, nick):
         try:
             hostmask = userCache.getHostmask(nick, self.server, self.channel)
-            if callable(hostmask):
-                # can't wait for /userhost
-                return []
             return self.searchByHostmask(hostmask)
         except KeyError:
             return []
@@ -1303,13 +1341,12 @@ class UserObject(object):
 class ServerUserList(CaseInsensibleDict):
     def __init__(self, server):
         self.server = server
+        buffer = weechat.buffer_search('irc', 'server.%s' %server)
+        self.irc = IrcCommands(buffer)
         self._purge_time = 3600*4 # 4 hours
 
     def getHostmask(self, nick):
         user = self[nick]
-        if not user.hostmask:
-            userCache.userhost(self.server, nick)
-            return lambda: user.hostmask or user.nick
         return user.hostmask
 
     def purge(self):
@@ -1361,9 +1398,6 @@ class UserList(ServerUserList):
             user = self[nick]
         except KeyError:
             user = userCache[self.server][nick]
-        if not user.hostmask:
-            userCache.userhost(self.server, nick)
-            return lambda: user.hostmask or user.nick
         return user.hostmask
 
     def purge(self):
@@ -1382,8 +1416,6 @@ class UserCache(ServerChannelDict):
     __name__ = ''
     servercache = CaseInsensibleDict()
     _hook_who = _hook_who_end = None
-    _hook_userhost = None
-    _hook_userhost_nick = []
     _channels = CaseInsensibleSet()
 
     def generateCache(self, server, channel):
@@ -1492,36 +1524,6 @@ class UserCache(ServerChannelDict):
         self._hook_who = self._hook_who_end = None
         return ''
 
-    def hookUserhost(self):
-        self._hook_userhost = weechat.hook_modifier(
-                'irc_in_302', callback(self._userhostCallback), '')
-
-    def userhost(self, server, nick):
-        if nick in self._hook_userhost_nick:
-            return
-        if not self._hook_userhost_nick:
-            self._userhost(server, nick)
-        self._hook_userhost_nick.append(nick)
-
-    def _userhost(self, server, nick):
-        #debug('USERHOST: %s', nick)
-        buffer = weechat.buffer_search('irc', 'server.%s' %server)
-        weechat.command(buffer, '/USERHOST %s' %nick)
-
-    def _userhostCallback(self, data, modifier, modifier_data, string):
-        nick, host = string.rsplit(None, 1)[1].split('=')
-        nick, host = nick.strip(':*'), host[1:]
-        hostmask = '%s!%s' %(nick, host)
-        #debug('USERHOST: %s %s', nick, hostmask)
-        self.addUser(modifier_data, nick, hostmask)
-        if nick in self._hook_userhost_nick:
-            del self._hook_userhost_nick[0]
-            if self._hook_userhost_nick:
-                nick = self._hook_userhost_nick[0]
-                self._userhost(modifier_data, nick)
-            return ''
-        return string
-
     def purge(self):
         ServerChannelDict.purge(self)
         for cache in self.servercache.itervalues():
@@ -1583,7 +1585,12 @@ class CommandChanop(Command, ChanopBuffers):
 
     def get_host(self, name):
         try:
-            return self.users.getHostmask(name)
+            hostmask = self.users.getHostmask(name)
+            if not hostmask:
+                self.irc.Userhost(name)
+                user = userCache[self.server][name]
+                return lambda: user.hostmask or user.nick
+            return hostmask
         except KeyError:
             pass
 
@@ -2529,9 +2536,6 @@ def info_hostmask_from_nick(data, info_name, arguments):
         hostmask = userCache.getHostmask(nick, server, channel)
     except KeyError:
         return ''
-    if callable(hostmask):
-        # can't wait for the /userhost to complete
-        return ''
     return hostmask
 
 def info_pattern_match(data, info_name, arguments):
@@ -2623,7 +2627,6 @@ if __name__ == '__main__' and import_ok and \
     DeVoice().hook()
 
     maskHandler.hook()
-    userCache.hookUserhost()
 
     weechat.hook_config('plugins.var.python.%s.enable_multi_kick' %SCRIPT_NAME,
             'enable_multi_kick_conf_cb', '')
