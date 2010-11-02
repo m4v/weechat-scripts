@@ -182,7 +182,6 @@
 #   * ban expire time
 #   * save ban.mask and ban.hostmask across reloads
 #   * allow to override quiet command (for quiet with ChanServ)
-#   * multiple-channel ban (?)
 #   * freenode:
 #    - support for bans with channel forward
 #    - support for extbans (?)
@@ -398,24 +397,6 @@ def is_hostmask(s):
     """Returns whether or not the string s starts with something like a hostmask."""
     return _hostmaskRe.match(s) is not None
 
-def is_ip(s):
-    """Returns whether or not a given string is an IPV4 address."""
-    import socket
-    try:
-        return bool(socket.inet_aton(s))
-    except socket.error:
-        return False
-
-_valid_label = re.compile(r'^[a-z\d\-]+$', re.I)
-def is_hostname(s):
-    """Checks if 's' is a valid hostname."""
-    if not s:
-        return False
-    for label in s.split('.'):
-        if not label or not _valid_label.match(label):
-            return False
-    return True
-
 def hostmask_pattern_match(pattern, strings):
     if is_hostmask(pattern): # this prevents tryting to match with extbans
         # the mask can end with '$#channel' (forward ban)
@@ -488,15 +469,6 @@ _nickchars = re.escape(r'[]\`_^{|}')
 _nickRe = re.compile(r'^[A-Za-z%s][-0-9A-Za-z%s]*$' %(_nickchars, _nickchars))
 def _is_nick(s):
     return bool(_nickRe.match(s))
-
-def hex_to_ip(s):
-    """'7f000001' => '127.0.0.1'"""
-    try:
-        ip = map(lambda n: s[n:n+2], range(0, len(s), 2))
-        ip = map(lambda n: int(n, 16), ip)
-        return '.'.join(map(str, ip))
-    except:
-        return ''
 
 def irc_buffer(buffer):
     """Returns pair (server, channel) or None if buffer isn't an irc channel"""
@@ -2327,7 +2299,6 @@ def mode_cb(server, channel, nick, opHostmask, signal_data):
         buffer = weechat.buffer_search('irc', '%s.%s' %key)
         print_affected_users(buffer, *set(affected_users))
     return WEECHAT_RC_OK
-
 
 # User cache
 @signal_parse
