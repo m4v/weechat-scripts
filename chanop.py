@@ -397,46 +397,53 @@ def is_hostmask(s):
     """Returns whether or not the string s starts with something like a hostmask."""
     return _hostmaskRe.match(s) is not None
 
-def hostmask_pattern_match(pattern, strings):
-    if is_hostmask(pattern): # this prevents tryting to match with extbans
-        # the mask can end with '$#channel' (forward ban)
-        pattern, _, channel = pattern.partition('$')
-        return pattern_match(pattern, strings)
-    return []
 
-_regexp_cache = {}
-def pattern_match(pattern, strings):
-    # we will take the trouble of using regexps, since they
-    # match faster than fnmatch once compiled
-    if pattern in _regexp_cache:
-        regexp = _regexp_cache[pattern]
-    else:
-        s = '^'
-        for c in pattern:
-            if c == '*':
-                s += '.*'
-            elif c == '?':
-                s += '.'
-            elif c in '[{':
-                s += r'[\[{]'
-            elif c in ']}':
-                s += r'[\]}]'
-            elif c in '|\\':
-                s += r'[|\\]'
-            else:
-                s += re.escape(c)
-        s += '$'
-        regexp = re.compile(s, re.I)
-        _regexp_cache[pattern] = regexp
+_reCache = {}
+def cachedPattern(f):
+    """Use cached regexp object or compile a new one from pattern."""
+    def getRegexp(pattern, *arg):
+        try:
+            regexp = _reCache[pattern]
+        except KeyError:
+            s = '^'
+            for c in pattern:
+                if c == '*':
+                    s += '.*'
+                elif c == '?':
+                    s += '.'
+                elif c in '[{':
+                    s += r'[\[{]'
+                elif c in ']}':
+                    s += r'[\]}]'
+                elif c in '|\\':
+                    s += r'[|\\]'
+                else:
+                    s += re.escape(c)
+            s += '$'
+            regexp = re.compile(s, re.I)
+            _reCache[pattern] = regexp
+        return f(regexp, *arg)
+    return getRegexp
 
-    if isinstance(strings, str):
-        strings = [strings]
-    # FIXME don't always return a list
-    return [ s for s in strings if s and regexp.match(s) ]
+def hostmaskPattern(f):
+    """Check if pattern is for match a hostmask and remove ban forward if there's one."""
+    def checkPattern(pattern, arg):
+        if is_hostmask(pattern):
+            pattern, _, channel = pattern.partition('$') # nick!user@host$#channel
+            return f(pattern, arg)
+        return False
+    return checkPattern
+
+match_string = lambda r, s: r.match(s) is not None
+match_list = lambda r, L: [ s for s in L if r.match(s) is not None ]
+
+pattern_match = cachedPattern(match_string)
+pattern_match_list = cachedPattern(match_list)
+hostmask_match = hostmaskPattern(cachedPattern(match_string))
+hostmask_match_list = hostmaskPattern(cachedPattern(match_list))
 
 def get_nick(s):
     """':nick!user@host' => 'nick'"""
-    #assert is_hostmask(s) # not all are valid hostmasks, like server.freenode.net
     return weechat.info_get('irc_nick_from_host', s)
 
 def get_user(s, trim=False):
@@ -1101,10 +1108,7 @@ class MaskList(CaseInsensibleDict):
             self[mask] = MaskObject(mask, **kwargs)
 
     def searchByHostmask(self, hostmask):
-        return [ mask for mask in self if hostmask_pattern_match(mask, hostmask) ]
-
-    def searchByPattern(self, pattern):
-        return pattern_match(pattern, self.iterkeys())
+        return [ mask for mask in self if hostmask_match(mask, hostmask) ]
 
     def searchByNick(self, nick):
         try:
@@ -1119,7 +1123,7 @@ class MaskList(CaseInsensibleDict):
         elif is_hostmask(s):
             masks = self.searchByHostmask(s)
         else:
-            masks = self.searchByPattern(s)
+            masks = pattern_match_list(pattern, self.iterkeys())
         return masks
 
     def purge(self):
@@ -1290,6 +1294,10 @@ class MaskHandler(ServerChannelDict):
                 self._fetch(*next)
             else:
                 self._hide_msg = False
+
+    def purge(self):
+        for maskCache in self.caches.itervalues():
+            maskCache.purge()
 
 
 maskHandler = MaskHandler()
@@ -1562,7 +1570,7 @@ class CommandChanop(Command, ChanopBuffers):
     def is_nick(self, nick):
         return nick in self.users
 
-    def get_host(self, name):
+    def getHostmask(self, name):
         try:
             hostmask = self.users.getHostmask(name)
             if not hostmask:
@@ -1810,7 +1818,7 @@ class Ban(CommandWithOp):
         for arg in args:
             mask = arg
             if not is_hostmask(arg):
-                hostmask = self.get_host(arg)
+                hostmask = self.getHostmask(arg)
                 if hostmask:
                     mask = self.make_banmask(hostmask)
             if self.has_voice(arg):
@@ -1905,7 +1913,7 @@ class BanKick(Ban, Kick):
             self.irc.clear()
             return
 
-        hostmask = self.get_host(nick)
+        hostmask = self.getHostmask(nick)
         if hostmask:
             banmask = self.make_banmask(hostmask)
             self.ban(banmask)
@@ -1935,7 +1943,7 @@ class MultiBanKick(BanKick):
             return
 
         for nick in nicks:
-            hostmask = self.get_host(nick)
+            hostmask = self.getHostmask(nick)
             if hostmask:
                 banmask = self.make_banmask(hostmask)
                 self.ban(banmask)
@@ -2284,7 +2292,7 @@ def mode_cb(server, channel, nick, opHostmask, signal_data):
         maskCache = maskHandler.caches[mode]
         #debug('MODE: %s%s %s %s', action, mode, mask, op)
         if action == '+':
-            hostmask = hostmask_pattern_match(mask, userCache[key].hostmasks())
+            hostmask = hostmask_match_list(mask, userCache[key].hostmasks())
             if hostmask:
                 affected_users.extend(hostmask)
             maskCache.add(server, channel, mask, operator=opHostmask, hostmask=hostmask)
@@ -2336,31 +2344,12 @@ def nick_cb(server, channels, nick, hostmask, signal_data):
 
 # Garbage collector
 def garbage_collector_cb(data, counter):
-    """
-    This takes care of purging users and masks from channels not in watchlist, and
+    """This takes care of purging users and masks from channels not in watchlist, and
     expired users that parted.
     """
-    for maskCache in maskHandler.caches.itervalues():
-        maskCache.purge()
+    maskHandler.purge()
     userCache.purge()
-    if weechat.config_get_plugin('debug'):
-        print_chanop_stats()
     return WEECHAT_RC_OK
-
-def print_chanop_stats():
-    purge_users = mask_count = mask_chan = 0
-    for maskCache in maskHandler.caches.itervalues():
-        mask_count += sum(map(len, maskCache.itervalues()))
-        mask_chan += len(maskCache)
-    for server in userCache.servercache.itervalues():
-        purge_users += len([ u for u in server.itervalues() if not u.channels ]) 
-    user_count = sum(map(len, userCache.servercache.itervalues()))
-    temp_user_count = sum(map(lambda x: len(x._purge_list), userCache.itervalues()))
-    debug("%s cached masks in %s channels", mask_count, mask_chan)
-    debug('%s cached users in %s servers', user_count - purge_users, len(userCache.servercache))
-    debug('%s users not in channel', temp_user_count)
-    debug('%s users to be purged', purge_users)
-    debug('%s cached regexps', len(_regexp_cache))
 
 
 # Config callbacks
@@ -2479,7 +2468,7 @@ def ban_mask_cmpl(users, data, completion_item, buffer, completion):
         make_mask = lambda mask: '%s!*@*' %mask
         get_list = users.nicks
 
-    for mask in pattern_match(search_pattern, get_list()):
+    for mask in pattern_match_list(search_pattern, get_list()):
         mask = make_mask(mask)
         weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_END)
     return WEECHAT_RC_OK
@@ -2630,10 +2619,9 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_info("chanop_hostmask_from_nick",
             "Returns nick's hostmask if is known. Returns '' otherwise.",
             "server,channel,nick", "info_hostmask_from_nick", "")
-
     weechat.hook_info("chanop_pattern_match",
-            "Returns nick's hostmask if is known. Returns '' otherwise.",
-            "server,channel,nick", "info_pattern_match", "")
+            "Test if pattern matches text, is case insensible with IRC case rules.",
+            "pattern,text", "info_pattern_match", "")
 
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
