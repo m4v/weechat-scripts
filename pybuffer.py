@@ -22,8 +22,8 @@
 # For debug a script, insert these lines after script's register() call.
 #
 #
-# from pybuffer import DebugBuffer
-# debug = DebugBuffer("buffer_name", globals())
+# from pybuffer import PythonBuffer
+# debug = PythonBuffer("buffer_name", globals())
 # debug.display()
 #
 #
@@ -85,6 +85,7 @@ except ImportError:
     import_ok = False
 
 import code, sys, traceback
+from fnmatch import fnmatch
 
 def callback(method):
     """This function will take a bound method or function and make it a callback."""
@@ -104,6 +105,15 @@ def callback(method):
     except AttributeError:
         # not a bound method
         name = func
+
+    # debug stuff
+    def debug_method(f):
+        def method(*args):
+            _debug('%s: %s', name, ', '.join(map(repr, args)))
+            return f(*args)
+        return method
+    method = debug_method(method)
+
     # set our callback
     import __main__
     setattr(__main__, name, method)
@@ -177,12 +187,15 @@ class Command(object):
 
 class SimpleBuffer(object):
     """WeeChat buffer. Only for displaying lines."""
+    _title = ''
     def __init__(self, name):
         assert name, "Buffer needs a name."
         self.__name__ = name
         self._pointer = ''
 
     def _getBuffer(self):
+        # we need to always search the buffer, since there's no close callback we can't know if the
+        # buffer was closed.
         buffer = weechat.buffer_search('python', self.__name__)
         if not buffer:
             buffer = self.create()
@@ -193,10 +206,13 @@ class SimpleBuffer(object):
 
     def create(self):
         buffer = self._create()
+        if self._title:
+            weechat.buffer_set(buffer, 'title', self._title)
         self._pointer = buffer
         return buffer
 
     def title(self, s):
+        self._title = s
         weechat.buffer_set(self._getBuffer(), 'title', s)
 
     def clear(self):
@@ -206,8 +222,7 @@ class SimpleBuffer(object):
         self.prnt(s, *args, **kwargs)
 
     def display(self):
-        buffer = self._getBuffer()
-        weechat.buffer_set(buffer, 'display', '1')
+        weechat.buffer_set(self._getBuffer(), 'display', '1')
 
     def error(self, s, *args):
         self.prnt(s, prefix=weechat.prefix('error'))
@@ -235,6 +250,11 @@ class Buffer(SimpleBuffer):
     def _create(self):
         return weechat.buffer_new(self.__name__, callback(self.input), '', callback(self.close), '')
 
+    def _getBuffer(self):
+        if self._pointer:
+            return self._pointer
+        return SimpleBuffer._getBuffer(self)
+
     def input(self, data, buffer, input):
         return WEECHAT_RC_OK
 
@@ -257,39 +277,47 @@ class StreamObject(object):
             self._content = ''
 
 
-class DebugBuffer(Buffer):
-    def __init__(self, name, globals={}):
+class PythonBuffer(Buffer):
+    _title = "Python Buffer: use search([pattern]) for a list of objects."
+    def __init__(self, name, locals=None):
         Buffer.__init__(self, name)
-        self.globals = globals
         self.output = StreamObject(self)
         self.error = StreamObject(self)
         # redirect stdout and stderr
         sys.stdout = self.output
         sys.stderr = self.error
+        self.console = code.InteractiveConsole(locals)
+        locals = self.console.locals
         # add our 'buildin' functions
-        if 'search' not in globals:
+        if 'search' not in locals:
             def search(s=''):
-                """List functions/objects that contains 's' in their name."""
-                return [ name for name in globals if s in name ]
-            globals['search'] = search
-        self.console = code.InteractiveConsole(globals)
+                """List functions/objects that match 's' in their name."""
+                if '*' not in s:
+                    s = '*%s*' %s
+                return [ name for name in locals if fnmatch(name, s) ]
+            locals['search'] = search
 
     def _create(self):
         buffer = Buffer._create(self)
         weechat.buffer_set(buffer, 'nicklist', '0')
         weechat.buffer_set(buffer, 'time_for_each_line', '0')
         weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
-        weechat.buffer_set(buffer, 'title', 'Debug buffer')
         self.color_input = weechat.color('green')
         self.color_exc = weechat.color('red')
+        weechat.hook_command_run('/input return', callback(self.input_return), '')
         return buffer
+
+    def input_return(self, data, buffer, command):
+        # we need to send returns even when there's no input.
+        if not weechat.buffer_get_string(buffer, 'input'):
+            self.input(data, buffer, '\n')
+        return WEECHAT_RC_OK
 
     def input(self, data, buffer, input):
         """Python code evaluation."""
         try:
-            more = self.console.push(input)
-            if more:
-                # at least this will give the visual clue that command is incomplete
+            need_more = self.console.push(input)
+            if need_more:
                 prompt = '%s... ' % self.color_input
             else:
                 prompt = '%s>>> ' % self.color_input
@@ -302,16 +330,19 @@ class DebugBuffer(Buffer):
         return WEECHAT_RC_OK
 
 
-class PydebugCommand(Command):
+class PyBufferCommand(Command):
     command = SCRIPT_NAME
+    description, usage = '', ''
+    help = \
+    "Opens a buffer that will work as a Python interpreter.\n"\
+    "For a list of WeeChat API functions, run builtin fuction 'search([pattern])'\n"
     def execute(self):
-        # create global space with weechat module and its functions.
-        globals = dict(( (name, getattr(weechat, name)) for name in dir(weechat) ))
-        globals['weechat'] = weechat
-
-        buffer = DebugBuffer(SCRIPT_NAME, globals)
+        buffer = PythonBuffer(SCRIPT_NAME)
+        buffer.title("Use \"search([pattern])\" for get a list of WeeChat API functions.")
+        # import weechat and its functions.
+        buffer.input('', '', 'import weechat')
+        buffer.input('', '', 'from weechat import *')
         buffer.display()
-        buffer.title("WeeChat API functions, use \"search()\" for a list.")
 
 
 if __name__ == '__main__' and import_ok and \
@@ -319,7 +350,8 @@ if __name__ == '__main__' and import_ok and \
         SCRIPT_DESC, '', ''):
 
         # we're being loaded as a script.
-        PydebugCommand().hook()
+        PyBufferCommand().hook()
+        _debug = SimpleBuffer('pybuffer_debug')
 
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
