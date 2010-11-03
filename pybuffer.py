@@ -17,53 +17,59 @@
 ###
 
 ###
-# Module for debugging python scripts. Please note that this doesn't give you an interactive console, it
-# can only evaluate simple statements, assignations like "myVar = True" will raise an exception.
+# Python interpreter for WeeChat, and module for debugging python scripts.
 #
 # For debug a script, insert these lines after script's register() call.
 #
 #
-# from pydebug import DebugBuffer
-# debug = DebugBuffer("any_name", globals())
+# from pybuffer import DebugBuffer
+# debug = DebugBuffer("buffer_name", globals())
 # debug.display()
 #
 #
-# Then, after loading your script, try "dir()" in the new "any_name" buffer, it should
+# Then, after loading your script, try "dir()" in the new "buffer_name" buffer, it should
 # display the script's global functions and variables.
 # This module should be in your python scripts path.
 #
-# pydebug.py can be loaded as a script, but you will only able to test functions in WeeChat's API.
+# pybuffer.py can be loaded as a script, you will have WeeChat's API functions available.
 #
 # Session example (loaded as a script):
 #
 # >>> buffer_search('irc', 'freenode.#weechat')
-# 0x9ca4ce0
-# >>> buffer_get('0x9ca4ce0', 'input')
+# '0x9ca4ce0'
+# >>> b = buffer_search('irc', 'freenode.#weechat')
+# >>> b
+# '0x9ca4ce0'
+# >>> buffer_get(b, 'input')
 # Traceback (most recent call last):
-#   File "/home/m4v/.weechat/python/pydebug.py", line 153, in input
-#     s = eval(input, self.globals)
-#   File "<string>", line 1, in <module>
+#   File "<console>", line 1, in <module>    
 # NameError: name 'buffer_get' is not defined
 # >>> search('buffer')
 # ['buffer_clear', 'buffer_close', 'buffer_get_integer', 'buffer_get_pointer', 'buffer_get_string',
 # 'buffer_merge', 'buffer_new', 'buffer_search', 'buffer_search_main', 'buffer_set',
 # 'buffer_string_replace_local_var', 'buffer_unmerge', 'current_buffer', 'string_input_for_buffer']
-# >>> buffer_get_string('0x9ca4ce0', 'input')
-#
-# >>> buffer_get_string('0x9ca4ce0', 'input')
-# asdasdas hello!
-# >>> buffer_get_string('0x9ca4ce0', 'title')
-# WeeChat, stable: 0.3.3, web: http://www.weechat.org/ | English support channel | Please read
+# >>> buffer_get_string(b, 'input')
+# ''
+# >>> buffer_get_string(b, 'input')
+# 'asdasdas hello!'
+# >>> buffer_get_string(b, 'title')
+# 'WeeChat, stable: 0.3.3, web: http://www.weechat.org/ | English support channel | Please read
 # doc/faq/quickstart before asking here | Old versions (0.2.6.x and earlier) are not supported any
-# more
+# more'
 #
 #
 #   History:
+#   2010-11-
+#   version 0.2:
+#   * More interperter console.
+#   * renamed to pybuffer.
+#   * added /pybuffer command.
+#
 #   2010-10-30
 #   version 0.1: Initial release
 ###
 
-SCRIPT_NAME    = "pydebug"
+SCRIPT_NAME    = "pybuffer"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
 SCRIPT_VERSION = "0.1"
 SCRIPT_LICENSE = "GPL3"
