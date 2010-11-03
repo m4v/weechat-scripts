@@ -44,7 +44,7 @@
 #     s = eval(input, self.globals)
 #   File "<string>", line 1, in <module>
 # NameError: name 'buffer_get' is not defined
-# >>> search_api('buffer')
+# >>> search('buffer')
 # ['buffer_clear', 'buffer_close', 'buffer_get_integer', 'buffer_get_pointer', 'buffer_get_string',
 # 'buffer_merge', 'buffer_new', 'buffer_search', 'buffer_search_main', 'buffer_set',
 # 'buffer_string_replace_local_var', 'buffer_unmerge', 'current_buffer', 'string_input_for_buffer']
@@ -78,7 +78,7 @@ except ImportError:
     print "Get WeeChat now at: http://www.weechat.org/"
     import_ok = False
 
-import traceback
+import code, sys, traceback
 
 def callback(method):
     """This function will take a bound method or function and make it a callback."""
@@ -204,7 +204,7 @@ class SimpleBuffer(object):
         weechat.buffer_set(buffer, 'display', '1')
 
     def error(self, s, *args):
-        self.prnt(s, prefix='error')
+        self.prnt(s, prefix=weechat.prefix('error'))
 
     def prnt(self, s, *args, **kwargs):
         """Prints messages in buffer."""
@@ -213,10 +213,15 @@ class SimpleBuffer(object):
             s = str(s)
         if args:
             s = s %args
-        if 'prefix' in kwargs:
-            prefix = weechat.prefix(kwargs['prefix'])
-            s = prefix + s
+        try:
+            s = kwargs['prefix'] + s
+        except KeyError:
+            pass
         prnt(buffer, s)
+
+    def prnt_lines(self, s, *args, **kwargs):
+        for line in s.splitlines():
+            self.prnt(line, *args, **kwargs)
 
 
 class Buffer(SimpleBuffer):
@@ -232,10 +237,36 @@ class Buffer(SimpleBuffer):
         return WEECHAT_RC_OK
 
 
+class StreamObject(object):
+    def __init__(self, buffer):
+        self._content = ''
+        self._buffer = buffer
+
+    def write(self, s):
+        self._content += s
+
+    def prnt(self, *args, **kwargs):
+        if self._content:
+            self._buffer.prnt_lines(self._content, *args, **kwargs)
+            self._content = ''
+
+
 class DebugBuffer(Buffer):
     def __init__(self, name, globals={}):
         Buffer.__init__(self, name)
         self.globals = globals
+        self.output = StreamObject(self)
+        self.error = StreamObject(self)
+        # redirect stdout and stderr
+        sys.stdout = self.output
+        sys.stderr = self.error
+        # add our 'buildin' functions
+        if 'search' not in globals:
+            def search(s=''):
+                """List functions/objects that contains 's' in their name."""
+                return [ name for name in globals if s in name ]
+            globals['search'] = search
+        self.console = code.InteractiveConsole(globals)
 
     def _create(self):
         buffer = Buffer._create(self)
@@ -250,22 +281,31 @@ class DebugBuffer(Buffer):
     def input(self, data, buffer, input):
         """Python code evaluation."""
         try:
-            self.prnt('%s>>> %s', self.color_input, input)
-            s = eval(input, self.globals)
-            self.prnt(s)
+            more = self.console.push(input)
+            if more:
+                # at least this will give the visual clue that command is incomplete
+                prompt = '%s... ' % self.color_input
+            else:
+                prompt = '%s>>> ' % self.color_input
+            self.prnt(input, prefix=prompt)
+            self.output.prnt()
+            self.error.prnt(prefix=self.color_exc)
         except:
             trace = traceback.format_exc()
-            # color traceback lines
-            self.prnt('\n'.join(
-                map(lambda s: self.color_exc + s, trace.split('\n'))))
+            self.prnt_lines(trace, prefix=self.color_exc)
         return WEECHAT_RC_OK
 
 
 class PydebugCommand(Command):
     command = SCRIPT_NAME
     def execute(self):
+        # create global space with weechat module and its functions.
+        globals = dict(( (name, getattr(weechat, name)) for name in dir(weechat) ))
+        globals['weechat'] = weechat
+
+        buffer = DebugBuffer(SCRIPT_NAME, globals)
         buffer.display()
-        buffer.title("WeeChat API functions, use \"search_api()\" for a list.")
+        buffer.title("WeeChat API functions, use \"search()\" for a list.")
 
 
 if __name__ == '__main__' and import_ok and \
@@ -273,17 +313,6 @@ if __name__ == '__main__' and import_ok and \
         SCRIPT_DESC, '', ''):
 
         # we're being loaded as a script.
-        # create global space with weechat module and its functions.
-        globals = dict(( (name, getattr(weechat, name)) for name in dir(weechat) ))
-        globals['weechat'] = weechat
-
-        def search_api(s=''):
-            """List functions/objects that contains 's' in their name."""
-            return [ name for name in dir(weechat) if s in name ]
-
-        globals['search_api'] = search_api
-
-        buffer = DebugBuffer(SCRIPT_NAME, globals)
         PydebugCommand().hook()
 
 
