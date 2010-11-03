@@ -339,6 +339,8 @@ class PyBufferCommand(Command):
     def execute(self):
         buffer = PythonBuffer(SCRIPT_NAME)
         buffer.title("Use \"search([pattern])\" for get a list of WeeChat API functions.")
+        # print python banner
+        buffer.prnt("Python %s on %s" % (sys.version, sys.platform))
         # import weechat and its functions.
         buffer.input('', '', 'import weechat')
         buffer.input('', '', 'from weechat import *')
