@@ -308,7 +308,7 @@ class PythonBuffer(Buffer):
         self.color_input = weechat.color('green')
         self.color_exc = weechat.color('red')
         self.color_call = weechat.color('cyan')
-        weechat.hook_command_run('/input return', callback(self.input_return), '')
+        weechat.hook_command_run('/input return', callback(self.input_return), buffer)
         # print python banner
         prnt(buffer, "Python %s on %s" % (sys.version, sys.platform))
         return buffer
@@ -319,7 +319,7 @@ class PythonBuffer(Buffer):
     
     def input_return(self, data, buffer, command):
         # we need to send returns even when there's no input.
-        if not weechat.buffer_get_string(buffer, 'input'):
+        if data == buffer and not weechat.buffer_get_string(buffer, 'input'):
             self.input(data, buffer, '\n')
         return WEECHAT_RC_OK
 
