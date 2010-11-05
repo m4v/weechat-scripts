@@ -309,8 +309,9 @@ class PythonBuffer(Buffer):
         self.color_exc = weechat.color('red')
         self.color_call = weechat.color('cyan')
         weechat.hook_command_run('/input return', callback(self.input_return), buffer)
-        # print python banner
+        # print python and WeeChat version
         prnt(buffer, "Python %s on %s" % (sys.version, sys.platform))
+        prnt(buffer, "WeeChat %s" % weechat.info_get('version', ''))
         return buffer
 
     def __call__(self, s, *args, **kwargs):
@@ -348,7 +349,7 @@ class PyBufferCommand(Command):
     "For a list of WeeChat API functions, run builtin fuction 'search([pattern])'\n"
     def execute(self):
         buffer = PythonBuffer(SCRIPT_NAME)
-        buffer.title("Use \"search([pattern])\" for get a list of WeeChat API functions.")
+        buffer.title("Use \"search([pattern])\" for search WeeChat API functions.")
         # import weechat and its functions.
         buffer.input('', '', 'import weechat')
         buffer.input('', '', 'from weechat import *')
