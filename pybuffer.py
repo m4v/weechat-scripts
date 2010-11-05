@@ -75,6 +75,8 @@ SCRIPT_VERSION = "0.1"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Debugging tool for python scripts or test WeeChat's API functions."
 
+SCRIPT_DEBUG   = False
+
 try:
     import weechat
     from weechat import WEECHAT_RC_OK, prnt
@@ -107,12 +109,13 @@ def callback(method):
         name = func
 
     # debug stuff
-    def debug_method(f):
-        def method(*args):
-            _debug('%s: %s', name, ', '.join(map(repr, args)))
-            return f(*args)
-        return method
-    method = debug_method(method)
+    if SCRIPT_DEBUG:
+        def debug_method(f):
+            def method(*args):
+                _debug('%s: %s', name, ', '.join(map(repr, args)))
+                return f(*args)
+            return method
+        method = debug_method(method)
 
     # set our callback
     import __main__
@@ -304,9 +307,16 @@ class PythonBuffer(Buffer):
         weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
         self.color_input = weechat.color('green')
         self.color_exc = weechat.color('red')
+        self.color_call = weechat.color('cyan')
         weechat.hook_command_run('/input return', callback(self.input_return), '')
+        # print python banner
+        prnt(buffer, "Python %s on %s" % (sys.version, sys.platform))
         return buffer
 
+    def __call__(self, s, *args, **kwargs):
+        kwargs['prefix'] = self.color_call
+        self.prnt(s, *args, **kwargs)
+    
     def input_return(self, data, buffer, command):
         # we need to send returns even when there's no input.
         if not weechat.buffer_get_string(buffer, 'input'):
@@ -339,8 +349,6 @@ class PyBufferCommand(Command):
     def execute(self):
         buffer = PythonBuffer(SCRIPT_NAME)
         buffer.title("Use \"search([pattern])\" for get a list of WeeChat API functions.")
-        # print python banner
-        buffer.prnt("Python %s on %s" % (sys.version, sys.platform))
         # import weechat and its functions.
         buffer.input('', '', 'import weechat')
         buffer.input('', '', 'from weechat import *')
@@ -353,7 +361,9 @@ if __name__ == '__main__' and import_ok and \
 
         # we're being loaded as a script.
         PyBufferCommand().hook()
-        _debug = SimpleBuffer('pybuffer_debug')
+        if weechat.config_get_plugin('debug'):
+            SCRIPT_DEBUG = True
+            _debug = SimpleBuffer('pybuffer_debug')
 
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
