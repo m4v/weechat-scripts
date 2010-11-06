@@ -25,7 +25,7 @@
 # For debug a script, insert these lines after script's register() call.
 #
 #   import pybuffer
-#   debug = pybuffer.openDebugBuffer(globals(), "buffer_name")
+#   debug = pybuffer.debugBuffer(globals(), "buffer_name")
 #
 # Then, after loading your script, try "dir()" in the new "buffer_name" buffer, it should
 # display the script's global functions and variables.
@@ -327,7 +327,7 @@ class PythonBuffer(Buffer):
             self.prnt_lines(trace, prefix=self.color_exc)
         return WEECHAT_RC_OK
 
-def openDebugBuffer(globals, name='debugBuffer'):
+def debugBuffer(globals, name='debugBuffer'):
     buffer = PythonBuffer(name, globals)
     buffer.create()
     return buffer
@@ -357,7 +357,7 @@ if __name__ == '__main__' and import_ok and \
         "For debug a script add these lines after the register call:\n"\
         "\n"\
         "  import pybuffer\n"\
-        "  debug = pybuffer.openDebugBuffer(globals(), 'name')\n"\
+        "  debug = pybuffer.debugBuffer(globals(), 'name')\n"\
         "  debug('debug message example')\n"\
         "\n"\
         "You'll be able to execute python code while your script runs.\n"\
