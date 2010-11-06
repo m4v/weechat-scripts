@@ -1123,7 +1123,7 @@ class MaskList(CaseInsensibleDict):
         elif is_hostmask(s):
             masks = self.searchByHostmask(s)
         else:
-            masks = pattern_match_list(pattern, self.iterkeys())
+            masks = pattern_match_list(s, self.iterkeys())
         return masks
 
     def purge(self):
