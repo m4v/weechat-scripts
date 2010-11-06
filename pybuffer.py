@@ -19,51 +19,49 @@
 ###
 # Python interpreter for WeeChat, and module for debugging python scripts.
 #
+#   Commands (see detailed help with /help in WeeChat):
+#   * /pybuffer: Opens a python interpreter buffer.
+#
 # For debug a script, insert these lines after script's register() call.
 #
-#
-# from pybuffer import PythonBuffer
-# debug = PythonBuffer("buffer_name", globals())
-# debug.display()
-#
+#   import pybuffer
+#   debug = pybuffer.openDebugBuffer(globals(), "buffer_name")
 #
 # Then, after loading your script, try "dir()" in the new "buffer_name" buffer, it should
 # display the script's global functions and variables.
 # This module should be in your python scripts path.
 #
-# pybuffer.py can be loaded as a script, you will have WeeChat's API functions available.
+# Session example:
 #
-# Session example (loaded as a script):
-#
-# >>> buffer_search('irc', 'freenode.#weechat')
-# '0x9ca4ce0'
-# >>> b = buffer_search('irc', 'freenode.#weechat')
-# >>> b
-# '0x9ca4ce0'
-# >>> buffer_get(b, 'input')
-# Traceback (most recent call last):
-#   File "<console>", line 1, in <module>    
-# NameError: name 'buffer_get' is not defined
-# >>> search('buffer')
-# ['buffer_clear', 'buffer_close', 'buffer_get_integer', 'buffer_get_pointer', 'buffer_get_string',
-# 'buffer_merge', 'buffer_new', 'buffer_search', 'buffer_search_main', 'buffer_set',
-# 'buffer_string_replace_local_var', 'buffer_unmerge', 'current_buffer', 'string_input_for_buffer']
-# >>> buffer_get_string(b, 'input')
-# ''
-# >>> buffer_get_string(b, 'input')
-# 'asdasdas hello!'
-# >>> buffer_get_string(b, 'title')
-# 'WeeChat, stable: 0.3.3, web: http://www.weechat.org/ | English support channel | Please read
-# doc/faq/quickstart before asking here | Old versions (0.2.6.x and earlier) are not supported any
-# more'
+#   >>> buffer_search('irc', 'freenode.#weechat')
+#   '0x9ca4ce0'
+#   >>> b = buffer_search('irc', 'freenode.#weechat')
+#   >>> b
+#   '0x9ca4ce0'
+#   >>> buffer_get(b, 'input')
+#   Traceback (most recent call last):
+#     File "<console>", line 1, in <module>    
+#   NameError: name 'buffer_get' is not defined
+#   >>> search('buffer')
+#   ['buffer_clear', 'buffer_close', 'buffer_get_integer', 'buffer_get_pointer', 'buffer_get_string',
+#   'buffer_merge', 'buffer_new', 'buffer_search', 'buffer_search_main', 'buffer_set',
+#   'buffer_string_replace_local_var', 'buffer_unmerge', 'current_buffer', 'string_input_for_buffer']
+#   >>> buffer_get_string(b, 'input')
+#   ''
+#   >>> buffer_get_string(b, 'input')
+#   'asdasdas hello!'
+#   >>> buffer_get_string(b, 'title')
+#   'WeeChat, stable: 0.3.3, web: http://www.weechat.org/ | English support channel | Please read
+#   doc/faq/quickstart before asking here | Old versions (0.2.6.x and earlier) are not supported any
+#   more'
 #
 #
 #   History:
-#   2010-11-
+#   2010-11-05
 #   version 0.2:
 #   * More interperter console.
 #   * renamed to pybuffer.
-#   * added /pybuffer command.
+#   * added /pybuffer command (buffer isn't created on script load).
 #
 #   2010-10-30
 #   version 0.1: Initial release
@@ -71,11 +69,9 @@
 
 SCRIPT_NAME    = "pybuffer"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.1"
+SCRIPT_VERSION = "0.2"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Debugging tool for python scripts or test WeeChat's API functions."
-
-SCRIPT_DEBUG   = False
 
 try:
     import weechat
@@ -107,15 +103,6 @@ def callback(method):
     except AttributeError:
         # not a bound method
         name = func
-
-    # debug stuff
-    if SCRIPT_DEBUG:
-        def debug_method(f):
-            def method(*args):
-                _debug('%s: %s', name, ', '.join(map(repr, args)))
-                return f(*args)
-            return method
-        method = debug_method(method)
 
     # set our callback
     import __main__
@@ -340,13 +327,15 @@ class PythonBuffer(Buffer):
             self.prnt_lines(trace, prefix=self.color_exc)
         return WEECHAT_RC_OK
 
+def openDebugBuffer(globals, name='debugBuffer'):
+    buffer = PythonBuffer(name, globals)
+    buffer.create()
+    return buffer
+
 
 class PyBufferCommand(Command):
     command = SCRIPT_NAME
-    description, usage = '', ''
-    help = \
-    "Opens a buffer that will work as a Python interpreter.\n"\
-    "For a list of WeeChat API functions, run builtin fuction 'search([pattern])'\n"
+    description = usage = help = ''
     def execute(self):
         buffer = PythonBuffer(SCRIPT_NAME)
         buffer.title("Use \"search([pattern])\" for search WeeChat API functions.")
@@ -361,10 +350,25 @@ if __name__ == '__main__' and import_ok and \
         SCRIPT_DESC, '', ''):
 
         # we're being loaded as a script.
+        help = \
+        "Opens a session with a python interpreter-like buffer."\
+        " Use function 'search([pattern])' for list objects in current session.\n"\
+        "\n"\
+        "For debug a script add these lines after the register call:\n"\
+        "\n"\
+        "  import pybuffer\n"\
+        "  debug = pybuffer.openDebugBuffer(globals(), 'name')\n"\
+        "  debug('debug message example')\n"\
+        "\n"\
+        "You'll be able to execute python code while your script runs.\n"\
+        "\n%(b)sWARNING: %(r)s" \
+        "This script isn't fool-proof, you're very capable of crashing/freezing "\
+        "WeeChat if you aren't careful with the code you run, use at your own risk."\
+        " Running interactive functions such as 'help()' or 'license()' %(b)swill%(r)s hang"\
+        " WeeChat." %dict(b=weechat.color('bold'), r=weechat.color('reset'))
+
+        PyBufferCommand.help = help
         PyBufferCommand().hook()
-        if weechat.config_get_plugin('debug'):
-            SCRIPT_DEBUG = True
-            _debug = SimpleBuffer('pybuffer_debug')
 
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
