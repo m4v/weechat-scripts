@@ -297,7 +297,7 @@ class PythonBuffer(Buffer):
         self.color_call = weechat.color('cyan')
         weechat.hook_command_run('/input return', callback(self.input_return), buffer)
         # print python and WeeChat version
-        prnt(buffer, "Python %s on %s" % (sys.version, sys.platform))
+        prnt(buffer, "Python %s" % sys.version.split(None, 1)[0])
         prnt(buffer, "WeeChat %s" % weechat.info_get('version', ''))
         return buffer
 
