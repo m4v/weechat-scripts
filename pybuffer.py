@@ -71,7 +71,7 @@ SCRIPT_NAME    = "pybuffer"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
 SCRIPT_VERSION = "0.2"
 SCRIPT_LICENSE = "GPL3"
-SCRIPT_DESC    = "Debugging tool for python scripts or test WeeChat's API functions."
+SCRIPT_DESC    = "Python interpreter for WeeChat and module for debug scripts."
 
 try:
     import weechat
@@ -364,7 +364,7 @@ if __name__ == '__main__' and import_ok and \
         "\n%(b)sWARNING: %(r)s" \
         "This script isn't fool-proof, you're very capable of crashing/freezing "\
         "WeeChat if you aren't careful with the code you run, use at your own risk."\
-        " Running interactive functions such as 'help()' or 'license()' %(b)swill%(r)s hang"\
+        " Running python interactive functions such as 'help()' or 'license()' %(b)swill%(r)s hang"\
         " WeeChat." %dict(b=weechat.color('bold'), r=weechat.color('reset'))
 
         PyBufferCommand.help = help
