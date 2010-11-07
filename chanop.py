@@ -2520,10 +2520,8 @@ if __name__ == '__main__' and import_ok and \
 
     try:
         # custom debug module I use, allows me to inspect script's objects.
-        from pydebug import DebugBuffer
-        debug = DebugBuffer('chanop_debugging', globals())
-        if weechat.config_get_plugin('debug'):
-            debug.create()
+        import pybuffer
+        debug = pybuffer.debugBuffer(globals(), 'chanop_debug')
     except:
         def debug(s, *args):
             if not isinstance(s, basestring):
