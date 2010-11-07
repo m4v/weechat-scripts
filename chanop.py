@@ -439,8 +439,8 @@ match_list = lambda r, L: [ s for s in L if r.match(s) is not None ]
 
 pattern_match = cachedPattern(match_string)
 pattern_match_list = cachedPattern(match_list)
-hostmask_match = hostmaskPattern(cachedPattern(match_string))
-hostmask_match_list = hostmaskPattern(cachedPattern(match_list))
+hostmask_match = hostmaskPattern(pattern_match)
+hostmask_match_list = hostmaskPattern(pattern_match_list)
 
 def get_nick(s):
     """':nick!user@host' => 'nick'"""
@@ -2498,7 +2498,15 @@ def users_cmpl(users, data, completion_item, buffer, completion):
 # info hooks
 def info_hostmask_from_nick(data, info_name, arguments):
     #debug('INFO: %s %s', info_name, arguments)
-    server, channel, nick = arguments.split(',')
+    args = arguments.split(',')
+    channel = None
+    try:
+        nick, server, channel = args
+    except ValueError:
+        try:
+            nick, server = args
+        except ValueError:
+            return ''
     try:
         hostmask = userCache.getHostmask(nick, server, channel)
     except KeyError:
@@ -2616,7 +2624,7 @@ if __name__ == '__main__' and import_ok and \
 
     weechat.hook_info("chanop_hostmask_from_nick",
             "Returns nick's hostmask if is known. Returns '' otherwise.",
-            "server,channel,nick", "info_hostmask_from_nick", "")
+            "nick,server[,channel]", "info_hostmask_from_nick", "")
     weechat.hook_info("chanop_pattern_match",
             "Test if pattern matches text, is case insensible with IRC case rules.",
             "pattern,text", "info_pattern_match", "")
