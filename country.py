@@ -41,12 +41,15 @@
 #     If 'off' timezone and local time infomation won't be looked for.
 #     Valid values: on, off
 #
-#   History:
 #
+#   TODO
+#   * Add support for IPv6 addresses
+#
+#
+#   History:
 #   2010-04-
-#   version 0.4: features
+#   version 0.4:
 #   * support for users using webchat (at least in freenode)
-#   * removed tabs
 #
 #   2010-01-11
 #   version 0.3.1: bug fix
@@ -87,7 +90,7 @@ try:
 except:
     pytz_module = False
 
-import os, re
+import os, re, socket
 
 ### ip database
 database_url = 'http://geolite.maxmind.com/download/geoip/database/GeoIPCountryCSV.zip'
@@ -250,43 +253,33 @@ def get_ip_process_cb(data, command, rc, stdout, stderr):
         hook_get_ip = ''
     return WEECHAT_RC_OK
 
+_valid_userhost = re.compile(r'\S+@\S+')
 def is_userhost(s):
     """Returns whether or not the string s is user@host format"""
-    n = s.find('@')
-    if n > 0 and len(s) > n+1:
-        return True
-    else:
-        return False
+    return _valid_userhost.match(s) is not None
 
 def is_ip(s):
     """Returns whether or not a given string is an IPV4 address."""
-    if s.count('.') != 3:
-        return False
-    import socket
     try:
         return bool(socket.inet_aton(s))
     except socket.error:
         return False
 
 _valid_label = re.compile(r'^([\da-z]|[\da-z][-\da-z]*[\da-z])$', re.I)
-def is_host(s):
+def is_domain(s):
     """
-    Checks if 's' is a valid hostname."""
+    Checks if 's' is a valid domain."""
     if not s or len(s) > 255:
         return False
-    if s[-1] == '.': # strip tailing dot
-        s = s[:-1]
     for label in s.split('.'):
         if not label or len(label) > 63 \
-                or not _valid_label.search(label):
+                or not _valid_label.match(label):
             return False
     return True
 
 def hex_to_ip(s):
     """
     '7f000001' => '127.0.0.1'"""
-    if not len(s) == 8:
-        return ''
     try:
         ip = map(lambda n: s[n:n+2], range(0, len(s), 2))
         ip = map(lambda n: int(n, 16), ip)
@@ -312,7 +305,7 @@ def get_userhost_from_nick(buffer, nick):
 
 def get_host_from_userhost(userhost):
     user, host = userhost.split('@')
-    if not is_host(host):
+    if not is_domain(host):
         user = user[-8:] # only interested in the last 8 chars
         ip = hex_to_ip(user)
         if ip and is_ip(ip):
@@ -335,6 +328,7 @@ def search_in_database(ip):
     if not ip or not ip_database:
         return unknown
     try:
+        # do a binary search.
         n = sum_ip(ip)
         fd = open(ip_database)
         reader = csv.reader(fd)
@@ -383,7 +377,7 @@ def print_country(host, buffer, quiet=False, broken=False, nick=''):
     if is_ip(host):
         # good, got an ip
         code, country = search_in_database(host)
-    elif is_host(host):
+    elif is_domain(host):
         # try to resolve uri
         global reply_wrapper
         reply_wrapper = reply_country
