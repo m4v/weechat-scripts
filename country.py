@@ -50,6 +50,7 @@
 #   2010-04-
 #   version 0.4:
 #   * support for users using webchat (at least in freenode)
+#   * enable Archlinux workaround.
 #
 #   2010-01-11
 #   version 0.3.1: bug fix
@@ -174,8 +175,9 @@ def update_database():
         hook_download = ''
     script_dir = get_script_dir()
     say("Downloading IP database...")
+    python_bin = weechat.info_get('python2_bin', '') or 'python'
     hook_download = weechat.hook_process(
-            "python -c \"\n"
+            python_bin + " -c \"\n"
             "import urllib2, zipfile, os, sys\n"
             "try:\n"
             "   temp = os.path.join('%(script_dir)s', 'temp.zip')\n"
@@ -228,8 +230,9 @@ def get_ip_process(host):
     if hook_get_ip:
         weechat.unhook(hook_get_ip)
         hook_get_ip = ''
+    python_bin = weechat.info_get('python2_bin', '') or 'python'
     hook_get_ip = weechat.hook_process(
-            "python -c \"\n"
+            python_bin + " -c \"\n"
             "import socket, sys\n"
             "try:\n"
             "   ip = socket.gethostbyname('%(host)s')\n"

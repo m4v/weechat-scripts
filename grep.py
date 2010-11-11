@@ -68,6 +68,7 @@
 #   2010-11-9
 #   version 0.7.1:
 #   * use TempFile so temporal files are guaranteed to be deleted.
+#   * enable Archlinux workaround.
 #
 #   2010-10-26
 #   version 0.7:
@@ -927,7 +928,8 @@ def show_matching_lines():
             cmd = grep_process_cmd %dict(logs=files_string, head=head, pattern=pattern, tail=tail,
                     hilight=hilight, after_context=after_context, before_context=before_context,
                     exact=exact, matchcase=matchcase, home_dir=home_dir, script_path=script_path,
-                    count=count, invert=invert, bytecode=bytecode, filename=tmpFile.name)
+                    count=count, invert=invert, bytecode=bytecode, filename=tmpFile.name,
+                    python=weechat.info_get('python2_bin', '') or 'python')
 
             #debug(cmd)
             hook_file_grep = weechat.hook_process(cmd, timeout, 'grep_file_callback', tmpFile.name)
@@ -939,7 +941,7 @@ def show_matching_lines():
         buffer_update()
 
 # defined here for commodity
-grep_process_cmd = """python -%(bytecode)sc '
+grep_process_cmd = """%(python)s -%(bytecode)sc '
 import sys, cPickle, os
 sys.path.append("%(script_path)s") # add WeeChat script dir so we can import grep
 from grep import make_regexp, grep_file, strip_home
