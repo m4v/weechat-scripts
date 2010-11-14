@@ -1536,15 +1536,15 @@ def completion_grep_args(data, completion_item, buffer, completion):
 # template placeholder
 _tmplRe = re.compile(r'%\{(\w+.*?)(?:\}|$)')
 # will match 999.999.999.999 but I don't care
-ipAddress = r'\\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\\b'
-domain = r'\\b[\w-]{2,}(?:\.[\w-]{2,})*\.[a-z]{2,}\\b'
-url = r'\\b\w+://(?:%s|%s)(?::\d+)?(?:/[^\])>\s]*)?\\b' % (domain, ipAddress)
+ipAddress = r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}'
+domain = r'[\w-]{2,}(?:\.[\w-]{2,})*\.[a-z]{2,}'
+url = r'\w+://(?:%s|%s)(?::\d+)?(?:/[^\])>\s]*)?' % (domain, ipAddress)
 
 def make_url_regexp(args):
     #debug('make url: %s', args)
     if args:
         words = r'(?:%s)' %'|'.join(map(re.escape, args.split()))
-        return r'\\b(?:\w+://|www\.)[^\s]*%s[^\s]*(?:/[^\])>\s]*)?\\b' %words
+        return r'(?:\w+://|www\.)[^\s]*%s[^\s]*(?:/[^\])>\s]*)?' %words
     else:
         return url
 
