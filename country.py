@@ -47,7 +47,7 @@
 #
 #
 #   History:
-#   2010-04-
+#   2010-11-15
 #   version 0.4:
 #   * support for users using webchat (at least in freenode)
 #   * enable Archlinux workaround.
