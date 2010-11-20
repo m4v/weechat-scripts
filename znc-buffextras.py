@@ -31,12 +31,14 @@
 
 try:
     import weechat
-    from weechat import WEECHAT_RC_OK, WEECHAT_HOOK_SIGNAL_STRING
+    from weechat import WEECHAT_RC_OK, WEECHAT_HOOK_SIGNAL_STRING, prnt_date_tags
     import_ok = True
 except ImportError:
     print "This script must be run under WeeChat."
     print "Get WeeChat now at: http://www.weechat.org/"
     import_ok = False
+
+import datetime, time
 
 SCRIPT_NAME    = "znc-buffextras"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
@@ -100,23 +102,71 @@ def say(s, buffer=''):
     """normal msg"""
     prnt(buffer, '%s\t%s' %(script_nick, s))
 
+# -----------------------------------------------------------------------------
+# Script Callbacks
+
+global buffer_playback
+buffer_playback = False
 
 def buffextras_cb(data, modifier, modifier_data, string):
-    if 'irc_privmsg' not in modifier_data:
-        return string
-    prefix, _, line = string.partition('\t')
-    prefix = weechat.string_remove_color(prefix, '')
-    if prefix != '*buffextras':
-        # not a line coming from ZNC module.
+# old weechat 0.3.3
+#    if 'irc_privmsg' not in modifier_data:
+#        return string
+#    prefix, _, line = string.partition('\t')
+#    prefix = weechat.string_remove_color(prefix, '')
+#    if prefix != '*buffextras':
+#        # not a line coming from ZNC module.
+#        return string
+    plugin, buffer_name, tags = modifier_data.split(';')
+    if plugin != 'irc':
         return string
 
-    debug(repr(string))
+    global buffer_playback
+    if 'nick_***' in tags:
+        line = string.partition('\t')[2]
+        debug(line)
+        if line == 'Buffer Playback...':
+            # TODO load here all config options.
+            buffer_playback = True
+        elif line == 'Playback Complete.':
+            buffer_playback = False
+        return string
 
-    time, hostmask, line = line.split(None, 2)
+    elif not buffer_playback:
+        return string
+
+    buffer = weechat.buffer_search(plugin, buffer_name)
+    if not buffer:
+        return string
+
+    debug(modifier_data)
+    debug(string)
+
+    prefix, s, line = string.partition('\t')
+    timestamp, s, line = line.partition(' ')
+
+    try:
+        t = time.strptime(timestamp, '[%H:%M]') # XXX this should be configurable
+    except ValueError, e:
+        # bad time format.
+        error(e)
+        return string
+    else:
+        t = datetime.time(t[3], t[4], t[5])
+        d = datetime.datetime.combine(datetime.date.today(), t)
+        time_epoch = int(time.mktime(d.timetuple()))
+
+    if 'nick_*buffextras' not in tags:
+        # not a line coming from ZNC buffextras module.
+        prnt_date_tags(buffer, time_epoch, tags, "%s\t%s" %(prefix, line))
+        return ''
+
+    hostmask, s, line = line.partition(' ')
     nick = hostmask[:hostmask.find('!')]
-    host = hostmask[len(nick)+1:]
-    server, channel = modifier_data.split(';')[1].split('.', 1)
-
+    host = hostmask[len(nick) + 1:]
+    server, channel = buffer_name.split('.', 1)
+    
+    s = None
     if line == 'joined':
         s = weechat.gettext("%s%s%s%s%s%s%s%s%s%s has joined %s%s%s")
         s = s %(weechat.prefix('join'),
@@ -135,11 +185,9 @@ def buffextras_cb(data, modifier, modifier_data, string):
 
         weechat.hook_signal_send("%s,irc_in_JOIN" %server, WEECHAT_HOOK_SIGNAL_STRING,
                 ":%s JOIN :%s" %(hostmask, channel))
-        #debug(repr(s))
-        return s
 
     elif line == 'parted':
-        # TODO there's another part string
+        # buffextras doesn't seem to send the part's reason.
         s = weechat.gettext("%s%s%s%s%s%s%s%s%s%s has left %s%s%s")
         s = s %(weechat.prefix('quit'),
                 IRC_COLOR_CHAT_NICK,
@@ -154,12 +202,12 @@ def buffextras_cb(data, modifier, modifier_data, string):
                 IRC_COLOR_CHAT_CHANNEL,
                 channel,
                 IRC_COLOR_MESSAGE_QUIT)
+
         weechat.hook_signal_send("%s,irc_in_PART" %server, WEECHAT_HOOK_SIGNAL_STRING,
                 ":%s PART %s" %(hostmask, channel))
-        return s
 
     elif line.startswith('quit with message:'):
-        reason = line[line.find('['):-1]
+        reason = line[line.find('[') + 1:-1]
         s = weechat.gettext("%s%s%s%s%s%s%s%s%s%s has quit %s(%s%s%s)")
         s = s %(weechat.prefix('quit'),
                 IRC_COLOR_CHAT_NICK,
@@ -175,9 +223,9 @@ def buffextras_cb(data, modifier, modifier_data, string):
                 IRC_COLOR_REASON_QUIT,
                 reason,
                 IRC_COLOR_CHAT_DELIMITERS)
+
         weechat.hook_signal_send("%s,irc_in_QUIT" %server, WEECHAT_HOOK_SIGNAL_STRING,
                 ":%s QUIT :%s" %(hostmask, reason))
-        return s
 
     elif line.startswith('is now known as '):
         new_nick = line.rpartition(' ')[-1]
@@ -189,10 +237,9 @@ def buffextras_cb(data, modifier, modifier_data, string):
                 IRC_COLOR_CHAT_NICK,
                 new_nick,
                 IRC_COLOR_CHAT)
-        return s
 
     elif line.startswith('set mode: '):
-        modes = line[line.find(':') + 1:]
+        modes = line[line.find(':') + 2:]
         s = weechat.gettext("%sMode %s%s %s[%s%s%s]%s by %s%s")
         s = s %(weechat.prefix('network'),
                 IRC_COLOR_CHAT_CHANNEL,
@@ -204,11 +251,10 @@ def buffextras_cb(data, modifier, modifier_data, string):
                 IRC_COLOR_CHAT,
                 IRC_COLOR_CHAT_NICK,
                 nick)
-        return s
 
     elif line.startswith('kicked'):
         _, nick_kicked, reason = line.split(None, 2)
-        reason = reason[reason.find('['):-1]
+        reason = reason[reason.find('[') + 1:-1]
         s = weechat.gettext("%s%s%s%s has kicked %s%s%s %s(%s%s%s)")
         s = s %(weechat.prefix('quit'),
                 IRC_COLOR_CHAT_NICK,
@@ -221,11 +267,9 @@ def buffextras_cb(data, modifier, modifier_data, string):
                 IRC_COLOR_CHAT,
                 reason,
                 IRC_COLOR_CHAT_DELIMITERS)
-        return s
 
-    elif line.startswith('changed the topic to:'):
-        topic = line[line.find(':') + 1:]
-        # TODO there's other topic string
+    elif line.startswith('changed the topic to: '):
+        topic = line[line.find(':') + 2:]
         s = weechat.gettext("%s%s%s%s has changed topic for %s%s%s to \"%s%s\"")
         s = s %(weechat.prefix('network'),
                 IRC_COLOR_CHAT_NICK,
@@ -236,13 +280,13 @@ def buffextras_cb(data, modifier, modifier_data, string):
                 IRC_COLOR_CHAT,
                 topic,
                 IRC_COLOR_CHAT)
-        return s
-
-
-    debug(' *** unknown msg ***')
-    debug('CB: %s' %' '.join((data, modifier, modifier_data)))
-    debug(repr(string))
-    return string
+    
+    if s is None:
+        error('Unknown message from ZNC: %r' % string)
+        return string
+    else:
+        prnt_date_tags(buffer, time_epoch, tags, s)
+        return ''
 
 ### Main ###
 if __name__ == '__main__' and import_ok and \
