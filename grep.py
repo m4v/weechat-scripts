@@ -487,16 +487,18 @@ def get_file_by_pattern(pattern, all=False):
     if path.isfile(file):
         return [file]
     else:
-        import fnmatch
+        from fnmatch import fnmatch
         file = []
         file_list = dir_list(home_dir)
         n = len(home_dir)
         for log in file_list:
             basename = log[n:]
-            if fnmatch.fnmatch(basename, pattern):
+            if fnmatch(basename, pattern):
                 file.append(log)
-                if not all: break
         #debug('get_file_by_filename: got %s.' %file)
+        if not all and file:
+            file.sort()
+            return [ file[-1] ]
         return file
 
 def get_file_by_buffer(buffer):
@@ -544,10 +546,13 @@ def get_file_by_name(buffer_name):
             if '$server' in mask:
                 mask = mask.replace('$server', server)
         # change the unreplaced vars by '*'
+        from string import letters
+        if '%' in mask:
+            # vars for time formatting
+            mask = mask.replace('%', '$')
         if '$' in mask:
-            chars = 'abcdefghijklmnopqrstuvwxyz_'
             masks = mask.split('$')
-            masks = map(lambda s: s.lstrip(chars), masks)
+            masks = map(lambda s: s.lstrip(letters), masks)
             mask = '*'.join(masks)
             if mask[0] != '*':
                 mask = '*' + mask
@@ -908,7 +913,7 @@ def show_matching_lines():
             # we hook a process so grepping runs in background.
             #debug('on background')
             global hook_file_grep, script_path, bytecode
-            timeout = 1000*60*10 # 10 min
+            timeout = 1000*60*5 # 5 min
 
             quotify = lambda s: '"%s"' %s
             files_string = ', '.join(map(quotify, search_in_files))
