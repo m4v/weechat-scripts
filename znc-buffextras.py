@@ -122,7 +122,12 @@ def buffextras_cb(data, modifier, modifier_data, string):
     debug(string)
 
     prefix, s, line = string.partition('\t')
-    timestamp, s, line = line.partition(' ')
+    if 'irc_action' in tags:
+        action_prefix, s, line = line.partition(' ')
+        timestamp, s, line = line.partition(' ')
+        line = '%s %s' % (action_prefix, line)
+    else:
+        timestamp, s, line = line.partition(' ')
 
     try:
         t = time.strptime(timestamp, '[%H:%M]') # XXX this should be configurable
