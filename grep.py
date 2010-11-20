@@ -185,7 +185,7 @@ except ImportError:
 
 SCRIPT_NAME    = "grep"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.7.1"
+SCRIPT_VERSION = "0.7.2-dev"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Search in buffers and logs"
 SCRIPT_COMMAND = "grep"
@@ -413,14 +413,6 @@ def strip_home(s, dir=''):
 
 ### Messages ###
 script_nick = SCRIPT_NAME
-def debug(s, *args):
-    if not weechat.config_get_plugin('debug'): return
-    if not isinstance(s, basestring):
-        s = str(s)
-    if args:
-        s = s %args
-    prnt('', '%s\t%s' %(script_nick, s))
-
 def error(s, buffer=''):
     """Error msg"""
     prnt(buffer, '%s%s %s' %(weechat.prefix('error'), script_nick, s))
@@ -1100,8 +1092,7 @@ def buffer_update():
                         else:
                             if '\x00' in line:
                                 # log was corrupted
-                                error("Found garbage in log '%s', maybe it's corrupted" %log,
-                                        trace=repr(line))
+                                error("Found garbage in log '%s', maybe it's corrupted" %log)
                                 line = line.replace('\x00', '')
                             prnt_date_tags(buffer, 0, 'no_highlight', format_line(line))
 
@@ -1679,5 +1670,24 @@ Examples:
     script_nick_nocolor = '[%s]' %SCRIPT_NAME
     # paragraph separator when using context options
     context_sep = '%s\t%s--' %(script_nick, color_info)
+
+    # -------------------------------------------------------------------------
+    # Debug
+
+    if weechat.config_get_plugin('debug'):
+        try:
+            # custom debug module I use, allows me to inspect script's objects.
+            import pybuffer
+            debug = pybuffer.debugBuffer(globals(), '%s_debug' % SCRIPT_NAME)
+        except:
+            def debug(s, *args):
+                if not isinstance(s, basestring):
+                    s = str(s)
+                if args:
+                    s = s %args
+                prnt('', '%s\t%s' %(script_nick, s))
+    else:
+        def debug(*args):
+            pass
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
