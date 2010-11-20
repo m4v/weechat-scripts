@@ -144,6 +144,9 @@ def playback_cb(data, modifier, modifier_data, string):
         # not a line coming from ZNC buffextras module.
         prnt_date_tags(buffer, time_epoch, tags, "%s\t%s" %(prefix, line))
         return ''
+    else:
+        # don't highlight me when I join a channel.
+        tags += ',no_highlight'
 
     hostmask, s, line = line.partition(' ')
     nick = hostmask[:hostmask.find('!')]
