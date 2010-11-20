@@ -31,7 +31,7 @@
 
 try:
     import weechat
-    from weechat import WEECHAT_RC_OK, WEECHAT_HOOK_SIGNAL_STRING, prnt_date_tags
+    from weechat import WEECHAT_RC_OK, WEECHAT_HOOK_SIGNAL_STRING, prnt_date_tags, prnt
     import_ok = True
 except ImportError:
     print "This script must be run under WeeChat."
@@ -46,10 +46,14 @@ SCRIPT_VERSION = "0.1-dev"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "I'm a script!"
 
-### Config ###
-settings = { 'send_signals': 'on' }
+# -------------------------------------------------------------------------
+# Config 
 
-### Config functions and value validation ###
+settings = {
+        'send_signals' : 'on',
+        'znc_timestamp': '[%H:%M]',
+        }
+
 boolDict = {'on':True, 'off':False}
 def get_config_boolean(config):
     value = weechat.config_get_plugin(config)
@@ -61,32 +65,8 @@ def get_config_boolean(config):
         error("'%s' is invalid, allowed: 'on', 'off'" %value)
         return boolDict[default]
 
-def get_config_int(config, allow_empty_string=False):
-    value = weechat.config_get_plugin(config)
-    try:
-        return int(value)
-    except ValueError:
-        if value == '' and allow_empty_string:
-            return value
-        default = settings[config]
-        error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
-        error("'%s' is not a number." %value)
-        return int(default)
-
-valid_methods = set(())
-def get_config_valid_string(config, valid_strings=valid_methods):
-    value = weechat.config_get_plugin(config)
-    if value not in valid_strings:
-        default = settings[config]
-        error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
-        error("'%s' is an invalid value, allowed: %s." %(value, ', '.join(valid_strings)))
-        return default
-    return value
-
 # -----------------------------------------------------------------------------
 # Print Utils
-
-from weechat import prnt
 
 script_nick = SCRIPT_NAME
 def error(s, buffer=''):
@@ -170,18 +150,18 @@ def buffextras_cb(data, modifier, modifier_data, string):
     if line == 'joined':
         s = weechat.gettext("%s%s%s%s%s%s%s%s%s%s has joined %s%s%s")
         s = s %(weechat.prefix('join'),
-                IRC_COLOR_CHAT_NICK, # TODO there's a function for use nick's color
+                COLOR_CHAT_NICK, # TODO there's a function for use nick's color
                 nick,
-                IRC_COLOR_CHAT_DELIMITERS,
+                COLOR_CHAT_DELIMITERS,
                 ' (',
-                IRC_COLOR_CHAT_HOST, # TODO host can be hidden in config
+                COLOR_CHAT_HOST, # TODO host can be hidden in config
                 host,
-                IRC_COLOR_CHAT_DELIMITERS,
+                COLOR_CHAT_DELIMITERS,
                 ')',
-                IRC_COLOR_MESSAGE_JOIN,
-                IRC_COLOR_CHAT_CHANNEL,
+                COLOR_MESSAGE_JOIN,
+                COLOR_CHAT_CHANNEL,
                 channel,
-                IRC_COLOR_MESSAGE_JOIN)
+                COLOR_MESSAGE_JOIN)
 
         weechat.hook_signal_send("%s,irc_in_JOIN" %server, WEECHAT_HOOK_SIGNAL_STRING,
                 ":%s JOIN :%s" %(hostmask, channel))
@@ -190,18 +170,18 @@ def buffextras_cb(data, modifier, modifier_data, string):
         # buffextras doesn't seem to send the part's reason.
         s = weechat.gettext("%s%s%s%s%s%s%s%s%s%s has left %s%s%s")
         s = s %(weechat.prefix('quit'),
-                IRC_COLOR_CHAT_NICK,
+                COLOR_CHAT_NICK,
                 nick,
-                IRC_COLOR_CHAT_DELIMITERS,
+                COLOR_CHAT_DELIMITERS,
                 ' (',
-                IRC_COLOR_CHAT_HOST,
+                COLOR_CHAT_HOST,
                 host,
-                IRC_COLOR_CHAT_DELIMITERS,
+                COLOR_CHAT_DELIMITERS,
                 ')',
-                IRC_COLOR_MESSAGE_QUIT,
-                IRC_COLOR_CHAT_CHANNEL,
+                COLOR_MESSAGE_QUIT,
+                COLOR_CHAT_CHANNEL,
                 channel,
-                IRC_COLOR_MESSAGE_QUIT)
+                COLOR_MESSAGE_QUIT)
 
         weechat.hook_signal_send("%s,irc_in_PART" %server, WEECHAT_HOOK_SIGNAL_STRING,
                 ":%s PART %s" %(hostmask, channel))
@@ -210,19 +190,19 @@ def buffextras_cb(data, modifier, modifier_data, string):
         reason = line[line.find('[') + 1:-1]
         s = weechat.gettext("%s%s%s%s%s%s%s%s%s%s has quit %s(%s%s%s)")
         s = s %(weechat.prefix('quit'),
-                IRC_COLOR_CHAT_NICK,
+                COLOR_CHAT_NICK,
                 nick,
-                IRC_COLOR_CHAT_DELIMITERS,
+                COLOR_CHAT_DELIMITERS,
                 ' (',
-                IRC_COLOR_CHAT_HOST,
+                COLOR_CHAT_HOST,
                 host,
-                IRC_COLOR_CHAT_DELIMITERS,
+                COLOR_CHAT_DELIMITERS,
                 ')',
-                IRC_COLOR_MESSAGE_QUIT,
-                IRC_COLOR_CHAT_DELIMITERS,
-                IRC_COLOR_REASON_QUIT,
+                COLOR_MESSAGE_QUIT,
+                COLOR_CHAT_DELIMITERS,
+                COLOR_REASON_QUIT,
                 reason,
-                IRC_COLOR_CHAT_DELIMITERS)
+                COLOR_CHAT_DELIMITERS)
 
         weechat.hook_signal_send("%s,irc_in_QUIT" %server, WEECHAT_HOOK_SIGNAL_STRING,
                 ":%s QUIT :%s" %(hostmask, reason))
@@ -231,25 +211,25 @@ def buffextras_cb(data, modifier, modifier_data, string):
         new_nick = line.rpartition(' ')[-1]
         s = weechat.gettext("%s%s%s%s is now known as %s%s%s")
         s = s %(weechat.prefix('network'),
-                IRC_COLOR_CHAT_NICK,
+                COLOR_CHAT_NICK,
                 nick,
-                IRC_COLOR_CHAT,
-                IRC_COLOR_CHAT_NICK,
+                COLOR_CHAT,
+                COLOR_CHAT_NICK,
                 new_nick,
-                IRC_COLOR_CHAT)
+                COLOR_CHAT)
 
     elif line.startswith('set mode: '):
         modes = line[line.find(':') + 2:]
         s = weechat.gettext("%sMode %s%s %s[%s%s%s]%s by %s%s")
         s = s %(weechat.prefix('network'),
-                IRC_COLOR_CHAT_CHANNEL,
+                COLOR_CHAT_CHANNEL,
                 channel,
-                IRC_COLOR_CHAT_DELIMITERS,
-                IRC_COLOR_CHAT,
+                COLOR_CHAT_DELIMITERS,
+                COLOR_CHAT,
                 modes,
-                IRC_COLOR_CHAT_DELIMITERS,
-                IRC_COLOR_CHAT,
-                IRC_COLOR_CHAT_NICK,
+                COLOR_CHAT_DELIMITERS,
+                COLOR_CHAT,
+                COLOR_CHAT_NICK,
                 nick)
 
     elif line.startswith('kicked'):
@@ -257,29 +237,29 @@ def buffextras_cb(data, modifier, modifier_data, string):
         reason = reason[reason.find('[') + 1:-1]
         s = weechat.gettext("%s%s%s%s has kicked %s%s%s %s(%s%s%s)")
         s = s %(weechat.prefix('quit'),
-                IRC_COLOR_CHAT_NICK,
+                COLOR_CHAT_NICK,
                 nick,
-                IRC_COLOR_MESSAGE_QUIT,
-                IRC_COLOR_CHAT_NICK,
+                COLOR_MESSAGE_QUIT,
+                COLOR_CHAT_NICK,
                 nick_kicked,
-                IRC_COLOR_MESSAGE_QUIT,
-                IRC_COLOR_CHAT_DELIMITERS,
-                IRC_COLOR_CHAT,
+                COLOR_MESSAGE_QUIT,
+                COLOR_CHAT_DELIMITERS,
+                COLOR_CHAT,
                 reason,
-                IRC_COLOR_CHAT_DELIMITERS)
+                COLOR_CHAT_DELIMITERS)
 
     elif line.startswith('changed the topic to: '):
         topic = line[line.find(':') + 2:]
         s = weechat.gettext("%s%s%s%s has changed topic for %s%s%s to \"%s%s\"")
         s = s %(weechat.prefix('network'),
-                IRC_COLOR_CHAT_NICK,
+                COLOR_CHAT_NICK,
                 nick,
-                IRC_COLOR_CHAT,
-                IRC_COLOR_CHAT_CHANNEL,
+                COLOR_CHAT,
+                COLOR_CHAT_CHANNEL,
                 channel,
-                IRC_COLOR_CHAT,
+                COLOR_CHAT,
                 topic,
-                IRC_COLOR_CHAT)
+                COLOR_CHAT)
     
     if s is None:
         error('Unknown message from ZNC: %r' % string)
@@ -296,22 +276,22 @@ if __name__ == '__main__' and import_ok and \
     # colors
     config_get_string = lambda s: weechat.config_string(weechat.config_get(s))
 
-    COLOR_RESET               = weechat.color('reset')
-    IRC_COLOR_CHAT_DELIMITERS = weechat.color('chat_delimiters')
-    IRC_COLOR_CHAT_NICK       = weechat.color('chat_nick')
-    IRC_COLOR_CHAT_HOST       = weechat.color('chat_host')
-    IRC_COLOR_CHAT_CHANNEL    = weechat.color('chat_channel')
-    IRC_COLOR_CHAT            = weechat.color('chat')
-    IRC_COLOR_MESSAGE_JOIN    = weechat.color(config_get_string('irc.color.message_join'))
-    IRC_COLOR_MESSAGE_QUIT    = weechat.color(config_get_string('irc.color.message_quit'))
-    IRC_COLOR_REASON_QUIT     = weechat.color(config_get_string('irc.color.reason_quit'))
+    COLOR_RESET           = weechat.color('reset')
+    COLOR_CHAT_DELIMITERS = weechat.color('chat_delimiters')
+    COLOR_CHAT_NICK       = weechat.color('chat_nick')
+    COLOR_CHAT_HOST       = weechat.color('chat_host')
+    COLOR_CHAT_CHANNEL    = weechat.color('chat_channel')
+    COLOR_CHAT            = weechat.color('chat')
+    COLOR_MESSAGE_JOIN    = weechat.color(config_get_string('irc.color.message_join'))
+    COLOR_MESSAGE_QUIT    = weechat.color(config_get_string('irc.color.message_quit'))
+    COLOR_REASON_QUIT     = weechat.color(config_get_string('irc.color.reason_quit'))
 
 
     # pretty [SCRIPT_NAME]
-    script_nick = '%s[%s%s%s]%s' % (IRC_COLOR_CHAT_DELIMITERS, 
-                                    IRC_COLOR_CHAT_NICK,
+    script_nick = '%s[%s%s%s]%s' % (COLOR_CHAT_DELIMITERS, 
+                                    COLOR_CHAT_NICK,
                                     SCRIPT_NAME, 
-                                    IRC_COLOR_CHAT_DELIMITERS,
+                                    COLOR_CHAT_DELIMITERS,
                                     COLOR_RESET)
 
     # settings
