@@ -98,13 +98,12 @@ def buffextras_cb(data, modifier, modifier_data, string):
 #        # not a line coming from ZNC module.
 #        return string
     plugin, buffer_name, tags = modifier_data.split(';')
-    if plugin != 'irc':
+    if plugin != 'irc' or buffer_name == 'irc_raw':
         return string
 
     global buffer_playback
     if 'nick_***' in tags:
         line = string.partition('\t')[2]
-        debug(line)
         if line == 'Buffer Playback...':
             # TODO load here all config options.
             buffer_playback = True
