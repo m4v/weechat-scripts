@@ -18,6 +18,14 @@
 
 ###
 #
+#   Monitor join messages for warn about known users.
+#   This is mostly intended for get an early warning of known trolls. 
+#
+#   Depends of script chanop.py for it to work. Any bans set in chanop's tracked 
+#   channels will be added to the warning list automatically.
+#
+#   Commands (see detailed help with /help in WeeChat):
+#   * /warn: Manages warning patterns.
 #
 ###
 
@@ -25,7 +33,7 @@ SCRIPT_NAME    = "monitor"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
 SCRIPT_VERSION = "0.1"
 SCRIPT_LICENSE = "GPL3"
-SCRIPT_DESC    = "Warn when a matching user joins"
+SCRIPT_DESC    = "Monitor join messages and warn about known users."
 
 
 try:
@@ -312,13 +320,15 @@ class MonitorPatterns(CaseInsensibleSet):
         CaseInsensibleSet.clear(self)
         self._updated = False
 
-monitorPatterns = MonitorPatterns()
+warnPatterns = MonitorPatterns()
 
 # -----------------------------------------------------------------------------
 # Script Commands
 
 class Monitor(Command):
-    command = 'omonitor'
+    description, help = "Manages the list of warning patterns.", ""
+    usage = "[ ( add <pattern> [<comment>] | del <pattern> ) ]"
+    command = 'warn'
     completion = 'add %(chanop_ban_mask)||del %(monitor_patterns)'
 
     def parser(self, args):
@@ -338,7 +348,7 @@ class Monitor(Command):
             self.comment = ''
 
     def print_pattern_list(self):
-        for mask in monitorPatterns:
+        for mask in warnPatterns:
             say("%s (%s)" % (format_color(mask, color_chat_delimiter), 
                             weechat.config_get_plugin('mask.%s' % mask)), self.buffer)
 
@@ -346,7 +356,7 @@ class Monitor(Command):
         if self.cmd == 'add':
             weechat.config_set_plugin('mask.%s' % self.mask, self.comment)
             # config_set_plugin doesn't trigger hook_config callback, bug?
-            monitorPatterns.add(self.mask)
+            warnPatterns.add(self.mask)
         elif self.cmd == 'del':
             weechat.config_unset_plugin('mask.%s' % self.mask)
 
@@ -368,7 +378,7 @@ def signal_parse(f):
 
 @signal_parse
 def join_cb(server, channel, hostmask, signal_data):
-    for mask in monitorPatterns:
+    for mask in warnPatterns:
         match = weechat.info_get('chanop_pattern_match', '%s,%s' %(mask, hostmask))
         if match:
             say("%s joined %s (%s \"%s\")" % (format_hostmask(hostmask),
@@ -387,21 +397,21 @@ def banmask_cb(data, signal, signal_data):
 
     op, channel, mask, users = args
     mode = signal[-1]
-    if mode == 'b' and mask not in monitorPatterns:
+    if mode == 'b' and mask not in warnPatterns:
         s = ' '.join(map(format_hostmask, users.split(',')))
         comment = "Ban in %s by %s, affectd %s" % (channel, format_hostmask(op), s)
         comment = weechat.string_remove_color(comment, '')
         weechat.config_set_plugin('mask.%s' % mask, comment)
-        monitorPatterns.add(mask)
+        warnPatterns.add(mask)
     return WEECHAT_RC_OK
 
-def clear_monitor_pattern(data, config, value):
+def clear_warn_pattern(data, config, value):
     #debug('CONFIG: %s %s %s' % (data, config, value))
-    monitorPatterns.clear()
+    warnPatterns.clear()
     return WEECHAT_RC_OK
 
 def monitor_cmpl(data, completion_item, buffer, completion):
-    for mask in monitorPatterns:
+    for mask in warnPatterns:
         weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_END)
     return WEECHAT_RC_OK
 
@@ -431,7 +441,7 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_signal('*,chanop_mode_*', 'banmask_cb', '')
 
     # hook config
-    weechat.hook_config('plugins.var.python.%s.mask.*' % SCRIPT_NAME, 'clear_monitor_pattern', '')
+    weechat.hook_config('plugins.var.python.%s.mask.*' % SCRIPT_NAME, 'clear_warn_pattern', '')
 
     # hook completer
     weechat.hook_completion('monitor_patterns', '', 'monitor_cmpl', '')
@@ -442,17 +452,22 @@ if __name__ == '__main__' and import_ok and \
     # -------------------------------------------------------------------------
     # Debug
 
-    try:
-        # custom debug module I use, allows me to inspect script's objects.
-        import pybuffer
-        debug = pybuffer.debugBuffer(globals(), '%s_debug' % SCRIPT_NAME)
-    except:
-        def debug(s, *args):
-            if not isinstance(s, basestring):
-                s = str(s)
-            if args:
-                s = s %args
-            prnt('', '%s\t%s' %(script_nick, s))
+
+    if weechat.config_get_plugin('debug'):
+        try:
+            # custom debug module I use, allows me to inspect script's objects.
+            import pybuffer
+            debug = pybuffer.debugBuffer(globals(), '%s_debug' % SCRIPT_NAME)
+        except:
+            def debug(s, *args):
+                if not isinstance(s, basestring):
+                    s = str(s)
+                if args:
+                    s = s %args
+                prnt('', '%s\t%s' %(script_nick, s))
+    else:
+        def debug(*args):
+            pass
 
 
 
