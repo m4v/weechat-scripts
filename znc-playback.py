@@ -40,7 +40,7 @@ except ImportError:
 
 import datetime, time
 
-SCRIPT_NAME    = "znc-buffextras"
+SCRIPT_NAME    = "znc-playback"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
 SCRIPT_VERSION = "0.1-dev"
 SCRIPT_LICENSE = "GPL3"
@@ -88,7 +88,7 @@ def say(s, buffer=''):
 global buffer_playback
 buffer_playback = False
 
-def buffextras_cb(data, modifier, modifier_data, string):
+def playback_cb(data, modifier, modifier_data, string):
 # old weechat 0.3.3
 #    if 'irc_privmsg' not in modifier_data:
 #        return string
@@ -303,7 +303,7 @@ if __name__ == '__main__' and import_ok and \
         if not weechat.config_is_set_plugin(opt):
             weechat.config_set_plugin(opt, val)
 
-    weechat.hook_modifier('weechat_print', 'buffextras_cb', '')
+    weechat.hook_modifier('weechat_print', 'playback_cb', '')
 
     # -------------------------------------------------------------------------
     # Debug
