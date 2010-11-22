@@ -1568,7 +1568,7 @@ class CommandChanop(Command, ChanopBuffers):
         except:
             error('Not in a IRC channel.')
 
-    def is_nick(self, nick):
+    def isUser(self, nick):
         return nick in self.users
 
     def inChannel(self, nick):
@@ -1730,7 +1730,7 @@ class MultiKick(Kick):
         #debug('multikick: %s' %str(args))
         while(args):
             nick = args[0]
-            if nick[0] == ':' or not self.is_nick(nick):
+            if nick[0] == ':' or not self.isUser(nick):
                 break
             nick = args.pop(0)
             if self.inChannel(nick):
@@ -1810,6 +1810,7 @@ class Ban(CommandWithOp):
     def make_banmask(self, hostmask):
         assert self.banmask
         template = self.banmask
+
         def banmask(s):
             if not is_hostmask(s):
                 return s
@@ -1825,6 +1826,7 @@ class Ban(CommandWithOp):
             s = '%s!%s@%s' %(nick, user, host)
             assert is_hostmask(s), "Invalid banmask: %s" %s
             return s
+
         if callable(hostmask):
             return lambda: banmask(hostmask())
         return banmask(hostmask)
@@ -1925,7 +1927,7 @@ class BanKick(Ban, Kick):
 
     def execute_op(self):
         nick, s, reason = self.args.partition(' ')
-        if not self.is_nick(nick):
+        if not self.isUser(nick):
             say("Unknown nick (%s)" % nick, self.buffer)
             self.irc.clear()
             return
@@ -1951,7 +1953,7 @@ class MultiBanKick(BanKick):
         nicks = []
         while(args):
             nick = args[0]
-            if nick[0] == ':' or not self.is_nick(nick):
+            if nick[0] == ':' or not self.isUser(nick):
                 break
             nicks.append(args.pop(0))
         reason = ' '.join(args).lstrip(':')
