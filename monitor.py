@@ -19,9 +19,9 @@
 ###
 #
 #   Monitor join messages for warn about known users.
-#   This is mostly intended for get an early warning of known trolls. 
+#   This is mostly intended for get an early warning of known trolls.
 #
-#   Depends of script chanop.py for it to work. Any bans set in chanop's tracked 
+#   Depends of script chanop.py for it to work. Any bans set in chanop's tracked
 #   channels will be added to the warning list automatically.
 #
 #   Commands (see detailed help with /help in WeeChat):
@@ -62,7 +62,6 @@ def say(s, buffer=''):
     """normal msg"""
     prnt(buffer, '%s\t%s' %(script_nick, s))
 
-
 def format_hostmask(hostmask):
     nick, host = hostmask.split('!', 1)
     return '%s%s%s(%s%s%s)%s' % (color_chat_nick,
@@ -89,7 +88,7 @@ def IRClower(s):
 class CaseInsensibleString(str):
     def __init__(self, s=''):
         self.lowered = IRClower(s)
-    
+
     lower    = lambda self: self.lowered
     translate = lambda self, trans: self.lowered
     __eq__   = lambda self, s: self.lowered == IRClower(s)
@@ -247,8 +246,8 @@ class Command(object):
     def __init__(self):
         assert self.command, "No command defined"
         self.__name__ = self.command
-        self._pointer = ''   
-        self._callback = ''   
+        self._pointer = ''
+        self._callback = ''
 
     def __call__(self, *args):
         return self.callback(*args)
@@ -349,7 +348,7 @@ class Monitor(Command):
 
     def print_pattern_list(self):
         for mask in warnPatterns:
-            say("%s (%s)" % (format_color(mask, color_chat_delimiter), 
+            say("%s (%s)" % (format_color(mask, color_chat_delimiter),
                             weechat.config_get_plugin('mask.%s' % mask)), self.buffer)
 
     def execute(self):
@@ -451,7 +450,6 @@ if __name__ == '__main__' and import_ok and \
 
     # -------------------------------------------------------------------------
     # Debug
-
 
     if weechat.config_get_plugin('debug'):
         try:
