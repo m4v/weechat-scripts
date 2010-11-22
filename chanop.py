@@ -964,6 +964,7 @@ class IrcCommands(ChanopBuffers):
                 break
 
     def clear(self):
+        debug('clear queue (%s messages)', len(self.commands))
         self.commands = []
 
 
@@ -1570,6 +1571,9 @@ class CommandChanop(Command, ChanopBuffers):
     def is_nick(self, nick):
         return nick in self.users
 
+    def inChannel(self, nick):
+        return CaseInsensibleString(nick) in [ nick['name'] for nick in self.nick_infolist() ]
+
     def getHostmask(self, name):
         try:
             hostmask = self.users.getHostmask(name)
@@ -1614,7 +1618,7 @@ class CommandWithOp(CommandChanop):
                     weechat.unhook(self.deopHook)
                 self.vars.deopHook = weechat.hook_timer(delay * 1000, 0, 1,
                         callback(self.deopCallback), self.buffer)
-            else:
+            elif self.irc.commands: # only Deop if there are msgs in queue
                 self.irc.Deop()
 
     def execute_op(self, *args):
@@ -1664,7 +1668,7 @@ class Op(CommandChanop):
         self.vars.autodeop = False
         if self.args:
             for nick in self.args.split():
-                if self.is_nick(nick) and not self.has_op(nick):
+                if self.inChannel(nick) and not self.has_op(nick):
                     self.set_mode(nick)
 
 
@@ -1680,7 +1684,7 @@ class Deop(Op, CommandWithOp):
         if self.args:
             nicks = []
             for nick in self.args.split():
-                if is_nick(nick) and self.has_op(nick):
+                if self.inChannel(nick) and self.has_op(nick):
                     nicks.append(nick)
             if nicks:
                 CommandWithOp.execute_chanop(self, nicks)
@@ -1704,7 +1708,11 @@ class Kick(CommandWithOp):
 
     def execute_op(self):
         nick, s, reason = self.args.partition(' ')
-        self.irc.Kick(nick, reason)
+        if self.inChannel(nick):
+            self.irc.Kick(nick, reason)
+        else:
+            say("Nick not in %s (%s)" % (self.channel, nick), self.buffer)
+            self.irc.clear()
 
 
 class MultiKick(Kick):
@@ -1718,19 +1726,28 @@ class MultiKick(Kick):
     def execute_op(self):
         args = self.args.split()
         nicks = []
+        nicks_parted = []
         #debug('multikick: %s' %str(args))
         while(args):
             nick = args[0]
             if nick[0] == ':' or not self.is_nick(nick):
                 break
-            nicks.append(args.pop(0))
+            nick = args.pop(0)
+            if self.inChannel(nick):
+                nicks.append(nick)
+            else:
+                nicks_parted.append(nick)
+
         #debug('multikick: %s, %s' %(nicks, args))
         reason = ' '.join(args).lstrip(':')
+        if nicks_parted:
+            say("Nick(s) not in %s (%s)" % (self.channel, ', '.join(nicks_parted)), self.buffer)
+        elif not nicks:
+            say("Unknown nick (%s)" % nick, self.buffer)
         if nicks:
             for nick in nicks:
                 self.irc.Kick(nick, reason)
         else:
-            say("Sorry, found nothing to kick.", buffer=self.buffer)
             self.irc.clear()
 
 
@@ -1909,7 +1926,7 @@ class BanKick(Ban, Kick):
     def execute_op(self):
         nick, s, reason = self.args.partition(' ')
         if not self.is_nick(nick):
-            say("Sorry, found nothing to bankick.", buffer=self.buffer)
+            say("Unknown nick (%s)" % nick, self.buffer)
             self.irc.clear()
             return
 
@@ -1919,7 +1936,8 @@ class BanKick(Ban, Kick):
             self.ban(banmask)
         else:
             self.ban(nick)
-        self.irc.Kick(nick, reason, wait=1)
+        if self.inChannel(nick):
+            self.irc.Kick(nick, reason, wait=1)
 
 
 class MultiBanKick(BanKick):
@@ -1938,7 +1956,7 @@ class MultiBanKick(BanKick):
             nicks.append(args.pop(0))
         reason = ' '.join(args).lstrip(':')
         if not nicks:
-            say("Sorry, found nothing to bankick.", buffer=self.buffer)
+            say("Unknown nick (%s)" % nick, self.buffer)
             self.irc.clear()
             return
 
@@ -1950,7 +1968,8 @@ class MultiBanKick(BanKick):
             else:
                 self.ban(nick)
         for nick in nicks:
-            self.irc.Kick(nick, reason, wait=1)
+            if self.inChannel(nick):
+                self.irc.Kick(nick, reason, wait=1)
 
 
 class Topic(CommandWithOp):
@@ -1974,7 +1993,7 @@ class Voice(CommandWithOp):
 
     def execute_op(self):
         for nick in self.args.split():
-            if self.is_nick(nick) and not self.has_voice(nick):
+            if self.inChannel(nick) and not self.has_voice(nick):
                 self.set_mode(nick)
 
 
