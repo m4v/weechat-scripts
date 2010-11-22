@@ -601,6 +601,11 @@ def make_regexp(pattern, matchcase=False):
     if pattern in ('.', '.*', '.?', '.+'):
         # because I don't need to use a regexp if we're going to match all lines
         return None
+    # matching takes a lot more time if pattern starts or ends with .* and it isn't needed.
+    if pattern[:2] == '.*':
+        pattern = pattern[2:]
+    if pattern[-2:] == '.*':
+        pattern = pattern[:-2]
     try:
         if not matchcase:
             regexp = re.compile(pattern, re.IGNORECASE)
