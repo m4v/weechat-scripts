@@ -86,7 +86,7 @@ def say(s, buffer=''):
 # Script Callbacks
 
 global buffer_playback
-buffer_playback = False
+buffer_playback = {}
 
 def playback_cb(data, modifier, modifier_data, string):
 # old weechat 0.3.3
@@ -106,20 +106,19 @@ def playback_cb(data, modifier, modifier_data, string):
         line = string.partition('\t')[2]
         if line == 'Buffer Playback...':
             # TODO load here all config options.
-            buffer_playback = True
+            debug("* buffer playback for %s", buffer_name)
+            buffer_playback[buffer_name] = True
         elif line == 'Playback Complete.':
-            buffer_playback = False
+            debug("* end of playback for %s", buffer_name)
+            del buffer_playback[buffer_name]
         return string
 
-    elif not buffer_playback:
+    elif buffer_name not in buffer_playback:
         return string
 
     buffer = weechat.buffer_search(plugin, buffer_name)
     if not buffer:
         return string
-
-    debug(modifier_data)
-    debug(string)
 
     prefix, s, line = string.partition('\t')
     if 'irc_action' in tags:
@@ -134,6 +133,7 @@ def playback_cb(data, modifier, modifier_data, string):
     except ValueError, e:
         # bad time format.
         error(e)
+        debug("%s\n%s" % (modifier_data, string))
         return string
     else:
         t = datetime.time(t[3], t[4], t[5])
