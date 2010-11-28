@@ -121,10 +121,10 @@ def playback_cb(data, modifier, modifier_data, string):
         return string
 
     prefix, s, line = string.partition('\t')
-    if 'irc_action' in tags:
-        action_prefix, s, line = line.partition(' ')
+    if 'irc_action' in tags or 'irc_notice' in tags:
+        _prefix, s, line = line.partition(' ')
         timestamp, s, line = line.partition(' ')
-        line = '%s %s' % (action_prefix, line)
+        line = '%s %s' % (_prefix, line)
     else:
         timestamp, s, line = line.partition(' ')
 
