@@ -749,7 +749,8 @@ class Message(ChanopBuffers):
 
     def __call__(self):
         cmd = self.payload()
-        self.send(cmd)
+        if cmd:
+            self.send(cmd)
 
     def send(self, cmd):
         if weechat.config_get_plugin('debug'):
@@ -861,14 +862,17 @@ class IrcCommands(ChanopBuffers):
                 if a:
                     if callable(a):
                         a = a()
+                        if not a:
+                            continue
                     args.append(a)
                 if m[0] != prefix:
                     prefix = m[0]
                     modeChar.append(prefix)
                 modeChar.append(m[1])
             args.insert(0, ''.join(modeChar))
-            self.args = args
-            return Message.payload(self)
+            if args:
+                self.args = args
+                return Message.payload(self)
 
 
     class DeopMessage(ModeMessage):
@@ -1875,26 +1879,32 @@ class UnBan(Ban):
     completion = '%(chanop_unban_mask)|%(chanop_nicks)|%*'
     prefix = '-'
 
-    def search_masks(self, s):
+    def search_masks(self, hostmask):
         try:
             masklist = self.maskCache[self.server, self.channel]
         except KeyError:
             return []
-        if is_nick(s):
-            return masklist.searchByNick(s)
-        elif is_hostmask(s):
-            return masklist.searchByHostmask(s)
-        return []
+        if callable(hostmask):
+
+            def banmask():
+                L = masklist.searchByHostmask(hostmask())
+                if L: return L[0]
+
+            return [ banmask ]
+        return masklist.searchByHostmask(hostmask)
 
     def execute_op(self):
         args = self.args.split()
         banmasks = []
         for arg in args:
-            masks = self.search_masks(arg)
-            if masks:
-                banmasks.extend(masks)
+            if is_hostmask(arg):
+                hostmask = arg
+            elif is_nick(arg):
+                hostmask = self.getHostmask(arg)
             else:
                 banmasks.append(arg)
+                continue
+            banmasks.extend(self.search_masks(hostmask))
         self.ban(*banmasks)
 
 
