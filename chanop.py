@@ -1018,6 +1018,9 @@ class CaseInsensibleDict(dict):
     def __contains__(self, k):
         return dict.__contains__(self, self.key(k))
 
+    def pop(self, k):
+        return dict.pop(self, self.key(k))
+
 
 class CaseInsensibleSet(set):
     normalize = staticmethod(caseInsensibleKey)
