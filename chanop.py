@@ -490,6 +490,9 @@ def irc_buffer(buffer):
 #######################
 ### WeeChat classes ###
 
+class InvalidIRCBuffer(Exception):
+    pass
+
 def callback(method):
     """This function will take a bound method or function and make it a callback."""
     # try to create a descriptive and unique name.
@@ -591,7 +594,10 @@ class Infolist(object):
 
 
 def nick_infolist(server, channel):
-    return Infolist('irc_nick', '%s,%s' %(server, channel))
+    try:
+        return Infolist('irc_nick', '%s,%s' % (server, channel))
+    except:
+        raise InvalidIRCBuffer('%s.%s' % (server, channel))
 
 
 class NoArguments(Exception):
@@ -1542,8 +1548,13 @@ class CommandChanop(Command, ChanopBuffers):
 
     def execute(self):
         self.users = userCache[self.server, self.channel]
-        self.execute_chanop()   # call our command and queue messages for WeeChat
-        self.irc.run()          # run queued messages
+        try:
+            self.execute_chanop()   # call our command and queue messages for WeeChat
+        except InvalidIRCBuffer, e:
+            error('Not in a IRC channel (%s)' % e)
+            self.irc.clear()
+        else:
+            self.irc.run()          # run queued messages
         self.infolist = None    # free irc_nick infolist
 
     def execute_chanop(self):
@@ -1558,22 +1569,16 @@ class CommandChanop(Command, ChanopBuffers):
         return self.infolist
 
     def has_op(self, nick):
-        try:
-            nicks = self.nick_infolist()
-            while nicks.next():
-                if nicks['name'] == nick:
-                    return '@' in nicks['prefixes']
-        except:
-            error('Not in a IRC channel.')
+        nicks = self.nick_infolist()
+        while nicks.next():
+            if nicks['name'] == nick:
+                return '@' in nicks['prefixes']
 
     def has_voice(self, nick):
-        try:
-            nicks = self.nick_infolist()
-            while nicks.next():
-                if nicks['name'] == nick:
-                    return '+' in nicks['prefixes']
-        except:
-            error('Not in a IRC channel.')
+        nicks = self.nick_infolist()
+        while nicks.next():
+            if nicks['name'] == nick:
+                return '+' in nicks['prefixes']
 
     def isUser(self, nick):
         return nick in self.users
