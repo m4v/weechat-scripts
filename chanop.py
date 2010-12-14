@@ -780,76 +780,80 @@ class IrcCommands(ChanopBuffers):
             self.irc.interrupt = True
             Message.send(self, cmd)
 
-            def modeOpCallback(data, signal, signal_data):
+            def modeOpCallback(buffer, signal, signal_data):
+                vars = self.varsOf(buffer)
+                data = 'MODE %s +o %s' % (vars.channel, vars.nick)
                 signal = signal_data.split(None, 1)[1]
                 if signal == data:
                     #debug('We got op')
                     # add this channel to our watchlist
-                    config = 'watchlist.%s' %self.server
+                    config = 'watchlist.%s' % vars.server
                     channels = CaseInsensibleSet(get_config_list(config))
-                    if self.channel not in channels:
-                        channels.add(self.channel)
+                    if vars.channel not in channels:
+                        channels.add(vars.channel)
                         value = ','.join(channels)
                         weechat.config_set_plugin(config, value)
-                    weechat.unhook(self.opHook)
-                    weechat.unhook(self.opTimeout)
-                    self.vars.opTimeout = self.vars.opHook = None
-                    self.irc.interrupt = False
-                    self.irc.run()
+                    weechat.unhook(vars.opHook)
+                    weechat.unhook(vars.opTimeout)
+                    vars.opTimeout = vars.opHook = None
+                    vars.irc.interrupt = False
+                    vars.irc.run()
                 return WEECHAT_RC_OK
 
-            def timeoutCallback(channel, count):
-                error("Couldn't get op in '%s', purging command queue..." %channel)
-                weechat.unhook(self.opHook)
-                if self.deopHook:
-                    weechat.unhook(self.deopHook)
-                    self.vars.deopHook = None
-                self.vars.opTimeout = self.vars.opHook = None
-                self.irc.interrupt = False
-                self.irc.clear()
+            def timeoutCallback(buffer, count):
+                vars = self.varsOf(buffer)
+                error("Couldn't get op in '%s', purging command queue..." % vars.channel)
+                weechat.unhook(vars.opHook)
+                if vars.deopHook:
+                    weechat.unhook(vars.deopHook)
+                    vars.deopHook = None
+                vars.opTimeout = vars.opHook = None
+                vars.irc.interrupt = False
+                vars.irc.clear()
                 return WEECHAT_RC_OK
 
             # wait for a while before timing out.
-            data = '%s.%s' %(self.server, self.channel)
-            self.vars.opTimeout = weechat.hook_timer(30*1000, 0, 1, callback(timeoutCallback), data)
+            self.vars.opTimeout = weechat.hook_timer(30*1000, 0, 1, callback(timeoutCallback),
+                    self.buffer)
 
-            data = 'MODE %s +o %s' %(self.channel, self.nick)
             self.vars.opHook = weechat.hook_signal('%s,irc_in2_MODE' %self.server,
-                    callback(modeOpCallback), data)
+                    callback(modeOpCallback), self.buffer)
 
     class UserhostMessage(Message):
         def send(self, cmd):
             self.irc.interrupt = True
             Message.send(self, cmd)
 
-            def msgCallback(data, modifier, modifier_data, string):
-                if data != modifier_data:
+            def msgCallback(buffer, modifier, modifier_data, string):
+                vars = self.varsOf(buffer)
+                if vars.server != modifier_data:
                     return string
                 nick, host = string.rsplit(None, 1)[1].split('=')
                 nick, host = nick.strip(':*'), host[1:]
-                hostmask = '%s!%s' %(nick, host)
+                hostmask = '%s!%s' % (nick, host)
                 debug('USERHOST: %s %s', nick, hostmask)
                 userCache.addUser(modifier_data, nick, hostmask)
-                weechat.unhook(self.msgHook)
-                weechat.unhook(self.msgTimeout)
-                self.vars.msgTimeout = self.vars.msgHook = None
-                self.irc.interrupt = False
-                self.irc.run()
+                weechat.unhook(vars.msgHook)
+                weechat.unhook(vars.msgTimeout)
+                vars.msgTimeout = vars.msgHook = None
+                vars.irc.interrupt = False
+                vars.irc.run()
                 return ''
 
-            def timeoutCallback(data, count):
-                weechat.unhook(self.msgHook)
-                self.vars.msgTimeout = self.vars.msgHook = None
-                self.irc.interrupt = False
-                self.irc.clear()
+            def timeoutCallback(buffer, count):
+                vars = self.varsOf(buffer)
+                weechat.unhook(vars.msgHook)
+                vars.msgTimeout = vars.msgHook = None
+                vars.irc.interrupt = False
+                vars.irc.clear()
                 return WEECHAT_RC_OK
 
             # wait for a while before timing out.
             self.vars.msgTimeout = \
-                weechat.hook_timer(30*1000, 0, 1, callback(timeoutCallback), '')
+                weechat.hook_timer(30*1000, 0, 1, callback(timeoutCallback), self.buffer)
 
             self.vars.msgHook = weechat.hook_modifier('irc_in_302',
-                    callback(msgCallback), self.server)
+                    callback(msgCallback), self.buffer)
 
 
     class ModeMessage(Message):
@@ -976,6 +980,9 @@ class IrcCommands(ChanopBuffers):
     def clear(self):
         debug('clear queue (%s messages)', len(self.commands))
         self.commands = []
+
+    def __repr__(self):
+        return '<IrcCommands(%s)>' % ', '.join(map(repr, self.commands))
 
 
 #########################
@@ -1532,8 +1539,8 @@ class UserCache(ServerChannelDict):
 
 userCache = UserCache()
 
-##############################
-### Chanop Command Classes ###
+# -----------------------------------------------------------------------------
+# Chanop Command Classes
 
 # Base classes for chanop commands
 class CommandChanop(Command, ChanopBuffers):
