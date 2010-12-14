@@ -397,6 +397,13 @@ def is_hostmask(s):
     """Returns whether or not the string s starts with something like a hostmask."""
     return _hostmaskRe.match(s) is not None
 
+def is_ip(s):
+    """Returns whether or not a given string is an IPV4 address."""
+    import socket
+    try:
+        return bool(socket.inet_aton(s))
+    except socket.error:
+        return False
 
 _reCache = {}
 def cachedPattern(f):
@@ -1842,6 +1849,11 @@ class Ban(CommandWithOp):
                 user = get_user(s)
             if 'host' in template:
                 host = get_host(s)
+                # check for freenode's webchat, and use a better mask.
+                if host.startswith('gateway/web/freenode'):
+                    ip = host.partition('.')[2]
+                    if is_ip(ip):
+                        host = '*%s' % ip
             s = '%s!%s@%s' %(nick, user, host)
             assert is_hostmask(s), "Invalid banmask: %s" %s
             return s
