@@ -500,6 +500,14 @@ def irc_buffer(buffer):
 class InvalidIRCBuffer(Exception):
     pass
 
+def catchExceptions(f):
+    def function(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except Exception, e:
+            error(e)
+    return function
+
 def callback(method):
     """This function will take a bound method or function and make it a callback."""
     # try to create a descriptive and unique name.
@@ -518,6 +526,9 @@ def callback(method):
     except AttributeError:
         # not a bound method
         name = func
+
+    method = catchExceptions(method)
+
     # set our callback
     import __main__
     setattr(__main__, name, method)
@@ -2208,6 +2219,7 @@ class ShowBans(CommandChanop):
 
 # Decorators
 def signal_parse(f):
+    @catchExceptions
     def decorator(data, signal, signal_data):
         server = signal[:signal.find(',')]
         channel = signal_data.split()[2]
@@ -2224,6 +2236,7 @@ def signal_parse(f):
     return decorator
 
 def signal_parse_no_channel(f):
+    @catchExceptions
     def decorator(data, signal, signal_data):
         server = signal[:signal.find(',')]
         nick = get_nick(signal_data)
@@ -2473,9 +2486,8 @@ def update_chanop_watchlist_cb(data, config, value):
 
 # WeeChat completions
 def cmpl_get_irc_users(f):
-    """
-    Decorator for check if completion is done in a irc channel, and pass the buffer's user list
-    if so."""
+    """Check if completion is done in a irc channel, and pass the buffer's user list."""
+    @catchExceptions
     def decorator(data, completion_item, buffer, completion):
         key = irc_buffer(buffer)
         if not key:
