@@ -1335,15 +1335,27 @@ maskHandler.addCache('q', 'quiet', 'quiets')
 
 # Users
 class UserObject(object):
-    def __init__(self, nick, hostmask):
+    def __init__(self, nick, hostmask=None):
         self.nick = nick
-        self.hostmask = hostmask
+        if hostmask:
+            self._hostmask = [ hostmask ]
+        else:
+            self._hostmask = []
         self.seen = now()
         self.channels = 0
 
+    @property
+    def hostmask(self):
+        try:
+            return self._hostmask[-1]
+        except IndexError:
+            return ''
+
     def update(self, hostmask=None):
-        if hostmask:
-            self.hostmask = hostmask
+        if hostmask and hostmask != self.hostmask:
+            if hostmask in self._hostmask:
+                del self._hostmask[self._hostmask.index(hostmask)]
+            self._hostmask.append(hostmask)
         self.seen = now()
 
     def __len__(self):
@@ -1359,6 +1371,20 @@ class ServerUserList(CaseInsensibleDict):
         buffer = weechat.buffer_search('irc', 'server.%s' %server)
         self.irc = IrcCommands(buffer)
         self._purge_time = 3600*4 # 4 hours
+
+    def __setitem__(self, k, v):
+        if hasattr(self, 'channel'):
+            debug('%s.%s --> %s', self.server, self.channel, v)
+        else:
+            debug('%s --> %s', self.server, v)
+        CaseInsensibleDict.__setitem__(self, k, v)
+
+    def __delitem__(self, k):
+        if hasattr(self, 'channel'):
+            debug('%s.%s <-- %s', self.server, self.channel, k)
+        else:
+            debug('%s <-- %s', self.server, k)
+        CaseInsensibleDict.__delitem__(self, k)
 
     def getHostmask(self, nick):
         user = self[nick]
@@ -1395,13 +1421,19 @@ class UserList(ServerUserList):
         L.sort(key=lambda x:x.seen)
         return reversed(L)
     
-    def hostmasks_sorted(self):
-        return [ user.hostmask for user in self.values() if user ]
+    def hostmasks(self, sorted=False, all=False):
+        if sorted:
+            users = self.values()
+        else:
+            users = self.itervalues()
+        if all:
+            # return all known hostmasks
+            return [ hostmask for user in users for hostmask in user._hostmask ]
+        else:
+            # only current hostmasks
+            return [ user.hostmask for user in users if user._hostmask ]
 
-    def hostmasks(self):
-        return [ user.hostmask for user in self.itervalues() if user ]
-
-    def nicks(self):
+    def nicks(self, *args, **kwargs):
 #        if not all(self.itervalues()):
 #            userCache.who(self.server, self.channel)
         L = list(self.iteritems())
@@ -2515,18 +2547,18 @@ def ban_mask_cmpl(users, data, completion_item, buffer, completion):
         # complete *!*@hostname
         prefix = pattern[:pattern.find('@')]
         make_mask = lambda mask: '%s@%s' %(prefix, mask[mask.find('@') + 1:])
-        get_list = users.hostmasks_sorted
+        get_list = users.hostmasks
     elif '!' in pattern:
         # complete *!username@*
         prefix = pattern[:pattern.find('!')]
         make_mask = lambda mask: '%s!%s@*' %(prefix, mask[mask.find('!') + 1:mask.find('@')])
-        get_list = users.hostmasks_sorted
+        get_list = users.hostmasks
     else:
         # complete nick!*@*
         make_mask = lambda mask: '%s!*@*' %mask
         get_list = users.nicks
 
-    for mask in pattern_match_list(search_pattern, get_list()):
+    for mask in pattern_match_list(search_pattern, get_list(sorted=True, all=True)):
         mask = make_mask(mask)
         weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_END)
     return WEECHAT_RC_OK
@@ -2540,14 +2572,14 @@ def nicks_cmpl(users, data, completion_item, buffer, completion):
 
 @cmpl_get_irc_users
 def hosts_cmpl(users, data, completion_item, buffer, completion):
-    for hostmask in users.hostmasks_sorted():
+    for hostmask in users.hostmasks(sorted=True, all=True):
         weechat.hook_completion_list_add(completion, get_host(hostmask), 0,
                 weechat.WEECHAT_LIST_POS_SORT)
     return WEECHAT_RC_OK
 
 @cmpl_get_irc_users
 def users_cmpl(users, data, completion_item, buffer, completion):
-    for hostmask in users.hostmasks_sorted():
+    for hostmask in users.hostmasks(sorted=True, all=True):
         user = get_user(hostmask)
         weechat.hook_completion_list_add(completion, user, 0, weechat.WEECHAT_LIST_POS_END)
     return WEECHAT_RC_OK
