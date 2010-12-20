@@ -850,7 +850,7 @@ class IrcCommands(ChanopBuffers):
                 nick, host = nick.strip(':*'), host[1:]
                 hostmask = '%s!%s' % (nick, host)
                 debug('USERHOST: %s %s', nick, hostmask)
-                userCache.addUser(modifier_data, nick, hostmask)
+                userCache.remember(modifier_data, nick, hostmask)
                 weechat.unhook(vars.msgHook)
                 weechat.unhook(vars.msgTimeout)
                 vars.msgTimeout = vars.msgHook = None
@@ -1353,7 +1353,7 @@ class UserObject(object):
         else:
             self._hostmask = []
         self.seen = now()
-        self.channels = 0
+        self._channels = 0
 
     @property
     def hostmask(self):
@@ -1405,7 +1405,7 @@ class ServerUserList(CaseInsensibleDict):
         """Purge old nicks"""
         n = now()
         for nick, user in self.items():
-            if user.channels < 1 and (n - user.seen) > self._purge_time:
+            if user._channels < 1 and (n - user.seen) > self._purge_time:
                 #debug('purging user: %s' %user)
                 del self[nick]
 
@@ -1418,9 +1418,11 @@ class UserList(ServerUserList):
         self._purge_time = 3600*2 # 2 hours
 
     def __setitem__(self, nick, user):
-        ServerUserList.__setitem__(self, nick, user)
+        if nick not in self:
+            user._channels += 1
         if nick in self._purge_list:
             del self._purge_list[nick]
+        ServerUserList.__setitem__(self, nick, user)
 
     def part(self, nick):
         try:
@@ -1467,7 +1469,7 @@ class UserList(ServerUserList):
         n = now()
         for nick, user in self._purge_list.items():
             if (n - user.seen) > self._purge_time:
-                user.channels -= 1
+                user._channels -= 1
                 try:
                     del self._purge_list[nick]
                     del self[nick]
@@ -1498,13 +1500,12 @@ class UserCache(ServerChannelDict):
                 hostmask = '%s!%s' %(nick, host)
             else:
                 hostmask = ''
-            user = self.addUser(server, nick, hostmask)
-            user.channels += 1
+            user = self.remember(server, nick, hostmask)
             users[nick] = user
         self[server, channel] = users
         return users
 
-    def addUser(self, server, nick, hostmask):
+    def remember(self, server, nick, hostmask):
         cache = self[server]
         try:
             user = cache[nick]
@@ -1529,10 +1530,10 @@ class UserCache(ServerChannelDict):
                 return cache
 
     def __delitem__(self, k):
-        # when we delete a channel, we need to reduce user.channels count
+        # when we delete a channel, we need to reduce user._channels count
         # so they can be purged later.
         for user in self[k].itervalues():
-            user.channels -= 1
+            user._channels -= 1
         ServerChannelDict.__delitem__(self, k)
 
     def getHostmask(self, nick, server, channel=None):
@@ -1571,7 +1572,7 @@ class UserCache(ServerChannelDict):
         nick, user, host = args[7], args[4], args[5]
         hostmask = '%s!%s@%s' %(nick, user, host)
         #debug('WHO: %s', hostmask)
-        self.addUser(server, nick, hostmask)
+        self.remember(server, nick, hostmask)
         return ''
 
     def _endWhoCallback(self, data, modifier, modifier_data, string):
@@ -2419,34 +2420,32 @@ def mode_cb(server, channel, nick, opHostmask, signal_data):
 # User cache
 @signal_parse
 def join_cb(server, channel, nick, hostmask, signal_data):
-    user = userCache.addUser(server, nick, hostmask)
-    user.channels += 1
+    user = userCache.remember(server, nick, hostmask)
     userCache[server, channel][nick] = user
     return WEECHAT_RC_OK
 
 @signal_parse
 def part_cb(server, channel, nick, hostmask, signal_data):
-    userCache.addUser(server, nick, hostmask)
+    userCache.remember(server, nick, hostmask)
     userCache[server, channel].part(nick)
     return WEECHAT_RC_OK
 
 @signal_parse_no_channel
 def quit_cb(server, channels, nick, hostmask, signal_data):
-    userCache.addUser(server, nick, hostmask)
+    userCache.remember(server, nick, hostmask)
     for channel in channels:
         userCache[server, channel].part(nick)
     return WEECHAT_RC_OK
 
 @signal_parse_no_channel
-def nick_cb(server, channels, nick, hostmask, signal_data):
-    newnick = signal_data[signal_data.rfind(' ')+2:]
-    newhostmask = '%s!%s' %(newnick, hostmask[hostmask.find('!')+1:])
-    userCache.addUser(server, nick, hostmask)
-    user = userCache.addUser(server, newnick, newhostmask)
+def nick_cb(server, channels, oldNick, oldHostmask, signal_data):
+    newNick = signal_data[signal_data.rfind(' ') + 2:]
+    newHostmask = '%s!%s' % (newNick, oldHostmask[oldHostmask.find('!') + 1:])
+    userCache.remember(server, oldNick, oldHostmask)
+    user = userCache.remember(server, newNick, newHostmask)
     for channel in channels:
-        userCache[server, channel].part(nick)
-        user.channels += 1
-        userCache[server, channel][newnick] = user
+        userCache[server, channel].part(oldNick)
+        userCache[server, channel][newNick] = user
     return WEECHAT_RC_OK
 
 
