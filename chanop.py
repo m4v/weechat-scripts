@@ -1417,11 +1417,15 @@ class UserList(ServerUserList):
         self._purge_list = {}
         self._purge_time = 3600*2 # 2 hours
 
-    def remove(self, nick):
+    def __setitem__(self, nick, user):
+        ServerUserList.__setitem__(self, nick, user)
+        if nick in self._purge_list:
+            del self._purge_list[nick]
+
+    def part(self, nick):
         try:
             user = self[nick]
             self._purge_list[nick] = user
-            user.channels -= 1
         except KeyError:
             pass
 
@@ -1463,6 +1467,7 @@ class UserList(ServerUserList):
         n = now()
         for nick, user in self._purge_list.items():
             if (n - user.seen) > self._purge_time:
+                user.channels -= 1
                 try:
                     del self._purge_list[nick]
                     del self[nick]
@@ -2422,14 +2427,14 @@ def join_cb(server, channel, nick, hostmask, signal_data):
 @signal_parse
 def part_cb(server, channel, nick, hostmask, signal_data):
     userCache.addUser(server, nick, hostmask)
-    userCache[server, channel].remove(nick)
+    userCache[server, channel].part(nick)
     return WEECHAT_RC_OK
 
 @signal_parse_no_channel
 def quit_cb(server, channels, nick, hostmask, signal_data):
     userCache.addUser(server, nick, hostmask)
     for channel in channels:
-        userCache[server, channel].remove(nick)
+        userCache[server, channel].part(nick)
     return WEECHAT_RC_OK
 
 @signal_parse_no_channel
@@ -2439,7 +2444,7 @@ def nick_cb(server, channels, nick, hostmask, signal_data):
     userCache.addUser(server, nick, hostmask)
     user = userCache.addUser(server, newnick, newhostmask)
     for channel in channels:
-        userCache[server, channel].remove(nick)
+        userCache[server, channel].part(nick)
         user.channels += 1
         userCache[server, channel][newnick] = user
     return WEECHAT_RC_OK
