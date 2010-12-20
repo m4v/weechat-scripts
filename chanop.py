@@ -2545,6 +2545,7 @@ def unban_mask_cmpl(mode, completion_item, buffer, completion):
         cmpl_unban(maskCache[key])
     return WEECHAT_RC_OK
 
+banmask_cmpl_list = None
 @cmpl_get_irc_users
 def ban_mask_cmpl(users, data, completion_item, buffer, completion):
     """Completion for banmasks, for commands like /oban /oquiet"""
@@ -2554,6 +2555,25 @@ def ban_mask_cmpl(users, data, completion_item, buffer, completion):
         return WEECHAT_RC_OK
 
     input, _, pattern = input.rpartition(' ')
+    
+    global banmask_cmpl_list
+    if is_hostmask(pattern):
+        if not banmask_cmpl_list:
+            banmask_cmpl_list = [ pattern ]
+            for mask in pattern_match_list(pattern, users.hostmasks(sorted=True, all=True)):
+                banmask_cmpl_list.append('*!*@%s' % get_host(mask))
+        if pattern in banmask_cmpl_list:
+            i = banmask_cmpl_list.index(pattern) + 1
+            if i == len(banmask_cmpl_list):
+                i = 0
+            mask = banmask_cmpl_list[i]
+            input = '%s %s' % (input, mask)
+            weechat.buffer_set(buffer, 'input', input)
+            weechat.buffer_set(buffer, 'input_pos', str(len(input)))
+            return WEECHAT_RC_OK
+
+    banmask_cmpl_list = None
+
     if pattern[-1] != '*':
         search_pattern = pattern + '*'
     else:
@@ -2636,6 +2656,7 @@ if __name__ == '__main__' and import_ok and \
         # custom debug module I use, allows me to inspect script's objects.
         import pybuffer
         debug = pybuffer.debugBuffer(globals(), 'chanop_debug')
+        #weechat.buffer_set(debug._pointer, 'time_for_each_line', '1')
     except:
         def debug(s, *args):
             if not isinstance(s, basestring):
