@@ -2515,16 +2515,18 @@ def unban_mask_cmpl(mode, completion_item, buffer, completion):
         else:
             pattern = ''
         #debug('%s %s', repr(input), repr(pattern))
-        if pattern:
+        if pattern and not is_nick(pattern): # FIXME nick completer interferes.
             L = masklist.search(pattern)
+            #debug('unban pattern %s => %s', pattern, L)
             if L:
-                input = '%s %s ' %(input, ' '.join(L))
+                input = '%s %s ' % (input, ' '.join(L))
                 weechat.buffer_set(buffer, 'input', input)
                 weechat.buffer_set(buffer, 'input_pos', str(len(input)))
                 return
         elif not masklist:
             return
         for mask in masklist.iterkeys():
+            #debug('unban mask: %s', mask)
             weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_END)
 
     if key not in maskCache or not maskCache[key].synced:
