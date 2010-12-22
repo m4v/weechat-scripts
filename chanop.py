@@ -246,7 +246,7 @@ settings = {
 'autodeop_delay'        :'180',
 'default_banmask'       :'host',
 'enable_remove'         :'off',
-'kick_reason'           :'KTHXBYE',
+'kick_reason'           :'',
 'enable_multi_kick'     :'off',
 'display_affected'      :'on',
 }
