@@ -2533,7 +2533,7 @@ def unban_mask_cmpl(mode, completion_item, buffer, completion):
         cmpl_unban(maskCache[key])
     return WEECHAT_RC_OK
 
-banmask_cmpl_list = None
+banmask_cmpl_list = []
 @cmpl_get_irc_users
 def ban_mask_cmpl(users, data, completion_item, buffer, completion):
     """Completion for banmasks, for commands like /oban /oquiet"""
@@ -2547,9 +2547,28 @@ def ban_mask_cmpl(users, data, completion_item, buffer, completion):
     global banmask_cmpl_list
     if is_hostmask(pattern):
         if not banmask_cmpl_list:
-            banmask_cmpl_list = [ pattern ]
-            for mask in pattern_match_list(pattern, users.hostmasks(sorted=True, all=True)):
-                banmask_cmpl_list.append('*!*@%s' % get_host(mask))
+            maskList = pattern_match_list(pattern, users.hostmasks(sorted=True, all=True))
+            if maskList:
+                banmask_cmpl_list = [ pattern ]
+            
+            def add(mask):
+                if mask not in banmask_cmpl_list:
+                    banmask_cmpl_list.append(mask)
+
+            for mask in maskList:
+                #debug('ban_mask_cmpl: Generating variations for %s', mask)
+                host = get_host(mask)
+                add('*!*@%s' % host)
+                if host.startswith('gateway/web/freenode'):
+                    ip = host.partition('.')[2]
+                    if is_ip(ip):
+                        add('*!*@*%s' % ip)
+                elif is_ip(host):
+                    user = get_user(mask)
+                    iprange = host.rsplit('.', 2)[0]
+                    add('*!%s@%s.*' % (user, iprange))
+                    add('*!*@%s.*' % iprange)
+            #debug('ban_mask_cmpl: variations: %s', banmask_cmpl_list)
         if pattern in banmask_cmpl_list:
             i = banmask_cmpl_list.index(pattern) + 1
             if i == len(banmask_cmpl_list):
@@ -2560,7 +2579,7 @@ def ban_mask_cmpl(users, data, completion_item, buffer, completion):
             weechat.buffer_set(buffer, 'input_pos', str(len(input)))
             return WEECHAT_RC_OK
 
-    banmask_cmpl_list = None
+    banmask_cmpl_list = []
 
     if pattern[-1] != '*':
         search_pattern = pattern + '*'
