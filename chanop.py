@@ -2114,8 +2114,12 @@ class ShowBans(CommandChanop):
     padding = 40
 
     def parser(self, args):
-        self.server = weechat.buffer_get_string(self.buffer, 'localvar_server')
-        self.channel = weechat.buffer_get_string(self.buffer, 'localvar_channel')
+        server = weechat.buffer_get_string(self.buffer, 'localvar_server')
+        channel = weechat.buffer_get_string(self.buffer, 'localvar_channel')
+        if server:
+            self.server = server
+        if channel:
+            self.channel = channel
         type, _, args = args.partition(' ')
         if not type:
             raise ValueError, 'missing argument'
@@ -2129,7 +2133,9 @@ class ShowBans(CommandChanop):
                 self.type = type
         except KeyError:
             raise ValueError, 'incorrect argument'
-        self.args = args.strip()
+        args = args.strip()
+        if args:
+            self.channel = args
 
     def get_buffer(self):
         if self.showbuffer:
@@ -2183,15 +2189,12 @@ class ShowBans(CommandChanop):
             self.prnt("\n%sNetwork '%s' doesn't support %s" %(color_channel, self.server,
                 self.type))
             return
-        if self.args:
-            key = (self.server, self.args)
-        else:
-            key = (self.server, self.channel)
+        key = (self.server, self.channel)
         try:
             masklist = self.maskCache[key]
         except KeyError:
             if not (weechat.info_get('irc_is_channel', key[1]) and self.server):
-                error("Command /%s must be used in an IRC buffer." %self.command)
+                error("Command /%s must be used in an IRC buffer." % self.command)
                 return
             masklist = None
         self.clear()
