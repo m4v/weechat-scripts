@@ -76,10 +76,6 @@
 #          "/msg q op $channel $nick"
 #     (for quakenet only)
 #
-#   * plugins.var.python.chanop.deop_command:
-#     Same as op_command but for deop.
-#     It accepts the special vars $server, $channel and $nick
-#
 #   * plugins.var.python.chanop.autodeop:
 #     Enables auto-deop'ing after using any of the ban or kick commands.
 #     Note that if you got op manually (like with /oop) then the script won't
@@ -112,6 +108,9 @@
 #     If enabled, it will use "/quote remove" command instead of /kick, enable
 #     it only in networks that support it, like freenode.
 #     Valid values: 'on', 'off' Default: 'off'
+#
+#     Example:
+#     /set plugins.var.python.chanop.enable_remove.freenode on
 #
 #   * plugins.var.python.chanop.display_affected:
 #     Whenever a new ban is set, chanop will show the users affected by it.
@@ -173,7 +172,8 @@
 #     Same as chanop_nicks, but with the usename part of the hostmask.
 #
 #   * chanop_hosts (not used by chanop)
-#     Same as chanop_nicks, but with the host part of the hostmask.
+#     Same as chanop_nicks, but with the host part of the hostmask (includes previously used
+#     hostnames).
 #
 #
 #   TODO
@@ -189,6 +189,14 @@
 #
 #
 #   History:
+#   DATE
+#   version 0.3-dev:
+#   * cycle between different banmasks in /oban /oquiet commands.
+#   * added pop-up bar for show information.
+#
+#   2010-12-23
+#   version 0.2.2: bug fixes.
+#
 #   2010-10-28
 #   version 0.2.1: refactoring mostly
 #   * deop_command option removed
@@ -235,7 +243,7 @@
 
 SCRIPT_NAME    = "chanop"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.2.1"
+SCRIPT_VERSION = "0.3-dev"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Helper script for IRC Channel Operators"
 
