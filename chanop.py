@@ -189,6 +189,9 @@
 #
 #
 #   History:
+#   2010-12-23
+#   version 0.2.2: bug fixes.
+#
 #   2010-10-28
 #   version 0.2.1: refactoring mostly
 #   * deop_command option removed
@@ -235,7 +238,7 @@
 
 SCRIPT_NAME    = "chanop"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.2.1"
+SCRIPT_VERSION = "0.2.2"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Helper script for IRC Channel Operators"
 
