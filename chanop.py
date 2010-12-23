@@ -545,14 +545,15 @@ class Infolist(object):
             'flags'       :'integer',
             'prefixes'    :'string',
             'is_connected':'integer',
+            'buffer'      :'pointer',
             }
 
     _use_flags = False
 
-    def __init__(self, name, args=''):
+    def __init__(self, name, args='', pointer=''):
         self.cursor = 0
         #debug('Generating infolist %r %r', name, args)
-        self.pointer = weechat.infolist_get(name, '', args)
+        self.pointer = weechat.infolist_get(name, pointer, args)
         if self.pointer == '':
             raise Exception("Infolist initialising failed (name:'%s' args:'%s')" %(name, args))
 
@@ -2745,6 +2746,83 @@ if __name__ == '__main__' and import_ok and \
 
     # run our cleaner function every 30 min.
     weechat.hook_timer(30*60*1000, 0, 0, 'garbage_collector_cb', '')
+
+    def timeit(f):
+        from time import time
+        def func(*args, **kwargs):
+            t1 = time()
+            r = f(*args, **kwargs)
+            t2 = time()
+            debug('time: %s %f', f.func_name, t2-t1)
+            return r
+        return func
+
+    @catchExceptions
+    #@timeit
+    def ban_matches_cb(data, item, window):
+        #debug('ban matches item: %s %s', item, window)
+        window = Infolist('window', pointer=window)
+        window.next()
+        buffer = window['buffer']
+        input = weechat.buffer_get_string(buffer, 'input')
+        command, _, content = input.partition(' ')
+
+        def affects(msg, L=None):
+            if L:
+                s = ' '.join([ get_nick(h) for h in L ])
+            else:
+                s = ''
+            return '%s affects: %s%s' % (command, msg, s)
+
+        channel = weechat.buffer_get_string(buffer, 'localvar_channel')
+        if not channel or not is_channel(channel):
+            return affects('(not an IRC channel)')
+
+        server = weechat.buffer_get_string(buffer, 'localvar_server')
+        users = userCache[server, channel]
+        content = content.split()
+        masks = [ mask for mask in content if is_hostmask(mask) or is_nick(mask) ]
+        if not masks:
+            return affects('(no valid user mask or nick)')
+
+        #debug('ban matches item: %s', masks)
+
+        affected = []
+        hostmasks = users.hostmasks(all=True)
+        for mask in masks:
+            if is_hostmask(mask):
+                affected.extend(hostmask_match_list(mask, hostmasks))
+            elif mask in users:
+                affected.append(mask)
+        #debug('ban matches item: %s', affected)
+
+        if not affected:
+            return affects('(nobody)')
+        return affects('(%s) ' % len(affected), affected)
+
+    @catchExceptions
+    #@timeit
+    def input_content_cb(data, modifier, modifier_data, string):
+        #debug('input_content_cb: %s %s %r', modifier, modifier_data, string)
+        bar = weechat.bar_search('chanop_bar')
+        if not bar:
+            return string
+
+        if string:
+            command, _, content = string.partition(' ')
+            if content and command in ('/oban', '/oquiet'):
+                weechat.bar_set(bar, 'hidden', 'off')
+                weechat.bar_item_update('chanop_ban_matches')
+                return string
+
+        weechat.bar_set(bar, 'hidden', 'on')
+        return string
+
+    weechat.bar_item_new('chanop_ban_matches', 'ban_matches_cb', '')
+    weechat.bar_new('chanop_bar', 'on', '0', 'window', 'active', 'bottom', 'horizontal',
+            'vertical', '0', '1', 'default', 'cyan', 'blue', 'off', 'chanop_ban_matches') 
+
+    weechat.hook_modifier('input_text_content', 'input_content_cb', '')
 
     weechat.hook_info("chanop_hostmask_from_nick",
             "Returns nick's hostmask if is known. Returns '' otherwise.",
