@@ -1409,7 +1409,7 @@ class UserList(ServerUserList):
     def __init__(self, server, channel):
         self.server = server
         self.channel = channel
-        self._purge_list = {}
+        self._purge_list = CaseInsensibleDict()
         self._purge_time = 3600*2 # 2 hours
 
     def __setitem__(self, nick, user):
