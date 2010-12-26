@@ -2418,6 +2418,14 @@ def mode_cb(server, channel, nick, opHostmask, signal_data):
 # User cache
 @signal_parse
 def join_cb(server, channel, nick, hostmask, signal_data):
+    if weechat.info_get('irc_nick', server) == nick:
+        # we're joining the channel, the cache is no longer valid
+        #userCache.generateCache(server, channel)
+        try:
+            del userCache[server, channel]
+        except KeyError:
+            pass
+        return WEECHAT_RC_OK
     user = userCache.remember(server, nick, hostmask)
     userCache[server, channel][nick] = user
     return WEECHAT_RC_OK
