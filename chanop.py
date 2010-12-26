@@ -441,7 +441,7 @@ def hostmaskPattern(f):
         if is_hostmask(pattern):
             pattern, _, channel = pattern.partition('$') # nick!user@host$#channel
             return f(pattern, arg)
-        return False
+        return ''
     return checkPattern
 
 match_string = lambda r, s: r.match(s) is not None
