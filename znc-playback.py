@@ -50,7 +50,7 @@ SCRIPT_DESC    = "I'm a script!"
 # Config 
 
 settings = {
-        'send_signals' : 'on',
+        'send_signals' : 'off',
         'znc_timestamp': '[%H:%M]',
         }
 
@@ -89,6 +89,11 @@ global buffer_playback
 buffer_playback = {}
 
 def playback_cb(data, modifier, modifier_data, string):
+    global COLOR_RESET, COLOR_CHAT_DELIMITERS, COLOR_CHAT_NICK, COLOR_CHAT_HOST, \
+           COLOR_CHAT_CHANNEL, COLOR_CHAT, COLOR_MESSAGE_JOIN, COLOR_MESSAGE_QUIT, \
+           COLOR_REASON_QUIT
+    global send_signals, znc_timestamp 
+
 # old weechat 0.3.3
 #    if 'irc_privmsg' not in modifier_data:
 #        return string
@@ -105,8 +110,9 @@ def playback_cb(data, modifier, modifier_data, string):
     if 'nick_***' in tags:
         line = string.partition('\t')[2]
         if line == 'Buffer Playback...':
-            # TODO load here all config options.
             debug("* buffer playback for %s", buffer_name)
+            if not buffer_playback:
+                get_config_options()
             buffer_playback[buffer_name] = True
         elif line == 'Playback Complete.':
             debug("* end of playback for %s", buffer_name)
@@ -129,7 +135,7 @@ def playback_cb(data, modifier, modifier_data, string):
         timestamp, s, line = line.partition(' ')
 
     try:
-        t = time.strptime(timestamp, '[%H:%M]') # XXX this should be configurable
+        t = time.strptime(timestamp, znc_timestamp)
     except ValueError, e:
         # bad time format.
         error(e)
@@ -275,14 +281,13 @@ def playback_cb(data, modifier, modifier_data, string):
         prnt_date_tags(buffer, time_epoch, tags, s)
         return ''
 
-### Main ###
-if __name__ == '__main__' and import_ok and \
-        weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
-        SCRIPT_DESC, '', ''):
+def get_config_options():
+    global COLOR_RESET, COLOR_CHAT_DELIMITERS, COLOR_CHAT_NICK, COLOR_CHAT_HOST, \
+           COLOR_CHAT_CHANNEL, COLOR_CHAT, COLOR_MESSAGE_JOIN, COLOR_MESSAGE_QUIT, \
+           COLOR_REASON_QUIT
+    global send_signals, znc_timestamp 
 
-    # colors
     config_get_string = lambda s: weechat.config_string(weechat.config_get(s))
-
     COLOR_RESET           = weechat.color('reset')
     COLOR_CHAT_DELIMITERS = weechat.color('chat_delimiters')
     COLOR_CHAT_NICK       = weechat.color('chat_nick')
@@ -292,8 +297,18 @@ if __name__ == '__main__' and import_ok and \
     COLOR_MESSAGE_JOIN    = weechat.color(config_get_string('irc.color.message_join'))
     COLOR_MESSAGE_QUIT    = weechat.color(config_get_string('irc.color.message_quit'))
     COLOR_REASON_QUIT     = weechat.color(config_get_string('irc.color.reason_quit'))
+        
+    send_signals = get_config_boolean('send_signals')
+    znc_timestamp = weechat.config_get_plugin('znc_timestamp')
 
 
+### Main ###
+if __name__ == '__main__' and import_ok and \
+        weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
+        SCRIPT_DESC, '', ''):
+
+    get_config_options()
+    
     # pretty [SCRIPT_NAME]
     script_nick = '%s[%s%s%s]%s' % (COLOR_CHAT_DELIMITERS, 
                                     COLOR_CHAT_NICK,
