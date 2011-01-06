@@ -79,12 +79,13 @@ SCRIPT_COMMAND = "country"
 
 try:
     import weechat
-    WEECHAT_RC_OK = weechat.WEECHAT_RC_OK
+    from weechat import WEECHAT_RC_OK, prnt
     import_ok = True
 except ImportError:
     print "This script must be run under WeeChat."
     print "Get WeeChat now at: http://www.weechat.org/"
     import_ok = False
+
 try:
     import pytz, datetime
     pytz_module = True
@@ -98,7 +99,10 @@ database_url = 'http://geolite.maxmind.com/download/geoip/database/GeoIPCountryC
 database_file = 'GeoIPCountryWhois.csv'
 
 ### config
-settings = {'show_in_whois': 'on', 'show_localtime': 'on'}
+settings = {
+        'show_in_whois': 'on', 
+        'show_localtime': 'on'
+        }
 
 boolDict = {'on':True, 'off':False}
 def get_config_boolean(config):
@@ -112,29 +116,43 @@ def get_config_boolean(config):
         return boolDict[default]
 
 ### messages
-def say(s, prefix=SCRIPT_NAME, buffer=''):
-    weechat.prnt(buffer, '%s: %s' %(prefix, s))
 
-def error(s, prefix=SCRIPT_NAME, buffer=''):
-    weechat.prnt(buffer, '%s%s: %s' %(weechat.prefix('error'), prefix, s))
+script_nick = SCRIPT_NAME
+def error(s, buffer=''):
+    """Error msg"""
+    prnt(buffer, '%s%s %s' % (weechat.prefix('error'), script_nick, s))
+    if weechat.config_get_plugin('debug'):
+        import traceback
+        if traceback.sys.exc_type:
+            trace = traceback.format_exc()
+            prnt('', trace)
 
-def debug(s, prefix='debug', buffer=''):
-    weechat.prnt(buffer, '%s: %s' %(prefix, s))
+def say(s, buffer=''):
+    """normal msg"""
+    prnt(buffer, '%s\t%s' % (script_nick, s))
 
 def whois(nick, string, buffer=''):
     """Message formatted like a whois reply."""
     prefix_network = weechat.prefix('network')
     color_delimiter = weechat.color('chat_delimiters')
     color_nick = weechat.color('chat_nick')
-    weechat.prnt(buffer, '%s%s[%s%s%s] %s' %(prefix_network, color_delimiter, color_nick, nick,
-        color_delimiter, string))
+    prnt(buffer, '%s%s[%s%s%s] %s' % (prefix_network, 
+                                      color_delimiter, 
+                                      color_nick, 
+                                      nick,
+                                      color_delimiter, 
+                                      string))
 
 def string_country(country, code):
     """Format for country info string."""
     color_delimiter = weechat.color('chat_delimiters')
     color_chat = weechat.color('chat')
-    return '%s%s %s(%s%s%s)' %(color_chat, country, color_delimiter,
-            color_chat, code, color_delimiter)
+    return '%s%s %s(%s%s%s)' % (color_chat, 
+                                country,
+                                color_delimiter,
+                                color_chat,
+                                code,
+                                color_delimiter)
 
 def string_time(dt):
     """Format for local time info string."""
@@ -143,8 +161,12 @@ def string_time(dt):
     color_chat = weechat.color('chat')
     date = dt.strftime('%x %X %Z')
     tz = dt.strftime('UTC%z')
-    return '%s%s %s(%s%s%s)' %(color_chat, date, color_delimiter,
-            color_chat, tz, color_delimiter)
+    return '%s%s %s(%s%s%s)' % (color_chat,
+                                date,
+                                color_delimiter,
+                                color_chat,
+                                tz,
+                                color_delimiter)
 
 ### functions
 def get_script_dir():
@@ -200,8 +222,11 @@ def update_database():
             "       fd.close()\n"
             "   os.remove(temp)\n"
             "except Exception, e:\n"
-            "   print >>sys.stderr, e\n\"" %{'url':database_url, 'script_dir':script_dir,
-                'ip_database':ip_database, 'database_file':database_file},
+            "   print >>sys.stderr, e\n\"" % {'url':database_url,
+                                              'script_dir':script_dir,
+                                              'ip_database':ip_database,
+                                              'database_file':database_file
+                                              },
             timeout, 'update_database_cb', '')
 
 process_stderr = ''
@@ -415,7 +440,7 @@ def cmd_country(data, buffer, args):
     else:
         if not check_database():
             error("IP database not found. You must download a database with '/country update' before "
-                    "using this script.", buffer=buffer)
+                    "using this script.", buffer)
             return WEECHAT_RC_OK
         #check if is a nick
         userhost = get_userhost_from_nick(buffer, args)
@@ -446,24 +471,59 @@ def whois_cb(data, signal, signal_data):
 ### main
 if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
         SCRIPT_DESC, '', ''):
+
+    # colors
+    color_delimiter = weechat.color('chat_delimiters')
+    color_chat_nick = weechat.color('chat_nick')
+    color_reset     = weechat.color('reset')
+
+    # pretty [SCRIPT_NAME]
+    script_nick = '%s[%s%s%s]%s' % (color_delimiter,
+                                    color_chat_nick,
+                                    SCRIPT_NAME,
+                                    color_delimiter,
+                                    color_reset)
+
     weechat.hook_signal('*,irc_in2_311', 'whois_cb', '') # /whois
     weechat.hook_signal('*,irc_in2_314', 'whois_cb', '') # /whowas
     weechat.hook_command('country', cmd_country.__doc__, 'update | (nick|ip|uri)',
             "       update: Downloads/updates ip database with country codes.\n"
             "nick, ip, uri: Gets country and local time for a given ip, domain or nick.",
             'update||%(nick)', 'cmd_country', '')
+
     # settings
     for opt, val in settings.iteritems():
         if not weechat.config_is_set_plugin(opt):
             weechat.config_set_plugin(opt, val)
+
     if not check_database():
         say("IP database not found. You must download a database with '/country update' before "
                 "using this script.")
+
     if not pytz_module and get_config_boolean('show_localtime'):
         error(
             "pytz module isn't installed, local time information is DISABLED. "
             "Get it from http://pytz.sourceforge.net or from your distro packages "
             "(python-tz in Ubuntu/Debian).")
         weechat.config_set_plugin('show_localtime', 'off')
+
+    # -------------------------------------------------------------------------
+    # Debug
+
+    if weechat.config_get_plugin('debug'):
+        try:
+            # custom debug module I use, allows me to inspect script's objects.
+            import pybuffer
+            debug = pybuffer.debugBuffer(globals(), '%s_debug' % SCRIPT_NAME)
+        except:
+            def debug(s, *args):
+                if not isinstance(s, basestring):
+                    s = str(s)
+                if args:
+                    s = s %args
+                prnt('', '%s\t%s' % (script_nick, s))
+    else:
+        def debug(*args):
+            pass
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
