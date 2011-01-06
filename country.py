@@ -281,11 +281,6 @@ def get_ip_process_cb(data, command, rc, stdout, stderr):
         hook_get_ip = ''
     return WEECHAT_RC_OK
 
-_valid_userhost = re.compile(r'\S+@\S+')
-def is_userhost(s):
-    """Returns whether or not the string s is user@host format"""
-    return _valid_userhost.match(s) is not None
-
 def is_ip(s):
     """Returns whether or not a given string is an IPV4 address."""
     try:
@@ -299,7 +294,10 @@ def is_domain(s):
     Checks if 's' is a valid domain."""
     if not s or len(s) > 255:
         return False
-    for label in s.split('.'):
+    labels = s.split('.')
+    if len(labels) < 2:
+        return False
+    for label in labels:
         if not label or len(label) > 63 \
                 or not _valid_label.match(label):
             return False
@@ -331,14 +329,29 @@ def get_userhost_from_nick(buffer, nick):
                 weechat.infolist_free(infolist)
     return ''
 
-def get_host_from_userhost(userhost):
-    user, host = userhost.split('@')
-    if not is_domain(host):
-        user = user[-8:] # only interested in the last 8 chars
+def get_ip_from_userhost(user, host):
+    ip = get_ip_from_host(host)
+    if ip:
+        return ip
+    ip = get_ip_from_user(user)
+    if ip:
+        return ip
+    return host
+
+def get_ip_from_host(host):
+    if is_domain(host):
+        return host
+    else:
+        if host.startswith('gateway/web/freenode/ip.'):
+            ip = host.split('.', 1)[1]
+            return ip
+
+def get_ip_from_user(user):
+    user = user[-8:] # only interested in the last 8 chars
+    if len(user) == 8:
         ip = hex_to_ip(user)
         if ip and is_ip(ip):
             return ip
-    return host
 
 def sum_ip(ip):
     """Converts the ip number from dot-decimal notation to decimal."""
@@ -413,7 +426,7 @@ def print_country(host, buffer, quiet=False, broken=False, nick=''):
         return
     else:
         # probably a cloak or ipv6
-        code, country = '--', 'cloaked'
+        code, country = unknown
     reply_country(code, country)
 
 ### timezone
@@ -444,14 +457,10 @@ def cmd_country(data, buffer, args):
             return WEECHAT_RC_OK
         #check if is a nick
         userhost = get_userhost_from_nick(buffer, args)
-        if not userhost:
-            ip = hex_to_ip(args)
-            if is_ip(ip):
-                host = ip
-            else:
-                host = args
+        if userhost:
+            host = get_ip_from_userhost(*userhost.split('@'))
         else:
-            host = get_host_from_userhost(userhost)
+            host = get_ip_from_userhost(args, args)
         print_country(host, buffer)
     return WEECHAT_RC_OK
 
@@ -464,7 +473,7 @@ def whois_cb(data, signal, signal_data):
     server = signal[:signal.find(',')]
     #debug('%s | %s | %s' %(data, signal, signal_data))
     buffer = weechat.buffer_search('irc', 'server.%s' %server)
-    host = get_host_from_userhost('%s@%s' %(user, host))
+    host = get_ip_from_userhost(user, host)
     print_country(host, buffer, quiet=True, broken=True, nick=nick)
     return WEECHAT_RC_OK
 
