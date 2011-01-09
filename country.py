@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 ###
-# Copyright (c) 2009-2010 by Elián Hanisch <lambdae2@gmail.com>
+# Copyright (c) 2009-2011 by Elián Hanisch <lambdae2@gmail.com>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -47,6 +47,9 @@
 #
 #
 #   History:
+#   2011-01-09
+#   version 0.4.1: bug fixes
+#
 #   2010-11-15
 #   version 0.4:
 #   * support for users using webchat (at least in freenode)
@@ -72,7 +75,7 @@
 
 SCRIPT_NAME    = "country"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.4"
+SCRIPT_VERSION = "0.4.1"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Prints user's country and local time in whois replies"
 SCRIPT_COMMAND = "country"

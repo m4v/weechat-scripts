@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 ###
-# Copyright (c) 2009-2010 by Elián Hanisch <lambdae2@gmail.com>
+# Copyright (c) 2009-2011 by Elián Hanisch <lambdae2@gmail.com>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -193,6 +193,9 @@
 #   version 0.3-dev:
 #   * cycle between different banmasks in /oban /oquiet commands.
 #   * added pop-up bar for show information.
+#
+#   2011-01-09
+#   version 0.2.3: bug fixes.
 #
 #   2010-12-23
 #   version 0.2.2: bug fixes.
