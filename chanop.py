@@ -2839,11 +2839,11 @@ if __name__ == '__main__' and import_ok and \
         weechat.bar_set(bar, 'hidden', 'on')
         return string
 
-    weechat.bar_item_new('chanop_ban_matches', 'ban_matches_cb', '')
-    weechat.bar_new('chanop_bar', 'on', '0', 'window', 'active', 'bottom', 'horizontal',
-            'vertical', '0', '1', 'default', 'cyan', 'blue', 'off', 'chanop_ban_matches') 
-
-    weechat.hook_modifier('input_text_content', 'input_content_cb', '')
+#    weechat.bar_item_new('chanop_ban_matches', 'ban_matches_cb', '')
+#    weechat.bar_new('chanop_bar', 'on', '0', 'window', 'active', 'bottom', 'horizontal',
+#            'vertical', '0', '1', 'default', 'cyan', 'blue', 'off', 'chanop_ban_matches') 
+#
+#    weechat.hook_modifier('input_text_content', 'input_content_cb', '')
 
     weechat.hook_info("chanop_hostmask_from_nick",
             "Returns nick's hostmask if is known. Returns '' otherwise.",
