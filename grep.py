@@ -619,19 +619,28 @@ def check_string(s, regexp, hilight='', exact=False):
     """Checks 's' with a regexp and returns it if is a match."""
     if not regexp:
         return s
+
     elif exact:
         matchlist = regexp.findall(s)
         if matchlist:
+            if isinstance(matchlist[0], tuple):
+                # join tuples (when there's more than one match group in regexp)
+                return [ ' '.join(t) for t in matchlist ]
             return matchlist
+
     elif hilight:
         matchlist = regexp.findall(s)
         if matchlist:
+            if isinstance(matchlist[0], tuple):
+                # flatten matchlist
+                matchlist = [ item for L in matchlist for item in L if item ]
             matchlist = list(set(matchlist)) # remove duplicates if any
             # apply hilight
             color_hilight, color_reset = hilight.split(',', 1)
             for m in matchlist:
-                s = s.replace(m, '%s%s%s' %(color_hilight, m, color_reset))
+                s = s.replace(m, '%s%s%s' % (color_hilight, m, color_reset))
             return s
+
     # no need for findall() here
     elif regexp.search(s):
         return s
