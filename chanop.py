@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 ###
-# Copyright (c) 2009-2010 by Elián Hanisch <lambdae2@gmail.com>
+# Copyright (c) 2009-2011 by Elián Hanisch <lambdae2@gmail.com>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -189,6 +189,9 @@
 #
 #
 #   History:
+#   2011-01-09
+#   version 0.2.3: bug fixes.
+#   
 #   2010-12-23
 #   version 0.2.2: bug fixes.
 #
@@ -238,7 +241,7 @@
 
 SCRIPT_NAME    = "chanop"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.2.2"
+SCRIPT_VERSION = "0.2.3"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Helper script for IRC Channel Operators"
 
