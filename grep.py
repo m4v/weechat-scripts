@@ -65,6 +65,9 @@
 #
 #
 #   History:
+#   2011-01-09
+#   version 0.7.2: bug fixes
+#
 #   2010-11-15
 #   version 0.7.1:
 #   * use TempFile so temporal files are guaranteed to be deleted.
@@ -185,7 +188,7 @@ except ImportError:
 
 SCRIPT_NAME    = "grep"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.7.2-dev"
+SCRIPT_VERSION = "0.7.2"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Search in buffers and logs"
 SCRIPT_COMMAND = "grep"
