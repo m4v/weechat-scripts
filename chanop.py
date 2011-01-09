@@ -2781,7 +2781,12 @@ if __name__ == '__main__' and import_ok and \
         window.next()
         buffer = window['buffer']
         input = weechat.buffer_get_string(buffer, 'input')
-        command, _, content = input.partition(' ')
+        if input:
+            command, _, content = input.partition(' ')
+            if not content or command not in ('/oban', '/oquiet'):
+                return ''
+        else:
+            return ''
 
         def affects(msg, L=None):
             if L:
