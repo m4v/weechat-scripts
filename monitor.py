@@ -38,7 +38,7 @@ SCRIPT_DESC    = "Monitor join messages and warn about known users."
 
 try:
     import weechat
-    from weechat import WEECHAT_RC_OK, prnt
+    from weechat import WEECHAT_RC_OK, prnt, prnt_date_tags
     import_ok = True
 except ImportError:
     print "This script must be run under WeeChat."
@@ -349,7 +349,7 @@ class Monitor(Command):
     def print_pattern_list(self):
         for mask in warnPatterns:
             say("%s (%s)" % (format_color(mask, color_chat_delimiter),
-                            weechat.config_get_plugin('mask.%s' % mask)), self.buffer)
+                            weechat.config_get_plugin('mask.%s' % mask)))
 
     def execute(self):
         if self.cmd == 'add':
@@ -380,10 +380,12 @@ def join_cb(server, channel, hostmask, signal_data):
     for mask in warnPatterns:
         match = weechat.info_get('chanop_pattern_match', '%s,%s' %(mask, hostmask))
         if match:
-            say("%s joined %s (%s \"%s\")" % (format_hostmask(hostmask),
-                                              format_color(channel, color_chat_channel),
-                                              format_color(mask, color_chat_delimiter),
-                                              weechat.config_get_plugin('mask.%s' % mask)))
+            prnt_date_tags('', 0, 'notify_highlight', 
+                "%s\t%s joined %s (%s \"%s\")" % (script_nick, 
+                                                 format_hostmask(hostmask),
+                                                 format_color(channel, color_chat_channel),
+                                                 format_color(mask, color_chat_delimiter),
+                                                 weechat.config_get_plugin('mask.%s' % mask)))
             break
     return WEECHAT_RC_OK
 
