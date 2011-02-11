@@ -27,6 +27,18 @@
 #   Commands (see detailed help with /help in WeeChat):
 #   * /warn: Manages warning patterns.
 #
+#   Settings:
+#   * plugins.var.python.monitor.warning_buffer:
+#     Defines where to print monitor warnings.
+#     Valid values: 'core', 'channel', 'current' Default: 'core'
+#     
+#     core:    print in core buffer.
+#     channel: print in channel buffer (where the matching user joined)
+#     current: print in whatever buffer you're currently looking at.
+#
+#   * plugins.var.python.monitor.mask.*:
+#     Patterns.
+#
 ###
 
 SCRIPT_NAME    = "monitor"
