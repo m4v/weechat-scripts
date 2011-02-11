@@ -335,10 +335,14 @@ class Monitor(Command):
             self.print_pattern_list()
             raise NoArguments
         args = args.split()
-        cmd = args.pop(0)
-        mask = args.pop(0)
-        if cmd not in ('add', 'del'):
-            raise ArgumentError('bad command.')
+        try:
+            cmd = args.pop(0)
+            mask = args.pop(0)
+            if cmd not in ('add', 'del'):
+                raise Exception
+        except:
+            raise ArgumentError("please see /help warn.")
+
         self.cmd = cmd
         self.mask = mask
         if args:
