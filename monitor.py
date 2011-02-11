@@ -124,6 +124,22 @@ class CaseInsensibleSet(set):
         set.remove(self, self.normalize(v))
 
 # -----------------------------------------------------------------------------
+# Config Settings
+
+settings = {'warning_buffer': 'core'} 
+
+
+valid_strings = set(('core', 'channel', 'current'))
+def get_config_valid_string(config, valid_strings=valid_strings):
+    value = weechat.config_get_plugin(config)
+    if value not in valid_strings:
+        default = settings[config]
+        error("Error while fetching config '%s'. Using default value '%s'." % (config, default))
+        error("'%s' is an invalid value, allowed: %s." % (value, ', '.join(valid_strings)))
+        return default
+    return value
+
+# -----------------------------------------------------------------------------
 # WeeChat classes
 
 def callback(method):
@@ -384,7 +400,13 @@ def join_cb(server, channel, hostmask, signal_data):
     for mask in warnPatterns:
         match = weechat.info_get('chanop_pattern_match', '%s,%s' %(mask, hostmask))
         if match:
-            prnt_date_tags('', 0, 'notify_highlight', 
+            value = get_config_valid_string('warning_buffer')
+            buffer = ''
+            if value == 'channel':
+                buffer = weechat.buffer_search('irc', '%s.%s' % (server, channel))
+            elif value == 'current':
+                buffer = weechat.current_buffer()
+            prnt_date_tags(buffer, 0, 'notify_highlight', 
                 "%s\t%s joined %s (%s \"%s\")" % (script_nick, 
                                                  format_hostmask(hostmask),
                                                  format_color(channel, color_chat_channel),
@@ -441,8 +463,14 @@ if __name__ == '__main__' and import_ok and \
                                     color_chat_delimiter,
                                     color_reset)
 
+    # settings
+    for opt, val in settings.iteritems():
+        if not weechat.config_is_set_plugin(opt):
+            weechat.config_set_plugin(opt, val)
+
     # hook signals
     weechat.hook_signal('*,irc_in_join', 'join_cb', '')
+    weechat.hook_signal('*,irc_in_join_znc', 'join_cb', '')
     weechat.hook_signal('*,chanop_mode_*', 'banmask_cb', '')
 
     # hook config
