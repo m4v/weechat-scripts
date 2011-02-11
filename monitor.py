@@ -21,7 +21,7 @@
 #   Monitor join messages for warn about known users.
 #   This is mostly intended for get an early warning of known trolls.
 #
-#   Depends of script chanop.py for it to work. Any bans set in chanop's tracked
+#   If using chanop.py script, any bans set in chanop's tracked
 #   channels will be added to the warning list automatically.
 #
 #   Commands (see detailed help with /help in WeeChat):
@@ -44,6 +44,8 @@ except ImportError:
     print "This script must be run under WeeChat."
     print "Get WeeChat now at: http://www.weechat.org/"
     import_ok = False
+
+import re
 
 # -----------------------------------------------------------------------------
 # Print Utils
@@ -122,6 +124,40 @@ class CaseInsensibleSet(set):
 
     def remove(self, v):
         set.remove(self, self.normalize(v))
+
+# -----------------------------------------------------------------------------
+# Regexp matching
+ 
+_reCache = {}
+def cachedPattern(f):
+    """Use cached regexp object or compile a new one from pattern."""
+    def getRegexp(pattern, *arg):
+        try:
+            regexp = _reCache[pattern]
+        except KeyError:
+            s = '^'
+            for c in pattern:
+                if c == '*':
+                    s += '.*'
+                elif c == '?':
+                    s += '.'
+                elif c in '[{':
+                    s += r'[\[{]'
+                elif c in ']}':
+                    s += r'[\]}]'
+                elif c in '|\\':
+                    s += r'[|\\]'
+                else:
+                    s += re.escape(c)
+            s += '$'
+            regexp = re.compile(s, re.I)
+            _reCache[pattern] = regexp
+        return f(regexp, *arg)
+    return getRegexp
+
+@cachedPattern
+def pattern_match(regexp, string):
+    return regexp.match(string) is not None
 
 # -----------------------------------------------------------------------------
 # Config Settings
@@ -401,7 +437,7 @@ def signal_parse(f):
 @signal_parse
 def join_cb(server, channel, hostmask, signal_data):
     for mask in warnPatterns:
-        match = weechat.info_get('chanop_pattern_match', '%s,%s' %(mask, hostmask))
+        match = pattern_match(mask, hostmask)
         if match:
             value = get_config_valid_string('warning_buffer')
             buffer = ''
