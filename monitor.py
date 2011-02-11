@@ -426,7 +426,8 @@ def banmask_cb(data, signal, signal_data):
     mode = signal[-1]
     if mode == 'b' and mask not in warnPatterns:
         s = ' '.join(map(format_hostmask, users.split(',')))
-        comment = "Ban in %s by %s, affectd %s" % (channel, format_hostmask(op), s)
+        op_nick = weechat.info_get('irc_nick_from_host', op)
+        comment = "Ban in %s by %s, affected %s" % (channel, op_nick, s)
         comment = weechat.string_remove_color(comment, '')
         weechat.config_set_plugin('mask.%s' % mask, comment)
         warnPatterns.add(mask)
