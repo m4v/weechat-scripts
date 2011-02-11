@@ -342,9 +342,9 @@ warnPatterns = MonitorPatterns()
 
 class Monitor(Command):
     description, help = "Manages the list of warning patterns.", ""
-    usage = "[ ( add <pattern> [<comment>] | del <pattern> ) ]"
+    usage = "[ ( add <pattern> [<comment>] | del <pattern> [<pattern> ..]) ]"
     command = 'warn'
-    completion = 'add %(chanop_ban_mask)||del %(monitor_patterns)'
+    completion = 'add %(chanop_ban_mask)||del %(monitor_patterns)|%*'
 
     def parser(self, args):
         if not args:
@@ -353,18 +353,20 @@ class Monitor(Command):
         args = args.split()
         try:
             cmd = args.pop(0)
-            mask = args.pop(0)
-            if cmd not in ('add', 'del'):
+            if cmd not in ('add', 'del') or len(args) < 1:
                 raise Exception
         except:
             raise ArgumentError("please see /help warn.")
 
         self.cmd = cmd
-        self.mask = mask
-        if args:
-            self.comment = ' '.join(args)
+        if cmd == 'add':
+            self.mask = args.pop(0)
+            if args:
+                self.comment = ' '.join(args)
+            else:
+                self.comment = ''
         else:
-            self.comment = ''
+            self.mask = args
 
     def print_pattern_list(self):
         for mask in warnPatterns:
@@ -377,7 +379,8 @@ class Monitor(Command):
             # config_set_plugin doesn't trigger hook_config callback, bug?
             warnPatterns.add(self.mask)
         elif self.cmd == 'del':
-            weechat.config_unset_plugin('mask.%s' % self.mask)
+            for mask in self.mask:
+                weechat.config_unset_plugin('mask.%s' % mask)
 
 # -----------------------------------------------------------------------------
 # Script Callbacks
