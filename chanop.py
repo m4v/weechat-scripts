@@ -275,6 +275,8 @@ except ImportError:
 import getopt, re, string
 from time import time
 
+chars = string.maketrans('', '')
+
 ################
 ### Messages ###
 
@@ -2355,7 +2357,7 @@ def mode_cb(server, channel, nick, opHostmask, signal_data):
 
     # check if there are interesting modes
     servermodes = supported_modes(server)
-    s = modes.translate(None, '+-') # remove + and -
+    s = modes.translate(chars, '+-') # remove + and -
     if not set(servermodes).intersection(s):
         return WEECHAT_RC_OK
 
@@ -2383,7 +2385,7 @@ def mode_cb(server, channel, nick, opHostmask, signal_data):
     usermodes = ''.join(map(lambda c: c.isalpha() and c or '', prefix))
     chanmodes = chanmodes.split(',')
     # modes not supported by script, like +e +I
-    notsupported = chanmodes[0].translate(None, servermodes)
+    notsupported = chanmodes[0].translate(chars, servermodes)
     modes_with_args = chanmodes[1] + usermodes + notsupported
     modes_with_args_when_set = chanmodes[2]
     for c in modes:
