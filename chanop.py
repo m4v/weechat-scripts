@@ -189,6 +189,9 @@
 #
 #
 #   History:
+#   2011-02-02
+#   version 0.2.4: fix python 2.5 compatibility
+#
 #   2011-01-09
 #   version 0.2.3: bug fixes.
 #   
@@ -241,7 +244,7 @@
 
 SCRIPT_NAME    = "chanop"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.2.3"
+SCRIPT_VERSION = "0.2.4"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Helper script for IRC Channel Operators"
 
