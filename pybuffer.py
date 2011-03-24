@@ -85,6 +85,24 @@ except ImportError:
 import code, sys, traceback
 from fnmatch import fnmatch
 
+script_nick = SCRIPT_NAME
+def error(s, buffer=''):
+    """Error msg"""
+    prnt(buffer, '%s%s %s' % (weechat.prefix('error'), script_nick, s))
+    if weechat.config_get_plugin('debug'):
+        import traceback
+        if traceback.sys.exc_type:
+            trace = traceback.format_exc()
+            prnt('', trace)
+
+def catchExceptions(f):
+    def function(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except Exception, e:
+            error(e)
+    return function
+
 def callback(method):
     """This function will take a bound method or function and make it a callback."""
     # try to create a descriptive and unique name.
@@ -97,12 +115,14 @@ def callback(method):
             try:
                 inst = im_self.name
             except AttributeError:
-                raise Exception("Instance %s has no __name__ attribute" %im_self)
+                raise Exception("Instance of %s has no __name__ attribute" % type(im_self))
         cls = type(im_self).__name__
         name = '_'.join((cls, inst, func))
     except AttributeError:
         # not a bound method
         name = func
+
+    method = catchExceptions(method)
 
     # set our callback
     import __main__
