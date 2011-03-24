@@ -269,6 +269,9 @@ class StreamObject(object):
 
 class PythonBuffer(Buffer):
     _title = "Python Buffer: use search([pattern]) for a list of objects."
+    color_input = ''
+    color_exc = ''
+    color_call = ''
     def __init__(self, name, locals=None):
         Buffer.__init__(self, name)
         self.output = StreamObject(self)
@@ -327,6 +330,7 @@ class PythonBuffer(Buffer):
             self.prnt_lines(trace, prefix=self.color_exc)
         return WEECHAT_RC_OK
 
+
 def debugBuffer(globals, name='debugBuffer'):
     buffer = PythonBuffer(name, globals)
     buffer.create()
@@ -336,13 +340,18 @@ def debugBuffer(globals, name='debugBuffer'):
 class PyBufferCommand(Command):
     command = SCRIPT_NAME
     description = usage = help = ''
+    current_buffer = None
     def execute(self):
-        buffer = PythonBuffer(SCRIPT_NAME)
-        buffer.title("Use \"search([pattern])\" for search WeeChat API functions.")
-        # import weechat and its functions.
-        buffer.input('', '', 'import weechat')
-        buffer.input('', '', 'from weechat import *')
-        buffer.display()
+        if self.current_buffer is None:
+            buffer = PythonBuffer(SCRIPT_NAME)
+            buffer.title("Use \"search([pattern])\" for search WeeChat API functions.")
+            # import weechat and its functions.
+            buffer.input('', '', 'import weechat')
+            buffer.input('', '', 'from weechat import *')
+            buffer.display()
+            self.current_buffer = buffer
+        else:
+            self.current_buffer.display()
 
 
 if __name__ == '__main__' and import_ok and \
