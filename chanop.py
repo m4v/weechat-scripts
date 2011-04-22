@@ -729,6 +729,9 @@ class ChanopBuffers(object):
         self.buffer = buffer
         if buffer not in self._buffer:
             self._buffer[buffer] = BufferVariables(buffer)
+        else:
+            # update nick, it might have changed.
+            self.vars.nick = weechat.info_get('irc_nick', self.vars.server)
 
     @property
     def vars(self):
