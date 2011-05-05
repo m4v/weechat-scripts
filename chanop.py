@@ -1842,14 +1842,24 @@ class Ban(CommandWithOp):
     " -h  --host: Match hostname (*!*@host)\n"\
     " -n  --nick: Match nick     (nick!*@*)\n"\
     " -u  --user: Match username (*!user@*)\n"\
-    " -e --exact: Use exact hostmask. Can't be combined with other options.\n"\
+    " -e --exact: Use exact hostmask.\n"\
     "\n"\
     "If no mask options are supplied, configured defaults are used.\n"\
     " -o: Forces deop immediately (without configured delay).\n"\
     "\n"\
-    "Example:\n"\
+    "Completer:\n"\
+    "%(script)s will attempt to guess a complete banmask from current\n"\
+    "users when using <tab> in an incomplete banmask. Using <tab> in a\n"\
+    "complete banmask will generate variations of it. \n"\
+    "\n"\
+    "Examples:\n"\
     "/oban somebody --user --host\n"\
-    "  will ban with *!user@hostname mask.\n"
+    "  will ban with *!user@hostname mask.\n"\
+    "If channel has an user \"nick!~c0a80001@gateway/web/freenode/ip.192.168.0.1\":\n"\
+    " /oban nick!*@<tab>\n"\
+    " /oban nick!*@gateway/web/freenode/ip.192.168.0.1<tab>\n"\
+    " /oban *!*@gateway/web/freenode/ip.192.168.0.1<tab>\n"\
+    " /oban *!*@*192.168.0.1\n" % {'script': SCRIPT_NAME}
     command = 'oban'
     completion = '%(chanop_nicks)|%(chanop_ban_mask)|%*'
 
@@ -2599,6 +2609,7 @@ def ban_mask_cmpl(users, data, completion_item, buffer, completion):
                 #debug('ban_mask_cmpl: Generating variations for %s', mask)
                 host = get_host(mask)
                 add('*!*@%s' % host)
+                add('%s!*@%s' % (get_nick(mask), host))
                 if host.startswith('gateway/web/freenode'):
                     ip = host.partition('.')[2]
                     if is_ip(ip):
@@ -2609,6 +2620,7 @@ def ban_mask_cmpl(users, data, completion_item, buffer, completion):
                     add('*!%s@%s.*' % (user, iprange))
                     add('*!*@%s.*' % iprange)
             #debug('ban_mask_cmpl: variations: %s', banmask_cmpl_list)
+
         if pattern in banmask_cmpl_list:
             i = banmask_cmpl_list.index(pattern) + 1
             if i == len(banmask_cmpl_list):
@@ -2859,6 +2871,7 @@ if __name__ == '__main__' and import_ok and \
         weechat.bar_set(bar, 'hidden', 'on')
         return string
 
+# This is disabled, since it cause lots of slown downs.
 #    weechat.bar_item_new('chanop_ban_matches', 'ban_matches_cb', '')
 #    weechat.bar_new('chanop_bar', 'on', '0', 'window', 'active', 'bottom', 'horizontal',
 #            'vertical', '0', '1', 'default', 'cyan', 'blue', 'off', 'chanop_ban_matches') 
