@@ -794,8 +794,7 @@ class Message(ChanopBuffers):
             self.send(cmd)
 
     def send(self, cmd):
-        if weechat.config_get_plugin('debug'):
-            debug('sending: %r', cmd)
+        debug('sending: %r', cmd)
         weechat.command(self.buffer, cmd)
 
     def __repr__(self):
@@ -820,7 +819,7 @@ class IrcCommands(ChanopBuffers):
                 data = 'MODE %s +o %s' % (vars.channel, vars.nick)
                 signal = signal_data.split(None, 1)[1]
                 if signal == data:
-                    #debug('We got op')
+                    debug('+o confirmed')
                     # add this channel to our watchlist
                     config = 'watchlist.%s' % vars.server
                     channels = CaseInsensibleSet(get_config_list(config))
@@ -866,7 +865,7 @@ class IrcCommands(ChanopBuffers):
                 nick, host = string.rsplit(None, 1)[1].split('=')
                 nick, host = nick.strip(':*'), host[1:]
                 hostmask = '%s!%s' % (nick, host)
-                #debug('USERHOST: %s %s', nick, hostmask)
+                debug('USERHOST: %s %s', nick, hostmask)
                 userCache.remember(modifier_data, nick, hostmask)
                 weechat.unhook(vars.msgHook)
                 weechat.unhook(vars.msgTimeout)
@@ -1409,7 +1408,7 @@ class ServerUserList(CaseInsensibleDict):
         n = now()
         for nick, user in self.items():
             if user._channels < 1 and (n - user.seen) > self._purge_time:
-                #debug('purging user: %s' %user)
+                #debug('purging old user: %s' % nick)
                 del self[nick]
 
 
@@ -1424,11 +1423,13 @@ class UserList(ServerUserList):
         if nick not in self:
             user._channels += 1
         if nick in self._purge_list:
+            #debug('UserList: removing from purge list: %s', nick)
             del self._purge_list[nick]
         ServerUserList.__setitem__(self, nick, user)
 
     def part(self, nick):
         try:
+            #debug('UserList: adding to purge list: %s', nick)
             user = self[nick]
             self._purge_list[nick] = user
         except KeyError:
@@ -1472,6 +1473,7 @@ class UserList(ServerUserList):
         n = now()
         for nick, user in self._purge_list.items():
             if (n - user.seen) > self._purge_time:
+                #debug('UserList(%s, %s): forgeting about %s', self.server, self.channel, nick)
                 user._channels -= 1
                 try:
                     del self._purge_list[nick]
@@ -1487,7 +1489,7 @@ class UserCache(ServerChannelDict):
     _channels = CaseInsensibleSet()
 
     def generateCache(self, server, channel):
-        #debug('generateCache: %s %s', server, channel)
+        debug('generateCache: %s %s', server, channel)
         users = UserList(server, channel)
         try:
             infolist = nick_infolist(server, channel)
@@ -1535,6 +1537,7 @@ class UserCache(ServerChannelDict):
     def __delitem__(self, k):
         # when we delete a channel, we need to reduce user._channels count
         # so they can be purged later.
+        #debug('UserCache: forgeting about %s', k)
         for user in self[k].itervalues():
             user._channels -= 1
         ServerChannelDict.__delitem__(self, k)
@@ -1560,7 +1563,7 @@ class UserCache(ServerChannelDict):
         self._hook_who_end = weechat.hook_modifier(
                 'irc_in_315', callback(self._endWhoCallback), key)
 
-        #debug('WHO: %s', channel)
+        debug('WHO: %s', channel)
         buffer = weechat.buffer_search('irc', 'server.%s' %server)
         weechat.command(buffer, '/WHO %s' %channel)
 
@@ -1574,7 +1577,7 @@ class UserCache(ServerChannelDict):
 
         nick, user, host = args[7], args[4], args[5]
         hostmask = '%s!%s@%s' %(nick, user, host)
-        #debug('WHO: %s', hostmask)
+        debug('WHO: %s', hostmask, level=2)
         self.remember(server, nick, hostmask)
         return ''
 
@@ -1585,13 +1588,14 @@ class UserCache(ServerChannelDict):
         if key != data:
             return string
 
-        #debug('end WHO')
+        debug('WHO: end.')
         weechat.unhook(self._hook_who)
         weechat.unhook(self._hook_who_end)
         self._hook_who = self._hook_who_end = None
         return ''
 
     def purge(self):
+        #debug('UserCache purging...')
         ServerChannelDict.purge(self)
         for cache in self.servercache.itervalues():
             cache.purge()
@@ -2470,6 +2474,14 @@ def garbage_collector_cb(data, counter):
     """
     maskHandler.purge()
     userCache.purge()
+    
+    if weechat.config_get_plugin('debug'):
+        # extra check that everything is right.
+        for serv, chan in userCache:
+            for nick in [ nick['name'] for nick in nick_infolist(serv, chan) ]:
+                if nick not in userCache[serv, chan]:
+                    error('User cache out of sync, unknown nick. (%s)' % nick)
+
     return WEECHAT_RC_OK
 
 
@@ -2863,22 +2875,27 @@ if __name__ == '__main__' and import_ok and \
     # -------------------------------------------------------------------------
     # Debug
 
-    if weechat.config_get_plugin('debug'):
-        try:
-            # custom debug module I use, allows me to inspect script's objects.
-            import pybuffer
-            debug = pybuffer.debugBuffer(globals(), '%s_debug' % SCRIPT_NAME)
-        except:
-            def debug(s, *args):
-                if not isinstance(s, basestring):
-                    s = str(s)
-                if args:
-                    s = s %args
-                prnt('', '%s\t%s' % (script_nick, s))
-    else:
-        def debug(*args):
-            pass
+    def debugLvl(f):
+        def debug(s, *args, **kwargs):
+            level = kwargs.get('level', 1)
+            lvl = int(weechat.config_get_plugin('debug'))
+            if lvl and level <= lvl:
+                return f(s, *args)
+        return debug
 
+    try:
+        # custom debug module I use, allows me to inspect script's objects.
+        import pybuffer
+        debug = pybuffer.debugBuffer(globals(), '%s_debug' % SCRIPT_NAME)
+        debug = debugLvl(debug)
+    except:
+        @debugLvl
+        def debug(s, *args):
+            if not isinstance(s, basestring):
+                s = str(s)
+            if args:
+                s = s %args
+            prnt('', '%s\t%s' % (script_nick, s))
 
 
 
