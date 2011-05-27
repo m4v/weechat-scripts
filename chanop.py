@@ -446,9 +446,25 @@ def cachedPattern(f):
 def hostmaskPattern(f):
     """Check if pattern is for match a hostmask and remove ban forward if there's one."""
     def checkPattern(pattern, arg):
+        # XXX this needs a refactor
         if is_hostmask(pattern):
-            pattern, _, channel = pattern.partition('$') # nick!user@host$#channel
-            return f(pattern, arg)
+            # nick!user@host$#channel
+            if '$' in pattern:
+                pattern = pattern.partition('$')[0]
+            if isinstance(arg, list):
+                arg = [ s for s in arg if is_hostmask(s) ]
+            elif not is_hostmask(arg):
+                return ''
+
+            rt = f(pattern, arg)
+            # this doesn't match any mask in args with a channel forward
+            pattern += '$*'
+            if isinstance(arg, list):
+                rt.extend(f(pattern, arg))
+            elif not rt:
+                rt = f(pattern, arg)
+            return rt
+
         return ''
     return checkPattern
 
