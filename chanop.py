@@ -1262,6 +1262,7 @@ class MaskHandler(ServerChannelDict):
         def fetch(server, channel, execute=None):
             self.fetch(server, channel, mode, execute)
 
+        # XXX monkey punching is BAD!
         cache = MaskCache(mode)
         cache.fetch = fetch
 
@@ -1297,6 +1298,7 @@ class MaskHandler(ServerChannelDict):
             pass
         
         if not self.queue:
+            self.queue.append((server, channel, mode))
             self._fetch(server, channel, mode)
         elif (server, channel, mode) not in self.queue:
             self.queue.append((server, channel, mode))
@@ -1309,8 +1311,8 @@ class MaskHandler(ServerChannelDict):
         if not buffer:
             return
         cmd = '/mode %s %s' %(channel, mode)
-        #say('Fetching %s masks (+%s channelmode).' %(channel, mode))
         self._hide_msg = True
+        debug('fetching masks: %s', cmd)
         weechat.command(buffer, cmd)
 
     def _maskCallback(self, data, modifier, modifier_data, string):
@@ -1361,8 +1363,10 @@ class MaskHandler(ServerChannelDict):
                 return string
         finally:
             if self.queue:
-                next = self.queue.pop(0)
-                self._fetch(*next)
+                del self.queue[0]
+                if self.queue:
+                    next = self.queue[0]
+                    self._fetch(*next)
             else:
                 self._hide_msg = False
 
