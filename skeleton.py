@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 ###
-# Copyright (c) 2010 by Elián Hanisch <lambdae2@gmail.com>
+# Copyright (c) 2010-2011 by Elián Hanisch <lambdae2@gmail.com>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -31,7 +31,7 @@
 
 try:
     import weechat
-    WEECHAT_RC_OK = weechat.WEECHAT_RC_OK
+    from weechat import WEECHAT_RC_OK, prnt
     import_ok = True
 except ImportError:
     print "This script must be run under WeeChat."
@@ -43,42 +43,65 @@ SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
 SCRIPT_VERSION = "0.1-dev"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "I'm a script!"
-SCRIPT_COMMAND = "skeleton"
 
-### Config ###
 settings = {}
 
-### Messages ###
-def debug(s, prefix='', buffer=None):
-    """Debug msg"""
-    if not weechat.config_get_plugin('debug'): return
-    if buffer is None:
-        buffer_name = 'DEBUG_' + SCRIPT_NAME
-        buffer = weechat.buffer_search('python', buffer_name)
-        if not buffer:
-            buffer = weechat.buffer_new(buffer_name, '', '', '', '')
-            weechat.buffer_set(buffer, 'nicklist', '0')
-            weechat.buffer_set(buffer, 'time_for_each_line', '0')
-            weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
-    weechat.prnt(buffer, '%s\t%s' %(prefix, s))
+# -------------------------------------------------------------------------
+# Messages
 
-def error(s, prefix=None, buffer='', trace=''):
+script_nick = SCRIPT_NAME
+def error(s, buffer=''):
     """Error msg"""
-    prefix = prefix or script_nick
-    weechat.prnt(buffer, '%s%s %s' %(weechat.prefix('error'), prefix, s))
+    prnt(buffer, '%s%s %s' %(weechat.prefix('error'), script_nick, s))
     if weechat.config_get_plugin('debug'):
-        if not trace:
-            import traceback
-            if traceback.sys.exc_type:
-                trace = traceback.format_exc()
-        not trace or weechat.prnt('', trace)
+        import traceback
+        if traceback.sys.exc_type:
+            trace = traceback.format_exc()
+            prnt('', trace)
 
-def say(s, prefix=None, buffer=''):
+def say(s, buffer=''):
     """normal msg"""
-    prefix = prefix or script_nick
-    weechat.prnt(buffer, '%s\t%s' %(prefix, s))
+    prnt(buffer, '%s\t%s' %(script_nick, s))
 
-### Config functions and value validation ###
+# -------------------------------------------------------------------------
+# Utils
+
+def catchExceptions(f):
+    def function(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except Exception, e:
+            error(e)
+    return function
+
+def callback(method):
+    """This function will take a bound method or function and make it a callback."""
+    # try to create a descriptive and unique name.
+    func = method.func_name
+    try:
+        im_self = method.im_self
+        try:
+            inst = im_self.__name__
+        except AttributeError:
+            try:
+                inst = im_self.name
+            except AttributeError:
+                raise Exception("Instance of %s has no __name__ attribute" % type(im_self))
+        cls = type(im_self).__name__
+        name = '_'.join((cls, inst, func))
+    except AttributeError:
+        # not a bound method
+        name = func
+
+    method = catchExceptions(method)
+    # set our callback
+    import __main__
+    setattr(__main__, name, method)
+    return name
+
+# -------------------------------------------------------------------------
+# Config functions and value validation
+
 boolDict = {'on':True, 'off':False}
 def get_config_boolean(config):
     value = weechat.config_get_plugin(config)
@@ -112,26 +135,54 @@ def get_config_valid_string(config, valid_strings=valid_methods):
         return default
     return value
 
-### Main ###
+# -------------------------------------------------------------------------
+# Main
+
 if __name__ == '__main__' and import_ok and \
-        weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
+            weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
         SCRIPT_DESC, '', ''):
 
     # colors
-    color_delimiter   = weechat.color('chat_delimiters')
-    color_script_nick = weechat.color('chat_nick')
-    color_reset   = weechat.color('reset')
+    COLOR_RESET           = weechat.color('reset')
+    COLOR_CHAT_DELIMITERS = weechat.color('chat_delimiters')
+    COLOR_CHAT_NICK       = weechat.color('chat_nick')
 
     # pretty [SCRIPT_NAME]
-    script_nick = '%s[%s%s%s]%s' %(color_delimiter, color_script_nick, SCRIPT_NAME, color_delimiter,
-            color_reset)
+    script_nick = '%s[%s%s%s]%s' % (COLOR_CHAT_DELIMITERS,
+                                    COLOR_CHAT_NICK, 
+                                    SCRIPT_NAME, 
+                                    COLOR_CHAT_DELIMITERS,
+                                    COLOR_RESET)
 
     # settings
     for opt, val in settings.iteritems():
         if not weechat.config_is_set_plugin(opt):
             weechat.config_set_plugin(opt, val)
 
-    weechat.hook_command(SCRIPT_COMMAND, "desc" , "opts",
-            "help", '', 'command', '')
+    # -------------------------------------------------------------------------
+    # Debug
+
+    def debugLvl(f):
+        def debug(s, *args, **kwargs):
+            level = kwargs.get('level', 1)
+            lvl = weechat.config_get_plugin('debug')
+            if lvl.isdigit() and level <= int(lvl):
+                return f(s, *args)
+        return debug
+
+    try:
+        # custom debug module I use, allows me to inspect script's objects.
+        import pybuffer
+        debug = pybuffer.debugBuffer(globals(), '%s_debug' % SCRIPT_NAME)
+        debug = debugLvl(debug)
+    except:
+        @debugLvl
+        def debug(s, *args):
+            if not isinstance(s, basestring):
+                s = str(s)
+            if args:
+                s = s %args
+            prnt('', '%s\t%s' % (script_nick, s))
+
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
