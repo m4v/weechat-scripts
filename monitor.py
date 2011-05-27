@@ -59,6 +59,8 @@ except ImportError:
 
 import re
 import time
+import string
+from fnmatch import fnmatch
 
 # -----------------------------------------------------------------------------
 # Print Utils
@@ -92,8 +94,6 @@ def format_color(s, color):
 
 # -----------------------------------------------------------------------------
 # IRC String
-
-import string
 
 _rfc1459trans = string.maketrans(string.ascii_uppercase + r'\[]',
                                  string.ascii_lowercase + r'|{}')
@@ -175,7 +175,10 @@ def pattern_match(regexp, string):
 # -----------------------------------------------------------------------------
 # Config Settings
 
-settings = {'warning_buffer': 'core'} 
+settings = {
+        'warning_buffer': 'core',
+        'ignore_forwards_to': '##fix_your_connection',
+        } 
 
 
 valid_strings = set(('core', 'channel', 'current'))
@@ -386,6 +389,31 @@ class MonitorPatterns(CaseInsensibleSet):
 
 warnPatterns = MonitorPatterns()
 
+class Ignores(object):
+    def __init__(self, ignore_type):
+        self.ignore_type = ignore_type
+        self.ignores = []
+        self.exceptions = []
+        self._get_ignores()
+
+    def _get_ignores(self):
+        assert self.ignore_type is not None
+        ignores = weechat.config_get_plugin(self.ignore_type).split(',')
+        ignores = [ s.lower() for s in ignores if s ]
+        self.ignores = [ s for s in ignores if s[0] != '!' ]
+        self.exceptions = [ s[1:] for s in ignores if s[0] == '!' ]
+
+    # TODO use regexs
+    def __contains__(self, s):
+        s = s.lower()
+        for p in self.ignores:
+            if fnmatch(s, p):
+                for e in self.exceptions:
+                    if fnmatch(s, e):
+                        return False
+                return True
+        return False
+
 # -----------------------------------------------------------------------------
 # Script Commands
 
@@ -476,6 +504,10 @@ def banmask_cb(data, signal, signal_data):
 
     op, channel, mask, users = args
     mode = signal[-1]
+    if '$' in mask:
+        mask, forward = mask.split('$', 1)
+        if forward in ignoreForwards:
+            return WEECHAT_RC_OK
     if mode == 'b' and mask not in warnPatterns:
         s = ' '.join(map(format_hostmask, users.split(',')))
         op_nick = weechat.info_get('irc_nick_from_host', op)
@@ -488,6 +520,10 @@ def banmask_cb(data, signal, signal_data):
 def clear_warn_pattern(data, config, value):
     #debug('CONFIG: %s %s %s' % (data, config, value))
     warnPatterns.clear()
+    return WEECHAT_RC_OK
+
+def ignore_update(*args):
+    ignoreForwards._get_ignores()
     return WEECHAT_RC_OK
 
 def monitor_cmpl(data, completion_item, buffer, completion):
@@ -526,8 +562,11 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_signal('*,irc_in_join_znc', 'join_cb', '')
     weechat.hook_signal('*,chanop_mode_*', 'banmask_cb', '')
 
+    ignoreForwards = Ignores('ignore_forwards_to')
+
     # hook config
     weechat.hook_config('plugins.var.python.%s.mask.*' % SCRIPT_NAME, 'clear_warn_pattern', '')
+    weechat.hook_config('plugins.var.python.%s.ignore_forwards_to' % SCRIPT_NAME, 'ignore_update', '')
 
     # hook completer
     weechat.hook_completion('monitor_patterns', '', 'monitor_cmpl', '')
