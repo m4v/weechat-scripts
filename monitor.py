@@ -58,6 +58,7 @@ except ImportError:
     import_ok = False
 
 import re
+import time
 
 # -----------------------------------------------------------------------------
 # Print Utils
@@ -478,7 +479,7 @@ def banmask_cb(data, signal, signal_data):
     if mode == 'b' and mask not in warnPatterns:
         s = ' '.join(map(format_hostmask, users.split(',')))
         op_nick = weechat.info_get('irc_nick_from_host', op)
-        comment = "Ban in %s by %s, affected %s" % (channel, op_nick, s)
+        comment = "Ban in %s by %s, affected %s Date: %s" % (channel, op_nick, s, time.asctime())
         comment = weechat.string_remove_color(comment, '')
         weechat.config_set_plugin('mask.%s' % mask, comment)
         warnPatterns.add(mask)
