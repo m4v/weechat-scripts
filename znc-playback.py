@@ -176,8 +176,10 @@ def playback_cb(data, modifier, modifier_data, string):
                 channel,
                 COLOR_MESSAGE_JOIN)
 
-        #weechat.hook_signal_send("%s,irc_in_JOIN" %server, WEECHAT_HOOK_SIGNAL_STRING,
-        #        ":%s JOIN :%s" %(hostmask, channel))
+        if send_signals:
+            weechat.hook_signal_send(server + ",irc_in_JOIN_ZNC",
+                                     WEECHAT_HOOK_SIGNAL_STRING,
+                                     ":%s JOIN :%s" % (hostmask, channel))
 
     elif line == 'parted':
         # buffextras doesn't seem to send the part's reason.
@@ -196,8 +198,10 @@ def playback_cb(data, modifier, modifier_data, string):
                 channel,
                 COLOR_MESSAGE_QUIT)
 
-        #weechat.hook_signal_send("%s,irc_in_PART" %server, WEECHAT_HOOK_SIGNAL_STRING,
-        #        ":%s PART %s" %(hostmask, channel))
+        if send_signals:
+            weechat.hook_signal_send(server + ",irc_in_PART_ZNC",
+                                     WEECHAT_HOOK_SIGNAL_STRING,
+                                     ":%s PART %s" % (hostmask, channel))
 
     elif line.startswith('quit with message:'):
         reason = line[line.find('[') + 1:-1]
@@ -217,8 +221,10 @@ def playback_cb(data, modifier, modifier_data, string):
                 reason,
                 COLOR_CHAT_DELIMITERS)
 
-        #weechat.hook_signal_send("%s,irc_in_QUIT" %server, WEECHAT_HOOK_SIGNAL_STRING,
-        #        ":%s QUIT :%s" %(hostmask, reason))
+        if send_signals:
+            weechat.hook_signal_send(server + ",irc_in_QUIT_ZNC",
+                                     WEECHAT_HOOK_SIGNAL_STRING,
+                                     ":%s QUIT :%s" % (hostmask, reason))
 
     elif line.startswith('is now known as '):
         new_nick = line.rpartition(' ')[-1]
@@ -230,6 +236,10 @@ def playback_cb(data, modifier, modifier_data, string):
                 COLOR_CHAT_NICK,
                 new_nick,
                 COLOR_CHAT)
+        if send_signals:
+            weechat.hook_signal_send(server + ",irc_in_NICK_ZNC",
+                                     WEECHAT_HOOK_SIGNAL_STRING,
+                                     ":%s NICK :%s" % (hostmask, new_nick))
 
     elif line.startswith('set mode: '):
         modes = line[line.find(':') + 2:]
