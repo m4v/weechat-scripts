@@ -62,6 +62,8 @@
 #   * try to figure out why hook_process chokes in long outputs (using a tempfile as a
 #   workaround now)
 #   * possibly add option for defining time intervals
+#   * try to reduce memory usage when matching lots of lines
+#   * fix using "\" at the end of the regex
 #
 #
 #   History:
