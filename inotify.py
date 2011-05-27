@@ -601,6 +601,7 @@ Daemon:
 
     weechat.hook_print('', 'notify_message', '', 1, 'notify_msg', workaround)
     weechat.hook_print('', 'notify_private', '', 1, 'notify_msg', workaround)
+    weechat.hook_print('', 'notify_highlight', '', 1, 'notify_msg', workaround)
 
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
