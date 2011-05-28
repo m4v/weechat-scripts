@@ -28,32 +28,33 @@
 #   * /warn: Manages warning patterns.
 #
 #   Settings:
-#   * plugins.var.python.monitor.warning_buffer:
-#     Defines where to print monitor warnings.
-#     Valid values: 'core', 'channel', 'current' Default: 'core'
+#   * plugins.var.python.warn.warning_buffer:
+#     Defines where to print warnings.
+#     Valid values: 'core', 'channel', 'current', 'warn_buffer'
+#     Default: 'core'
 #     
 #     core:    print in core buffer.
 #     channel: print in channel buffer (where the matching user joined)
 #     current: print in whatever buffer you're currently looking at.
 #     warn_buffer: create a new buffer and print there.
 #
-#   * plugins.var.python.monitor.ignore_channels:
+#   * plugins.var.python.warn.ignore_channels:
 #     Comma separated list of patterns for ignore joins in matching channels.
 #     Wildcards '*', '?' can be used.
 #     An ignore exception can be added by prefixing '!' in the pattern.
 #
-#   * plugins.var.python.monitor.ignore_ban_forwards_to:
+#   * plugins.var.python.warn.ignore_ban_forwards_to:
 #     (only for patterns set by chanop.py when a ban is set)
 #     Comma separated list of patterns for ignore bans with a matching channel forward.
 #     Wildcards '*', '?' can be used.
 #     An ignore exception can be added by prefixing '!' in the pattern.
 #
-#   * plugins.var.python.monitor.mask.*:
+#   * plugins.var.python.warn.mask.*:
 #     Patterns.
 #
 ###
 
-SCRIPT_NAME    = "monitor"
+SCRIPT_NAME    = "warn"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
 SCRIPT_VERSION = "0.1"
 SCRIPT_LICENSE = "GPL3"
@@ -373,6 +374,65 @@ class Command(object):
             self._pointer = ''
             self._callback = ''
 
+class SimpleBuffer(object):
+    """WeeChat buffer. Only for displaying lines."""
+    _title = ''
+    def __init__(self, name):
+        assert name, "Buffer needs a name."
+        self.__name__ = name
+        self._pointer = ''
+
+    def _getBuffer(self):
+        # we need to always search the buffer, since there's no close callback we can't know if the
+        # buffer was closed.
+        buffer = weechat.buffer_search('python', self.__name__)
+        if not buffer:
+            buffer = self.create()
+        return buffer
+
+    def _create(self):
+        return weechat.buffer_new(self.__name__, '', '', '', '')
+
+    def create(self):
+        buffer = self._create()
+        if self._title:
+            weechat.buffer_set(buffer, 'title', self._title)
+        self._pointer = buffer
+        return buffer
+
+    def title(self, s):
+        self._title = s
+        weechat.buffer_set(self._getBuffer(), 'title', s)
+
+    def clear(self):
+        weechat.buffer_clear(self._getBuffer())
+
+    def __call__(self, s, *args, **kwargs):
+        self.prnt(s, *args, **kwargs)
+
+    def display(self):
+        weechat.buffer_set(self._getBuffer(), 'display', '1')
+
+    def error(self, s, *args):
+        self.prnt(s, prefix=weechat.prefix('error'))
+
+    def prnt(self, s, *args, **kwargs):
+        """Prints messages in buffer."""
+        buffer = self._getBuffer()
+        if not isinstance(s, basestring):
+            s = str(s)
+        if args:
+            s = s %args
+        try:
+            s = kwargs['prefix'] + s
+        except KeyError:
+            pass
+        prnt(buffer, s)
+
+    def prnt_lines(self, s, *args, **kwargs):
+        for line in s.splitlines():
+            self.prnt(line, *args, **kwargs)
+
 # -----------------------------------------------------------------------------
 # Script Classes
 
@@ -439,7 +499,7 @@ class Monitor(Command):
             " del: deletes one or several patterns.\n"\
             "list: list current patterns with <word> (either in pattern or comment)."
     command = 'warn'
-    completion = 'add %(chanop_ban_mask)||del %(monitor_patterns)|%*||list'
+    completion = 'add %(chanop_ban_mask)||del %(warn_patterns)|%*||list'
 
     def parser(self, args):
         if not args:
@@ -567,7 +627,7 @@ def ignore_update(*args):
     ignoreChannels._get_ignores()
     return WEECHAT_RC_OK
 
-def monitor_cmpl(data, completion_item, buffer, completion):
+def warn_cmpl(data, completion_item, buffer, completion):
     for mask in warnPatterns:
         weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_END)
     return WEECHAT_RC_OK
@@ -578,6 +638,14 @@ def monitor_cmpl(data, completion_item, buffer, completion):
 if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
         SCRIPT_DESC, '', ''):
+
+    # script name changed, so rename all options first. Uncomment when needed.
+    #old_name = 'monitor'
+    #infolist = Infolist('option', 'plugins.var.python.%s.*' % old_name)
+    #for opt in infolist:
+    #   name = opt['option_name'][len('python.%s.' % old_name):]
+    #   name = name.replace(old_name, SCRIPT_NAME, 1)
+    #   weechat.config_set_plugin(name, opt['value'])
 
     # colors
     color_chat_delimiter = weechat.color('chat_delimiters')
@@ -611,7 +679,7 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_config('plugins.var.python.%s.ignore_*' % SCRIPT_NAME, 'ignore_update', '')
 
     # hook completer
-    weechat.hook_completion('monitor_patterns', '', 'monitor_cmpl', '')
+    weechat.hook_completion('warn_patterns', '', 'warn_cmpl', '')
 
     # hook commands
     Monitor().hook()
