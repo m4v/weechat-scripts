@@ -35,6 +35,7 @@
 #     core:    print in core buffer.
 #     channel: print in channel buffer (where the matching user joined)
 #     current: print in whatever buffer you're currently looking at.
+#     warn_buffer: create a new buffer and print there.
 #
 #   * plugins.var.python.monitor.ignore_channels:
 #     Comma separated list of patterns for ignore joins in matching channels.
@@ -192,7 +193,7 @@ settings = {
         } 
 
 
-valid_strings = set(('core', 'channel', 'current'))
+valid_strings = set(('core', 'channel', 'current', 'warn_buffer'))
 def get_config_valid_string(config, valid_strings=valid_strings):
     value = weechat.config_get_plugin(config)
     if value not in valid_strings:
@@ -521,6 +522,10 @@ def join_cb(server, channel, hostmask, signal_data):
                 buffer = weechat.buffer_search('irc', '%s.%s' % (server, channel))
             elif value == 'current':
                 buffer = weechat.current_buffer()
+            elif value == 'warn_buffer':
+                buffer = weechat.buffer_search('python', SCRIPT_NAME) 
+                if not buffer:
+                    buffer = weechat.buffer_new(SCRIPT_NAME, '', '', '', '')
             prnt_date_tags(buffer, 0, 'notify_highlight', 
                 "%s\t%s joined %s (%s \"%s\")" % (script_nick, 
                                                  format_hostmask(hostmask),
