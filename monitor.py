@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 ###
-# Copyright (c) 2009-2010 by Elián Hanisch <lambdae2@gmail.com>
+# Copyright (c) 2009-2011 by Elián Hanisch <lambdae2@gmail.com>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -35,6 +35,17 @@
 #     core:    print in core buffer.
 #     channel: print in channel buffer (where the matching user joined)
 #     current: print in whatever buffer you're currently looking at.
+#
+#   * plugins.var.python.monitor.ignore_channels:
+#     Comma separated list of patterns for ignore joins in matching channels.
+#     Wildcards '*', '?' can be used.
+#     An ignore exception can be added by prefixing '!' in the pattern.
+#
+#   * plugins.var.python.monitor.ignore_ban_forwards_to:
+#     (only for patterns set by chanop.py when a ban is set)
+#     Comma separated list of patterns for ignore bans with a matching channel forward.
+#     Wildcards '*', '?' can be used.
+#     An ignore exception can be added by prefixing '!' in the pattern.
 #
 #   * plugins.var.python.monitor.mask.*:
 #     Patterns.
@@ -176,8 +187,9 @@ def pattern_match(regexp, string):
 # Config Settings
 
 settings = {
-        'warning_buffer': 'core',
-        'ignore_forwards_to': '##fix_your_connection',
+        'warning_buffer'        : 'core',
+        'ignore_ban_forwards_to': '##fix_your_connection',
+        'ignore_channels'       : '',
         } 
 
 
@@ -477,6 +489,9 @@ def signal_parse(f):
 
 @signal_parse
 def join_cb(server, channel, hostmask, signal_data):
+    if channel in ignoreChannels:
+        return WEECHAT_RC_OK
+
     for mask in warnPatterns:
         match = pattern_match(mask, hostmask)
         if match:
@@ -511,7 +526,7 @@ def banmask_cb(data, signal, signal_data):
     if mode == 'b' and mask not in warnPatterns:
         s = ' '.join(map(format_hostmask, users.split(',')))
         op_nick = weechat.info_get('irc_nick_from_host', op)
-        comment = "Ban in %s by %s, affected %s Date: %s" % (channel, op_nick, s, time.asctime())
+        comment = "Ban in %s by %s on %s, affected %s" % (channel, op_nick, time.asctime(), s)
         comment = weechat.string_remove_color(comment, '')
         weechat.config_set_plugin('mask.%s' % mask, comment)
         warnPatterns.add(mask)
@@ -524,6 +539,7 @@ def clear_warn_pattern(data, config, value):
 
 def ignore_update(*args):
     ignoreForwards._get_ignores()
+    ignoreChannels._get_ignores()
     return WEECHAT_RC_OK
 
 def monitor_cmpl(data, completion_item, buffer, completion):
@@ -562,11 +578,12 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_signal('*,irc_in_join_znc', 'join_cb', '')
     weechat.hook_signal('*,chanop_mode_*', 'banmask_cb', '')
 
-    ignoreForwards = Ignores('ignore_forwards_to')
+    ignoreForwards = Ignores('ignore_ban_forwards_to')
+    ignoreChannels = Ignores('ignore_channels')
 
     # hook config
     weechat.hook_config('plugins.var.python.%s.mask.*' % SCRIPT_NAME, 'clear_warn_pattern', '')
-    weechat.hook_config('plugins.var.python.%s.ignore_forwards_to' % SCRIPT_NAME, 'ignore_update', '')
+    weechat.hook_config('plugins.var.python.%s.ignore_*' % SCRIPT_NAME, 'ignore_update', '')
 
     # hook completer
     weechat.hook_completion('monitor_patterns', '', 'monitor_cmpl', '')
