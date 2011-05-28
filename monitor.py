@@ -431,9 +431,16 @@ class Ignores(object):
 
 class Monitor(Command):
     description, help = "Manages the list of warning patterns.", ""
-    usage = "[ ( add <pattern> [<comment>] | del <pattern> [<pattern> ..]) ]"
+    usage = "add <pattern> [<comment>] || del <pattern> [<pattern> ..] || list <word>\n"\
+            "\n"\
+            "Without arguments list all patterns.\n"\
+            " add: adds a new pattern, with an optional comment. Anyone joining with "\
+            "an usermask matching a pattern will raise a warning.\n"\
+            "      Patterns accept ?, * as wildcards.\n"\
+            " del: deletes one or several patterns.\n"\
+            "list: list current patterns with <word> (either in pattern or comment)."
     command = 'warn'
-    completion = 'add %(chanop_ban_mask)||del %(monitor_patterns)|%*'
+    completion = 'add %(chanop_ban_mask)||del %(monitor_patterns)|%*||list'
 
     def parser(self, args):
         if not args:
@@ -442,7 +449,7 @@ class Monitor(Command):
         args = args.split()
         try:
             cmd = args.pop(0)
-            if cmd not in ('add', 'del') or len(args) < 1:
+            if cmd not in ('add', 'del', 'list') or len(args) < 1:
                 raise Exception
         except:
             raise ArgumentError("please see /help warn.")
@@ -457,10 +464,22 @@ class Monitor(Command):
         else:
             self.mask = args
 
-    def print_pattern_list(self):
+    def print_pattern_list(self, pattern=None):
+        L = []
         for mask in warnPatterns:
-            say("%s (%s)" % (format_color(mask, color_chat_delimiter),
-                            weechat.config_get_plugin('mask.%s' % mask)))
+            comment = weechat.config_get_plugin('mask.%s' % mask)
+            if pattern is None \
+                    or (pattern in mask or pattern in comment):
+                L.append((mask, comment))
+
+        if L:
+            for mask, comment in L:
+                say("%s (%s)" % (format_color(mask, color_chat_delimiter),
+                                 comment))
+        elif pattern:
+            say("No patterns found with '%s'." % pattern)
+        else:
+            say("No patterns set.")
 
     def execute(self):
         if self.cmd == 'add':
@@ -470,6 +489,9 @@ class Monitor(Command):
         elif self.cmd == 'del':
             for mask in self.mask:
                 weechat.config_unset_plugin('mask.%s' % mask)
+        elif self.cmd == 'list':
+            self.print_pattern_list(self.mask[0])
+
 
 # -----------------------------------------------------------------------------
 # Script Callbacks
