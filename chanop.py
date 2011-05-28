@@ -2833,12 +2833,10 @@ if __name__ == '__main__' and import_ok and \
         window.next()
         buffer = window['buffer']
         input = weechat.buffer_get_string(buffer, 'input')
-        if input:
-            command, _, content = input.partition(' ')
-            if not content or command not in ('/oban', '/oquiet'):
-                return ''
-        else:
+        if not input:
             return ''
+
+        command, _, content = input.partition(' ')
 
         def affects(msg, L=None):
             if L:
@@ -2873,30 +2871,47 @@ if __name__ == '__main__' and import_ok and \
             return affects('(nobody)')
         return affects('(%s) ' % len(affected), affected)
 
+    #chanop_bar = None
+    chanop_bar_hidden = None
+
     @catchExceptions
     #@timeit
     def input_content_cb(data, modifier, modifier_data, string):
         #debug('input_content_cb: %s %s %r', modifier, modifier_data, string)
-        bar = weechat.bar_search('chanop_bar')
-        if not bar:
+        global chanop_bar_hidden #, chanop_bar
+        #if chanop_bar is None:
+            # only run once
+            #chanop_bar = weechat.bar_search('chanop_bar')
+        chanop_bar = weechat.bar_search('chanop_bar')
+        if not chanop_bar:
             return string
 
-        if string:
+        if chanop_bar_hidden is None:
+            # only run once
+            if not chanop_bar_hidden:
+                weechat.bar_set(chanop_bar, 'hidden', 'on')
+                chanop_bar_hidden = True
+
+        if string and not weechat.string_input_for_buffer(string):
             command, _, content = string.partition(' ')
-            if content and command in ('/oban', '/oquiet'):
-                weechat.bar_set(bar, 'hidden', 'off')
+            if content and command[1:] in ('oban', 'oquiet'):
+                if chanop_bar_hidden:
+                    weechat.bar_set(chanop_bar, 'hidden', 'off')
+                    chanop_bar_hidden = False
                 weechat.bar_item_update('chanop_ban_matches')
                 return string
 
-        weechat.bar_set(bar, 'hidden', 'on')
+        if not chanop_bar_hidden:
+            weechat.bar_set(chanop_bar, 'hidden', 'on')
+            chanop_bar_hidden = True
         return string
 
 # This is disabled, since it cause lots of slown downs.
-#    weechat.bar_item_new('chanop_ban_matches', 'ban_matches_cb', '')
-#    weechat.bar_new('chanop_bar', 'on', '0', 'window', 'active', 'bottom', 'horizontal',
-#            'vertical', '0', '1', 'default', 'cyan', 'blue', 'off', 'chanop_ban_matches') 
-#
-#    weechat.hook_modifier('input_text_content', 'input_content_cb', '')
+    weechat.bar_item_new('chanop_ban_matches', 'ban_matches_cb', '')
+    weechat.bar_new('chanop_bar', 'on', '0', 'window', 'active', 'bottom', 'horizontal',
+            'vertical', '0', '1', 'default', 'cyan', 'blue', 'off', 'chanop_ban_matches') 
+
+    weechat.hook_modifier('input_text_content', 'input_content_cb', '')
 
     weechat.hook_info("chanop_hostmask_from_nick",
             "Returns nick's hostmask if is known. Returns '' otherwise.",
