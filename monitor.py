@@ -71,7 +71,6 @@ except ImportError:
 import re
 import time
 import string
-from fnmatch import fnmatch
 
 # -----------------------------------------------------------------------------
 # Print Utils
@@ -415,13 +414,12 @@ class Ignores(object):
         self.ignores = [ s for s in ignores if s[0] != '!' ]
         self.exceptions = [ s[1:] for s in ignores if s[0] == '!' ]
 
-    # TODO use regexs
     def __contains__(self, s):
         s = s.lower()
         for p in self.ignores:
-            if fnmatch(s, p):
+            if pattern_match(p, s):
                 for e in self.exceptions:
-                    if fnmatch(s, e):
+                    if pattern_match(e, s):
                         return False
                 return True
         return False
