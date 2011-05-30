@@ -1702,9 +1702,9 @@ class CommandWithOp(CommandChanop):
     def parser(self, args):
         CommandChanop.parser(self, args)
         args = args.split()
-        if '-o' in args:
+        if args[-1] in ('-o', '--deop'):
             self.deopNow = True
-            del args[args.index('-o')]
+            del args[-1]
             self.args = ' '.join(args)
         if not self.args:
             raise NoArguments
@@ -1713,9 +1713,12 @@ class CommandWithOp(CommandChanop):
         self.irc.Op()
         self.execute_op(*args)
 
-        if self.autodeop and self.get_config_boolean('autodeop'):
-            delay = self.get_config_int('autodeop_delay')
-            if delay > 0 and not self.deopNow:
+        if (self.autodeop and self.get_config_boolean('autodeop')) or self.deopNow:
+            if self.deopNow:
+                delay = 0
+            else:
+                delay = self.get_config_int('autodeop_delay')
+            if delay > 0:
                 if self.deopHook:
                     weechat.unhook(self.deopHook)
                 self.vars.deopHook = weechat.hook_timer(delay * 1000, 0, 1,
