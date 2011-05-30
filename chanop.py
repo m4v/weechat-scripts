@@ -2926,8 +2926,8 @@ if __name__ == '__main__' and import_ok and \
     def debugLvl(f):
         def debug(s, *args, **kwargs):
             level = kwargs.get('level', 1)
-            lvl = int(weechat.config_get_plugin('debug'))
-            if lvl and level <= lvl:
+            lvl = weechat.config_get_plugin('debug')
+            if lvl and level <= int(lvl):
                 return f(s, *args)
         return debug
 
