@@ -1695,6 +1695,20 @@ class CommandChanop(Command, ChanopBuffers):
 
 class CommandWithOp(CommandChanop):
     """Base class for all the commands that requires op status for work."""
+    _enable_deopNow = True
+
+    def __init__(self, *args, **kwargs):
+        CommandChanop.__init__(self, *args, **kwargs)
+        # update help so it adds --deop option
+        if self._enable_deopNow:
+            if self.usage:
+                self.usage += " "
+            if self.help:
+                self.help += "\n"
+            self.usage += "[--deop]"
+            self.help += " -o --deop: Forces deop immediately, without configured delay"\
+                         " (option must be the last argument)."
+
     def setup(self, buffer):
         self.deopNow = False
         CommandChanop.setup(self, buffer)
@@ -1702,7 +1716,7 @@ class CommandWithOp(CommandChanop):
     def parser(self, args):
         CommandChanop.parser(self, args)
         args = args.split()
-        if args[-1] in ('-o', '--deop'):
+        if self._enable_deopNow and args[-1] in ('-o', '--deop'):
             self.deopNow = True
             del args[-1]
             self.args = ' '.join(args)
@@ -1784,6 +1798,7 @@ class Deop(Op, CommandWithOp):
     completion = '%(nicks)'
     
     prefix = '-'
+    _enable_deopNow = False
 
     def execute_chanop(self):
         if self.args:
@@ -1803,7 +1818,7 @@ class Deop(Op, CommandWithOp):
 
 
 class Kick(CommandWithOp):
-    description, usage = "Kick nick.", "<nick> [<reason>] [-o]"
+    description, usage = "Kick nick.", "<nick> [<reason>]"
     help = \
     "On freenode, you can set this command to use /remove instead of /kick, users"\
     " will see it as if the user parted and it can bypass autojoin-on-kick scripts."\
@@ -1821,7 +1836,8 @@ class Kick(CommandWithOp):
 
 
 class MultiKick(Kick):
-    description, usage = "Kick one or more nicks.", "<nick> [<nick> ... ] [:] [<reason>] [-o]"
+    description = "Kick one or more nicks."
+    usage = "<nick> [<nick> ... ] [:] [<reason>]"
     help = Kick.help + "\n\n"\
     "Note: Is not needed, but use ':' as a separator between nicks and "\
     "the reason. Otherwise, if there's a nick in the channel matching the "\
@@ -1859,7 +1875,7 @@ class MultiKick(Kick):
 class Ban(CommandWithOp):
     description = "Ban user or hostmask."
     usage = \
-    "<nick|mask> [<nick|mask> ... ] [ [--host] [--user] [--nick] | --exact ] [-o]"
+    "<nick|mask> [<nick|mask> ... ] [ [--host] [--user] [--nick] | --exact ]"
     help = \
     "Mask options:\n"\
     " -h  --host: Match hostname (*!*@host)\n"\
@@ -1868,7 +1884,6 @@ class Ban(CommandWithOp):
     " -e --exact: Use exact hostmask.\n"\
     "\n"\
     "If no mask options are supplied, configured defaults are used.\n"\
-    " -o: Forces deop immediately (without configured delay).\n"\
     "\n"\
     "Completer:\n"\
     "%(script)s will attempt to guess a complete banmask from current\n"\
@@ -1982,12 +1997,11 @@ class Ban(CommandWithOp):
 
 
 class UnBan(Ban):
-    description, usage = "Remove bans.", "<nick|mask> [<nick|mask> ... ] [-o]"
+    description, usage = "Remove bans.", "<nick|mask> [<nick|mask> ... ]"
     command = 'ounban'
     help = \
     "Autocompletion will use channel's bans, patterns allowed for autocomplete multiple"\
     " bans.\n"\
-    " -o: Forces deop immediately (without configured delay).\n"\
     "\n"\
     "Example:\n"\
     "/%(cmd)s *192.168*<tab>\n"\
@@ -2071,7 +2085,7 @@ class BanKick(Ban, Kick):
 class MultiBanKick(BanKick):
     description = "Bankicks one or more nicks."
     usage = \
-    "<nick> [<nick> ... ] [:] [<reason>] [ [--host)] [--user] [--nick] | --exact ] [-o]"
+    "<nick> [<nick> ... ] [:] [<reason>] [ [--host)] [--user] [--nick] | --exact ]"
     completion = '%(chanop_nicks)|%*'
 
     def execute_op(self):
@@ -2101,7 +2115,7 @@ class MultiBanKick(BanKick):
 
 
 class Topic(CommandWithOp):
-    description, usage = "Changes channel topic.", "[-delete | topic] [-o]"
+    description, usage = "Changes channel topic.", "[-delete | topic]"
     help = "Clear topic if '-delete' is the new topic."
     command = 'otopic'
     completion = '%(irc_channel_topic)||-delete'
@@ -2111,8 +2125,7 @@ class Topic(CommandWithOp):
 
 
 class Voice(CommandWithOp):
-    description, usage = "Gives voice to somebody.", "nick [nick ... ] [-o]"
-    help = " -o: Forces deop immediately (without configured delay)."
+    description, usage, help = "Gives voice to somebody.", "nick [nick ... ]", ""
     command = 'ovoice'
     completion = '%(nicks)|%*'
 
@@ -2136,8 +2149,7 @@ class DeVoice(Voice):
 
 
 class Mode(CommandWithOp):
-    description, usage = "Changes channel modes.", "<channel modes> [-o]"
-    help = " -o: Forces deop immediately (without configured delay)."
+    description, usage, help = "Changes channel modes.", "<channel modes>", ""
     command = 'omode'
 
     def execute_op(self):
