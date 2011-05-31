@@ -194,6 +194,16 @@
 #   * cycle between different banmasks in /oban /oquiet commands.
 #   * added pop-up bar for show information.
 #
+#   2011-05-31
+#   version 0.2.5: bug fixes:
+#   * /omode -o nick wouldn't work due to the deopNow switch.
+#   * unban_completer could fetch the same masks several times.
+#   * removing ban forwards falied when using exact mask.
+#   * user nick wasn't updated in every call.
+#
+#   2011-02-02
+#   version 0.2.4: fix python 2.5 compatibility
+#
 #   2011-01-09
 #   version 0.2.3: bug fixes.
 #
