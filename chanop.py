@@ -189,6 +189,13 @@
 #
 #
 #   History:
+#   2011-05-31
+#   version 0.2.5: bug fixes:
+#   * /omode -o nick wouldn't work due to the deopNow switch.
+#   * unban_completer could fetch the same masks several times.
+#   * removing ban forwards falied when using exact mask.
+#   * user nick wasn't updated in every call.
+#
 #   2011-02-02
 #   version 0.2.4: fix python 2.5 compatibility
 #
@@ -244,7 +251,7 @@
 
 SCRIPT_NAME    = "chanop"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.2.4"
+SCRIPT_VERSION = "0.2.5"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Helper script for IRC Channel Operators"
 
