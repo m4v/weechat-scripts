@@ -134,17 +134,29 @@ def playback_cb(data, modifier, modifier_data, string):
     else:
         timestamp, s, line = line.partition(' ')
 
+    if ' ' in znc_timestamp:
+        error("configured timestamp is '%s', it can't have spaces." % znc_timestamp)
+        error_unhook_all()
+        return string
+
     try:
         t = time.strptime(timestamp, znc_timestamp)
     except ValueError, e:
         # bad time format.
         error(e)
         debug("%s\n%s" % (modifier_data, string))
+        error_unhook_all()
         return string
     else:
-        t = datetime.time(t[3], t[4], t[5])
-        d = datetime.datetime.combine(datetime.date.today(), t)
+        if t[0] == 1900:
+            # only hour information, complete year, month and day with today's date
+            # might be incorrect though if day changed during playback.
+            t = datetime.time(*t[3:6])
+            d = datetime.datetime.combine(datetime.date.today(), t)
+        else:
+            d = datetime.datetime(*t[:6])
         time_epoch = int(time.mktime(d.timetuple()))
+
 
     if 'nick_*buffextras' not in tags:
         # not a line coming from ZNC buffextras module.
@@ -311,14 +323,22 @@ def get_config_options():
     send_signals = get_config_boolean('send_signals')
     znc_timestamp = weechat.config_get_plugin('znc_timestamp')
 
+def error_unhook_all():
+    global print_hook
+    if print_hook:
+        error("script disabled, fix date format and reload.")
+        weechat.unhook(print_hook)
 
-### Main ###
+# -----------------------------------------------------------------------------
+# Main
+
+print_hook = ''
 if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
         SCRIPT_DESC, '', ''):
 
     get_config_options()
-    
+
     # pretty [SCRIPT_NAME]
     script_nick = '%s[%s%s%s]%s' % (COLOR_CHAT_DELIMITERS, 
                                     COLOR_CHAT_NICK,
@@ -331,7 +351,7 @@ if __name__ == '__main__' and import_ok and \
         if not weechat.config_is_set_plugin(opt):
             weechat.config_set_plugin(opt, val)
 
-    weechat.hook_modifier('weechat_print', 'playback_cb', '')
+    print_hook = weechat.hook_modifier('weechat_print', 'playback_cb', '')
 
     # -------------------------------------------------------------------------
     # Debug
