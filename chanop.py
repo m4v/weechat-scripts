@@ -309,7 +309,7 @@ def say(s, buffer=''):
 
 # TODO Need to refactor all this too
 
-boolDict = {'on':True, 'off':False}
+boolDict = {'on':True, 'off':False, True:'on', False:'off'}
 def get_config_boolean(config, get_function=None, **kwargs):
     if get_function and callable(get_function):
         value = get_function(config, **kwargs)
@@ -533,8 +533,8 @@ def irc_buffer(buffer):
         return (server, channel)
 
 
-#######################
-### WeeChat classes ###
+# -----------------------------------------------------------------------------
+# WeeChat classes 
 
 class InvalidIRCBuffer(Exception):
     pass
@@ -722,8 +722,53 @@ class Command(object):
             self._callback = ''
 
 
-############################
-### Per buffer variables ###
+class Bar(object):
+    def __init__(self, name, hidden=False, items=''):
+        self._pointer = ''
+        self._name = name
+        self._hidden = hidden
+        self._items = items
+
+    def new(self):
+        assert not self._pointer, "Bar %s already created" % self._name
+        pointer = weechat.bar_search(self._name)
+        if not pointer:
+            pointer = weechat.bar_new(self._name,
+                                      boolDict[self._hidden],
+                                      '0', 'window', 'active', 
+                                      'bottom', 'horizontal', 'vertical', '0', '1',
+                                      'default', 'cyan', 'blue', 'off', 
+                                      self._items) 
+            if not pointer:
+                raise Exception, "bar_new failed: %s %s" % (SCRIPT_NAME, self._name)
+
+        self._pointer = pointer
+
+    def show(self):
+        assert self._pointer
+        if self._hidden:
+            weechat.bar_set(self._pointer, 'hidden', 'off')
+            self._hidden = False
+
+    def hide(self):
+        assert self._pointer
+        if not self._hidden:
+            weechat.bar_set(self._pointer, 'hidden', 'on')
+            self._hidden = True
+
+    def remove(self):
+        if self._pointer:
+            weechat.bar_remove(self._pointer)
+
+    def __len__(self):
+        """True False evaluation."""
+        if self._pointer:
+            return 1
+        else:
+            return 0
+
+# -----------------------------------------------------------------------------
+# Per buffer variables
 
 class BufferVariables(dict):
     """Keeps variables and objects of a specific buffer."""
@@ -2301,7 +2346,7 @@ def signal_parse(f):
             return WEECHAT_RC_OK
         nick = get_nick(signal_data)
         hostmask = signal_data[1:signal_data.find(' ')]
-        #debug('%s %s %s', data, signal, signal_data)
+        debug('%s %s %s', data, signal, signal_data)
         return f(server, channel, nick, hostmask, signal_data)
     decorator.func_name = f.func_name
     return decorator
@@ -2314,7 +2359,7 @@ def signal_parse_no_channel(f):
         channels = userCache.getChannels(server, nick)
         if channels:
             hostmask = signal_data[1:signal_data.find(' ')]
-            #debug('%s %s %s', data, signal, signal_data)
+            debug('%s %s %s', data, signal, signal_data)
             return f(server, channels, nick, hostmask, signal_data)
         return WEECHAT_RC_OK
     decorator.func_name = f.func_name
@@ -2750,11 +2795,93 @@ def info_pattern_match(data, info_name, arguments):
         return '1'
     return ''
 
+# -----------------------------------------------------------------------------
+# Chanop bar callbacks
+
+chanop_bar_current_buffer = ''
+
+@catchExceptions
+def ban_matches_cb(data, item, window):
+    #debug('ban matches item: %s %s', item, window)
+    global chanop_bar_current_buffer
+    buffer = chanop_bar_current_buffer
+    if not buffer:
+        return ''
+
+    input = weechat.buffer_get_string(buffer, 'input')
+    if not input:
+        return ''
+
+    command, _, content = input.partition(' ')
+
+    def affects(msg, L=None):
+        if L:
+            s = ' '.join([ get_nick(h) for h in L ])
+        else:
+            s = ''
+        return '%s affects: %s%s' % (command, msg, s)
+
+    channel = weechat.buffer_get_string(buffer, 'localvar_channel')
+    if not channel or not is_channel(channel):
+        return affects('(not an IRC channel)')
+
+    server = weechat.buffer_get_string(buffer, 'localvar_server')
+    users = userCache[server, channel]
+    content = content.split()
+    masks = [ mask for mask in content if is_hostmask(mask) or is_nick(mask) ]
+    if not masks:
+        return affects('(no valid user mask or nick)')
+
+    #debug('ban matches item: %s', masks)
+
+    affected = []
+    hostmasks = users.hostmasks(all=True)
+    for mask in masks:
+        if is_hostmask(mask):
+            affected.extend(hostmask_match_list(mask, hostmasks))
+        elif mask in users:
+            affected.append(mask)
+    #debug('ban matches item: %s', affected)
+
+    if not affected:
+        return affects('(nobody)')
+    return affects('(%s) ' % len(affected), affected)
+
+@catchExceptions
+def input_content_cb(data, modifier, modifier_data, string):
+    #debug('input_content_cb: %s %s %r', modifier, modifier_data, string)
+    global chanop_bar_current_buffer
+    if not chanop_bar:
+        return string
+
+    if string and not weechat.string_input_for_buffer(string):
+        command, _, content = string.partition(' ')
+        content = content.strip()
+        if content and command[1:] in ('oban', 'oquiet'):
+            chanop_bar.show()
+            chanop_bar_current_buffer = modifier_data
+            weechat.bar_item_update('chanop_ban_matches')
+            return string
+
+    chanop_bar.hide()
+    return string
+
+# -----------------------------------------------------------------------------
+# Main
+
+def unload_chanop():
+    if chanop_bar:
+        # we don't remove it, so custom options configs aren't lost
+        chanop_bar.hide()
+    bar_item = weechat.bar_item_search('chanop_ban_matches')
+    if bar_item:
+        weechat.bar_item_remove(bar_item)
+    return WEECHAT_RC_OK
 
 # Register script
 if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
-        SCRIPT_DESC, '', ''):
+        SCRIPT_DESC, 'unload_chanop', ''):
 
     # colors
     color_delimiter = weechat.color('chat_delimiters')
@@ -2840,102 +2967,11 @@ if __name__ == '__main__' and import_ok and \
     # run our cleaner function every 30 min.
     weechat.hook_timer(30*60*1000, 0, 0, 'garbage_collector_cb', '')
 
-    def timeit(f):
-        from time import time
-        def func(*args, **kwargs):
-            t1 = time()
-            r = f(*args, **kwargs)
-            t2 = time()
-            debug('time: %s %f', f.func_name, t2-t1)
-            return r
-        return func
+    # TODO add option for disable bar
+    chanop_bar = Bar('chanop_bar', hidden=True, items='chanop_ban_matches')
+    chanop_bar.new()
 
-    @catchExceptions
-    #@timeit
-    def ban_matches_cb(data, item, window):
-        #debug('ban matches item: %s %s', item, window)
-        window = Infolist('window', pointer=window)
-        window.next()
-        buffer = window['buffer']
-        input = weechat.buffer_get_string(buffer, 'input')
-        if not input:
-            return ''
-
-        command, _, content = input.partition(' ')
-
-        def affects(msg, L=None):
-            if L:
-                s = ' '.join([ get_nick(h) for h in L ])
-            else:
-                s = ''
-            return '%s affects: %s%s' % (command, msg, s)
-
-        channel = weechat.buffer_get_string(buffer, 'localvar_channel')
-        if not channel or not is_channel(channel):
-            return affects('(not an IRC channel)')
-
-        server = weechat.buffer_get_string(buffer, 'localvar_server')
-        users = userCache[server, channel]
-        content = content.split()
-        masks = [ mask for mask in content if is_hostmask(mask) or is_nick(mask) ]
-        if not masks:
-            return affects('(no valid user mask or nick)')
-
-        #debug('ban matches item: %s', masks)
-
-        affected = []
-        hostmasks = users.hostmasks(all=True)
-        for mask in masks:
-            if is_hostmask(mask):
-                affected.extend(hostmask_match_list(mask, hostmasks))
-            elif mask in users:
-                affected.append(mask)
-        #debug('ban matches item: %s', affected)
-
-        if not affected:
-            return affects('(nobody)')
-        return affects('(%s) ' % len(affected), affected)
-
-    #chanop_bar = None
-    chanop_bar_hidden = None
-
-    @catchExceptions
-    #@timeit
-    def input_content_cb(data, modifier, modifier_data, string):
-        #debug('input_content_cb: %s %s %r', modifier, modifier_data, string)
-        global chanop_bar_hidden #, chanop_bar
-        #if chanop_bar is None:
-            # only run once
-            #chanop_bar = weechat.bar_search('chanop_bar')
-        chanop_bar = weechat.bar_search('chanop_bar')
-        if not chanop_bar:
-            return string
-
-        if chanop_bar_hidden is None:
-            # only run once
-            if not chanop_bar_hidden:
-                weechat.bar_set(chanop_bar, 'hidden', 'on')
-                chanop_bar_hidden = True
-
-        if string and not weechat.string_input_for_buffer(string):
-            command, _, content = string.partition(' ')
-            if content and command[1:] in ('oban', 'oquiet'):
-                if chanop_bar_hidden:
-                    weechat.bar_set(chanop_bar, 'hidden', 'off')
-                    chanop_bar_hidden = False
-                weechat.bar_item_update('chanop_ban_matches')
-                return string
-
-        if not chanop_bar_hidden:
-            weechat.bar_set(chanop_bar, 'hidden', 'on')
-            chanop_bar_hidden = True
-        return string
-
-# This is disabled, since it cause lots of slown downs.
     weechat.bar_item_new('chanop_ban_matches', 'ban_matches_cb', '')
-    weechat.bar_new('chanop_bar', 'on', '0', 'window', 'active', 'bottom', 'horizontal',
-            'vertical', '0', '1', 'default', 'cyan', 'blue', 'off', 'chanop_ban_matches') 
-
     weechat.hook_modifier('input_text_content', 'input_content_cb', '')
 
     weechat.hook_info("chanop_hostmask_from_nick",
