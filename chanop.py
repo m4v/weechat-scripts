@@ -285,7 +285,7 @@ except ImportError:
 import re
 import string
 import getopt
-from time import time
+import time
 from collections import defaultdict
 
 chars = string.maketrans('', '')
@@ -379,7 +379,7 @@ def get_config_specific(config, server='', channel=''):
 #############
 ### Utils ###
 
-now = lambda: int(time())
+now = lambda: int(time.time())
 
 def time_elapsed(elapsed, ret=None, level=2):
     time_hour = 3600
@@ -1211,7 +1211,7 @@ class ServerChannelDict(CaseInsensibleDict):
 # Channel Modes (bans)
 
 class MaskObject(object):
-    def __init__(self, mask, hostmask=None, operator=None, date=None):#, expires=None):
+    def __init__(self, mask, hostmask=[], operator='', date=0, expires=0):
         self.mask = mask
         self.operator = operator
         if date:
@@ -1222,10 +1222,39 @@ class MaskObject(object):
         if isinstance(hostmask, str):
             hostmask = [ hostmask ]
         self.hostmask = hostmask
-#        self.expires = expires
+        self.expires = int(expires)
+
+    def serialize(self):
+        data = ';'.join([ self.operator,
+                          str(self.date), 
+                          str(self.expires),
+                          ','.join(self.hostmask) ])
+        return data
+
+    def deserialize(self, data):
+        op, date, expires, hostmasks = data.split(';')
+        assert op and date, "Error reading chanmask option: missing operator or date"
+        if not is_hostmask(op):
+            raise Exception('Error reading chanmask option: invalid usermask %r' % op)
+
+        self.operator = op
+        try:
+            self.date = int(date)
+        except ValueError:
+            self.date = int(time.mktime(time.strptime(date,'%Y-%m-%d %H:%M:%S')))
+        if expires:
+            self.expires = int(expires)
+        else:
+            self.expires = 0
+        if hostmasks:
+            hostmasks = hostmasks.split(',')
+            if not all(map(is_hostmask, hostmasks)):
+                raise Exception('Error reading chanmask option: a hostmask is invalid: %s' % hostmasks)
+
+            self.hostmask = hostmasks
 
     def __repr__(self):
-        return "<MaskObject(%s)>" %self.mask
+        return "<MaskObject(%s)>" % self.mask
 
 
 class MaskList(CaseInsensibleDict):
@@ -1238,10 +1267,11 @@ class MaskList(CaseInsensibleDict):
             # mask exists, update it
             ban = self[mask]
             for attr, value in kwargs.iteritems():
-                if value:
+                if value and not getattr(ban, attr):
                     setattr(ban, attr, value)
         else:
-            self[mask] = MaskObject(mask, **kwargs)
+            ban = self[mask] = MaskObject(mask, **kwargs)
+        return ban
 
 #    def searchByNick(self, nick):
 #        try:
@@ -1267,7 +1297,8 @@ class MaskCache(ServerChannelDict):
         key = (server, channel)
         if key not in self:
             self[key] = MaskList(*key)
-        self[key].add(mask, **kwargs)
+        ban = self[key].add(mask, **kwargs)
+        return ban
 
     def remove(self, server, channel, mask=None):#, hostmask=None):
         key = (server, channel)
@@ -1302,9 +1333,55 @@ class ModeCache(dict):
         except KeyError:
             return dict.__getitem__(self, self.type[mode])
 
+    def add(self, server, channel, mode, mask, **kwargs):
+        assert mode in self.modes
+        ban = self[mode].add(server, channel, mask, **kwargs)
+        self.save(server, channel, mode, ban)
+
+    def remove(self, server, channel, mode, mask):
+        self[mode].remove(server, channel, mask)
+        self.delete(server, channel, mode, mask)
+
+    def save(self, server, channel, mode, ban):
+        debug("saving %s.%s +%s %s", server, channel, mode, ban.mask, level=3)
+        weechat.config_set_plugin('chanmask.%s.%s.%s.%s' \
+                                  % (server, channel, mode, ban.mask),
+                                  ban.serialize())
+
+    def delete(self, server, channel, mode, mask):
+        debug("deleting %s.%s +%s %s", server, channel, mode, mask, level=3)
+        weechat.config_unset_plugin('chanmask.%s.%s.%s.%s' \
+                                    % (server, channel, mode, mask))
+
+    def updateConfig(self, server, channel, mode):
+        if (server, channel) not in chanopChannels:
+            return
+
+        mode = self.type[mode]
+        L = self[mode][server, channel]
+        if not L.synced:
+            return 
+
+        prefix = 'python.%s.chanmask.%s.%s.%s' % (SCRIPT_NAME, server, channel, mode)
+        infolist = Infolist('option', 'plugins.var.%s.*' % prefix)
+        knownmask = CaseInsensibleSet()
+        n = len(prefix)
+        while infolist.next():
+            mask = infolist['option_name'][n + 1:]
+            if mask not in L:
+                self.delete(server, channel, mode, mask)
+            else:
+                knownmask.add(mask)
+                L[mask].deserialize(infolist['value'])
+
+        for mask, ban in L.iteritems():
+            if mask not in knownmask and is_hostmask(ban.operator):
+                self.save(server, channel, mode, ban)
+
     def purge(self):
-        for mode in self.modes:
-            self[mode].purge()
+        for cache in self.itervalues():
+            cache.purge()
+
 
 modeCache = ModeCache()
 modeCache.addMode('b', 'ban', 'bans')
@@ -1413,6 +1490,7 @@ class MaskSync(object):
                 del self._maskbuffer[server, channel]
 
         masklist.synced = now()
+        modeCache.updateConfig(server, channel, mode)
 
         # run finishing functions if any
         if (server, channel) in self._callback:
@@ -2518,19 +2596,18 @@ def mode_cb(server, channel, nick, opHostmask, signal_data):
     affected_users = []
     # update masks
     for action, mode, mask in chanmode_list:
-        maskCache = modeCache[mode]
-        #debug('MODE: %s%s %s %s', action, mode, mask, op)
+        debug('MODE: %s%s %s %s', action, mode, mask, opHostmask, level=2)
         if action == '+':
             hostmask = hostmask_match_list(mask, userCache[key].hostmasks())
             if hostmask:
                 affected_users.extend(hostmask)
-            maskCache.add(server, channel, mask, operator=opHostmask, hostmask=hostmask)
+            modeCache.add(server, channel, mode, mask, operator=opHostmask, hostmask=hostmask)
             weechat.hook_signal_send("%s,chanop_mode_%s" %(server, mode),
                     weechat.WEECHAT_HOOK_SIGNAL_STRING,
                     "%s %s %s %s" %(opHostmask, channel, mask, ','.join(hostmask)))
-
         elif action == '-':
-            maskCache.remove(server, channel, mask)
+            modeCache.remove(server, channel, mode, mask)
+
     if affected_users and get_config_boolean('display_affected',
             get_function=get_config_specific, server=server, channel=channel):
         buffer = weechat.buffer_search('irc', '%s.%s' %key)
