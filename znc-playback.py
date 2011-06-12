@@ -85,14 +85,16 @@ def say(s, buffer=''):
 # -----------------------------------------------------------------------------
 # Script Callbacks
 
-global buffer_playback
 buffer_playback = {}
+signal_playback = set()
+
 
 def playback_cb(data, modifier, modifier_data, string):
     global COLOR_RESET, COLOR_CHAT_DELIMITERS, COLOR_CHAT_NICK, COLOR_CHAT_HOST, \
            COLOR_CHAT_CHANNEL, COLOR_CHAT, COLOR_MESSAGE_JOIN, COLOR_MESSAGE_QUIT, \
-           COLOR_REASON_QUIT
-    global send_signals, znc_timestamp 
+           COLOR_REASON_QUIT, SMART_FILTER
+    global send_signals, znc_timestamp
+    global signal_playback
 
 # old weechat 0.3.3
 #    if 'irc_privmsg' not in modifier_data:
@@ -113,10 +115,14 @@ def playback_cb(data, modifier, modifier_data, string):
             debug("* buffer playback for %s", buffer_name)
             if not buffer_playback:
                 get_config_options()
+                signal_playback.clear()
             buffer_playback[buffer_name] = True
         elif line == 'Playback Complete.':
             debug("* end of playback for %s", buffer_name)
             del buffer_playback[buffer_name]
+            if not buffer_playback:
+                if send_signals:
+                    do_signal_playback()
         return string
 
     elif buffer_name not in buffer_playback:
@@ -189,9 +195,8 @@ def playback_cb(data, modifier, modifier_data, string):
                 COLOR_MESSAGE_JOIN)
 
         if send_signals:
-            weechat.hook_signal_send(server + ",irc_in_JOIN_ZNC",
-                                     WEECHAT_HOOK_SIGNAL_STRING,
-                                     ":%s JOIN :%s" % (hostmask, channel))
+            signal_playback.add((time_epoch, server + ",irc_in_JOIN", 
+                                 ":%s JOIN :%s" % (hostmask, channel)))
 
     elif line == 'parted':
         # buffextras doesn't seem to send the part's reason.
@@ -211,9 +216,8 @@ def playback_cb(data, modifier, modifier_data, string):
                 COLOR_MESSAGE_QUIT)
 
         if send_signals:
-            weechat.hook_signal_send(server + ",irc_in_PART_ZNC",
-                                     WEECHAT_HOOK_SIGNAL_STRING,
-                                     ":%s PART %s" % (hostmask, channel))
+            signal_playback.add((time_epoch, server + ",irc_in_PART", 
+                                 ":%s PART %s" % (hostmask, channel)))
 
     elif line.startswith('quit with message:'):
         reason = line[line.find('[') + 1:-1]
@@ -233,10 +237,10 @@ def playback_cb(data, modifier, modifier_data, string):
                 reason,
                 COLOR_CHAT_DELIMITERS)
 
+        # QUIT messages should be sent only once per channel.
         if send_signals:
-            weechat.hook_signal_send(server + ",irc_in_QUIT_ZNC",
-                                     WEECHAT_HOOK_SIGNAL_STRING,
-                                     ":%s QUIT :%s" % (hostmask, reason))
+            signal_playback.add((time_epoch, server + ",irc_in_QUIT", 
+                                 ":%s QUIT :%s" % (hostmask, reason)))
 
     elif line.startswith('is now known as '):
         new_nick = line.rpartition(' ')[-1]
@@ -248,10 +252,11 @@ def playback_cb(data, modifier, modifier_data, string):
                 COLOR_CHAT_NICK,
                 new_nick,
                 COLOR_CHAT)
+
+        # NICK messages should be sent only once per channel.
         if send_signals:
-            weechat.hook_signal_send(server + ",irc_in_NICK_ZNC",
-                                     WEECHAT_HOOK_SIGNAL_STRING,
-                                     ":%s NICK :%s" % (hostmask, new_nick))
+            signal_playback.add((time_epoch, server + ",irc_in_NICK", 
+                                 ":%s NICK :%s" % (hostmask, new_nick)))
 
     elif line.startswith('set mode: '):
         modes = line[line.find(':') + 2:]
@@ -266,6 +271,10 @@ def playback_cb(data, modifier, modifier_data, string):
                 COLOR_CHAT,
                 COLOR_CHAT_NICK,
                 nick)
+        
+        if send_signals:
+            signal_playback.add((time_epoch, server + ",irc_in_MODE", 
+                                 ":%s MODE %s %s" % (hostmask, channel, modes)))
 
     elif line.startswith('kicked'):
         _, nick_kicked, reason = line.split(None, 2)
@@ -282,6 +291,11 @@ def playback_cb(data, modifier, modifier_data, string):
                 COLOR_CHAT,
                 reason,
                 COLOR_CHAT_DELIMITERS)
+
+        if send_signals:
+            signal_playback.add((time_epoch, server + ",irc_in_KICK", 
+                                 ":%s KICK %s %s :%s" % (hostmask, channel, nick_kicked, reason)))
+
 
     elif line.startswith('changed the topic to: '):
         topic = line[line.find(':') + 2:]
@@ -302,6 +316,14 @@ def playback_cb(data, modifier, modifier_data, string):
     else:
         prnt_date_tags(buffer, time_epoch, tags, s)
         return ''
+
+def do_signal_playback():
+    global signal_playback
+    L = list(signal_playback)
+    for t, signal, string in sorted(L, key=lambda x: x[0]):
+        debug('%s %s %s', t, signal, string)
+        weechat.hook_signal_send(signal, WEECHAT_HOOK_SIGNAL_STRING, string)
+    signal_playback = set()
 
 def get_config_options():
     global COLOR_RESET, COLOR_CHAT_DELIMITERS, COLOR_CHAT_NICK, COLOR_CHAT_HOST, \
