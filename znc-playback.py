@@ -38,7 +38,9 @@ except ImportError:
     print "Get WeeChat now at: http://www.weechat.org/"
     import_ok = False
 
-import datetime, time
+import re
+import time
+import datetime
 
 SCRIPT_NAME    = "znc-playback"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
@@ -88,6 +90,10 @@ def say(s, buffer=''):
 buffer_playback = {}
 signal_playback = set()
 
+_hostmaskRe = re.compile(r':?\S+!\S+@\S+') # poor but good enough
+def is_hostmask(s):
+    """Returns whether or not the string s starts with something like a hostmask."""
+    return _hostmaskRe.match(s) is not None
 
 def playback_cb(data, modifier, modifier_data, string):
     global COLOR_RESET, COLOR_CHAT_DELIMITERS, COLOR_CHAT_NICK, COLOR_CHAT_HOST, \
@@ -142,7 +148,7 @@ def playback_cb(data, modifier, modifier_data, string):
 
     if ' ' in znc_timestamp:
         error("configured timestamp is '%s', it can't have spaces." % znc_timestamp)
-        error_unhook_all()
+        #error_unhook_all()
         return string
 
     try:
@@ -151,7 +157,7 @@ def playback_cb(data, modifier, modifier_data, string):
         # bad time format.
         error(e)
         debug("%s\n%s" % (modifier_data, string))
-        error_unhook_all()
+        #error_unhook_all()
         return string
     else:
         if t[0] == 1900:
@@ -273,6 +279,11 @@ def playback_cb(data, modifier, modifier_data, string):
                 nick)
         
         if send_signals:
+            # buffextras can send an invalid hostmask "nick!@" sometimes
+            # fix it so at least is valid.
+            if not is_hostmask(hostmask):
+                nick = hostmask[:hostmask.find('!')]
+                hostmask = nick + '!unknow@unknow'
             signal_playback.add((time_epoch, server + ",irc_in_MODE", 
                                  ":%s MODE %s %s" % (hostmask, channel, modes)))
 
@@ -323,7 +334,7 @@ def do_signal_playback():
     for t, signal, string in sorted(L, key=lambda x: x[0]):
         debug('%s %s %s', t, signal, string)
         weechat.hook_signal_send(signal, WEECHAT_HOOK_SIGNAL_STRING, string)
-    signal_playback = set()
+    signal_playback.clear()
 
 def get_config_options():
     global COLOR_RESET, COLOR_CHAT_DELIMITERS, COLOR_CHAT_NICK, COLOR_CHAT_HOST, \
