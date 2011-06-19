@@ -84,23 +84,33 @@ def say(s, buffer=''):
     """normal msg"""
     prnt(buffer, '%s\t%s' %(script_nick, s))
 
+def catchExceptions(f):
+    def function(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except Exception, e:
+            error(e)
+    return function
+
 # -----------------------------------------------------------------------------
 # Script Callbacks
 
 buffer_playback = {}
 signal_playback = set()
+nick_talked = set()
 
 _hostmaskRe = re.compile(r':?\S+!\S+@\S+') # poor but good enough
 def is_hostmask(s):
     """Returns whether or not the string s starts with something like a hostmask."""
     return _hostmaskRe.match(s) is not None
 
+@catchExceptions
 def playback_cb(data, modifier, modifier_data, string):
     global COLOR_RESET, COLOR_CHAT_DELIMITERS, COLOR_CHAT_NICK, COLOR_CHAT_HOST, \
            COLOR_CHAT_CHANNEL, COLOR_CHAT, COLOR_MESSAGE_JOIN, COLOR_MESSAGE_QUIT, \
            COLOR_REASON_QUIT, SMART_FILTER
     global send_signals, znc_timestamp
-    global signal_playback
+    global signal_playback, nick_talked
 
 # old weechat 0.3.3
 #    if 'irc_privmsg' not in modifier_data:
@@ -114,29 +124,40 @@ def playback_cb(data, modifier, modifier_data, string):
     if plugin != 'irc' or buffer_name == 'irc_raw':
         return string
 
+    if tags:
+        tags = set(tags.split(','))
+    else:
+        tags = set()
+    
     global buffer_playback
     if 'nick_***' in tags:
         line = string.partition('\t')[2]
         if line == 'Buffer Playback...':
             debug("* buffer playback for %s", buffer_name)
+            buffer = weechat.buffer_search(plugin, buffer_name)
             if not buffer_playback:
                 get_config_options()
                 signal_playback.clear()
-            buffer_playback[buffer_name] = True
+                nick_talked.clear()
+            buffer_playback[buffer_name] = buffer
         elif line == 'Playback Complete.':
             debug("* end of playback for %s", buffer_name)
+            buffer = buffer_playback[buffer_name]
             del buffer_playback[buffer_name]
             if not buffer_playback:
                 if send_signals:
                     do_signal_playback()
-        return string
+        tags.discard('notify_message')
+        tags.discard('irc_privmsg')
+        prnt_date_tags(buffer, 0, ','.join(tags), string)
+        return ''
 
     elif buffer_name not in buffer_playback:
         return string
 
-    buffer = weechat.buffer_search(plugin, buffer_name)
-    if not buffer:
-        return string
+    buffer = buffer_playback[buffer_name]
+
+    debug(string)
 
     prefix, s, line = string.partition('\t')
     if 'irc_action' in tags or 'irc_notice' in tags:
@@ -169,22 +190,24 @@ def playback_cb(data, modifier, modifier_data, string):
             d = datetime.datetime(*t[:6])
         time_epoch = int(time.mktime(d.timetuple()))
 
-
     if 'nick_*buffextras' not in tags:
         # not a line coming from ZNC buffextras module.
-        prnt_date_tags(buffer, time_epoch, tags, "%s\t%s" %(prefix, line))
+        nick_talked.add((buffer, weechat.string_remove_color(prefix, '')))
+        prnt_date_tags(buffer, time_epoch, ','.join(tags), "%s\t%s" % (prefix, line))
         return ''
-    else:
-        # don't highlight me when I join a channel.
-        tags += ',no_highlight'
+
+    tags.discard('notify_message')
+    tags.discard('irc_privmsg')
+    tags.discard('nick_*buffextras')
 
     hostmask, s, line = line.partition(' ')
     nick = hostmask[:hostmask.find('!')]
     host = hostmask[len(nick) + 1:]
     server, channel = buffer_name.split('.', 1)
-    
+
     s = None
     if line == 'joined':
+        tags.add('irc_join')
         s = weechat.gettext("%s%s%s%s%s%s%s%s%s%s has joined %s%s%s")
         s = s %(weechat.prefix('join'),
                 COLOR_CHAT_NICK, # TODO there's a function for use nick's color
@@ -205,6 +228,7 @@ def playback_cb(data, modifier, modifier_data, string):
                                  ":%s JOIN :%s" % (hostmask, channel)))
 
     elif line == 'parted':
+        tags.add('irc_part')
         # buffextras doesn't seem to send the part's reason.
         s = weechat.gettext("%s%s%s%s%s%s%s%s%s%s has left %s%s%s")
         s = s %(weechat.prefix('quit'),
@@ -226,6 +250,7 @@ def playback_cb(data, modifier, modifier_data, string):
                                  ":%s PART %s" % (hostmask, channel)))
 
     elif line.startswith('quit with message:'):
+        tags.add('irc_quit')
         reason = line[line.find('[') + 1:-1]
         s = weechat.gettext("%s%s%s%s%s%s%s%s%s%s has quit %s(%s%s%s)")
         s = s %(weechat.prefix('quit'),
@@ -249,6 +274,7 @@ def playback_cb(data, modifier, modifier_data, string):
                                  ":%s QUIT :%s" % (hostmask, reason)))
 
     elif line.startswith('is now known as '):
+        tags.add('irc_nick')
         new_nick = line.rpartition(' ')[-1]
         s = weechat.gettext("%s%s%s%s is now known as %s%s%s")
         s = s %(weechat.prefix('network'),
@@ -265,6 +291,7 @@ def playback_cb(data, modifier, modifier_data, string):
                                  ":%s NICK :%s" % (hostmask, new_nick)))
 
     elif line.startswith('set mode: '):
+        tags.add('irc_mode')
         modes = line[line.find(':') + 2:]
         s = weechat.gettext("%sMode %s%s %s[%s%s%s]%s by %s%s")
         s = s %(weechat.prefix('network'),
@@ -288,6 +315,7 @@ def playback_cb(data, modifier, modifier_data, string):
                                  ":%s MODE %s %s" % (hostmask, channel, modes)))
 
     elif line.startswith('kicked'):
+        tags.add('irc_kick')
         _, nick_kicked, reason = line.split(None, 2)
         reason = reason[reason.find('[') + 1:-1]
         s = weechat.gettext("%s%s%s%s has kicked %s%s%s %s(%s%s%s)")
@@ -307,8 +335,8 @@ def playback_cb(data, modifier, modifier_data, string):
             signal_playback.add((time_epoch, server + ",irc_in_KICK", 
                                  ":%s KICK %s %s :%s" % (hostmask, channel, nick_kicked, reason)))
 
-
     elif line.startswith('changed the topic to: '):
+        tags.add('irc_topic')
         topic = line[line.find(':') + 2:]
         s = weechat.gettext("%s%s%s%s has changed topic for %s%s%s to \"%s%s\"")
         s = s %(weechat.prefix('network'),
@@ -321,11 +349,19 @@ def playback_cb(data, modifier, modifier_data, string):
                 topic,
                 COLOR_CHAT)
     
+    # crude smart filter
+    if SMART_FILTER and (buffer, nick) not in nick_talked \
+            and ('irc_join' in tags \
+                 or 'irc_part' in tags \
+                 or 'irc_quit' in tags \
+                 or 'irc_nick' in tags):
+        tags.add('irc_smart_filter')
+    
     if s is None:
         error('Unknown message from ZNC: %r' % string)
         return string
     else:
-        prnt_date_tags(buffer, time_epoch, tags, s)
+        prnt_date_tags(buffer, time_epoch, ','.join(tags), s)
         return ''
 
 def do_signal_playback():
@@ -339,7 +375,7 @@ def do_signal_playback():
 def get_config_options():
     global COLOR_RESET, COLOR_CHAT_DELIMITERS, COLOR_CHAT_NICK, COLOR_CHAT_HOST, \
            COLOR_CHAT_CHANNEL, COLOR_CHAT, COLOR_MESSAGE_JOIN, COLOR_MESSAGE_QUIT, \
-           COLOR_REASON_QUIT
+           COLOR_REASON_QUIT, SMART_FILTER
     global send_signals, znc_timestamp 
 
     config_get_string = lambda s: weechat.config_string(weechat.config_get(s))
@@ -352,6 +388,8 @@ def get_config_options():
     COLOR_MESSAGE_JOIN    = weechat.color(config_get_string('irc.color.message_join'))
     COLOR_MESSAGE_QUIT    = weechat.color(config_get_string('irc.color.message_quit'))
     COLOR_REASON_QUIT     = weechat.color(config_get_string('irc.color.reason_quit'))
+
+    SMART_FILTER = weechat.config_boolean(weechat.config_get("irc.look.smart_filter"))
         
     send_signals = get_config_boolean('send_signals')
     znc_timestamp = weechat.config_get_plugin('znc_timestamp')
