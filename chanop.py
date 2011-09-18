@@ -1020,7 +1020,7 @@ class IrcCommands(ChanopBuffers):
         if not value:
             raise Exception, "No command defined for get op."
         msg = self.OpMessage(value)
-        self.queue(msg)
+        self.queue(msg, insert=True)
 
     def Deop(self):
         msg = self.DeopMessage('-o', self.nick)
@@ -1807,11 +1807,10 @@ class CommandChanop(Command, ChanopBuffers):
         self.users = userCache[self.server, self.channel]
         try:
             self.execute_chanop()   # call our command and queue messages for WeeChat
+            self.irc.run()          # run queued messages
         except InvalidIRCBuffer, e:
             error('Not in a IRC channel (%s)' % e)
             self.irc.clear()
-        else:
-            self.irc.run()          # run queued messages
         self.infolist = None    # free irc_nick infolist
 
     def execute_chanop(self):
@@ -1891,9 +1890,13 @@ class CommandWithOp(CommandChanop):
             raise NoArguments
 
     def execute_chanop(self, *args):
-        self.irc.Op()
         self.execute_op(*args)
 
+        if not self.irc.commands:
+            # nothing in queue, no reason to op.
+            return
+
+        self.irc.Op()
         if (self.autodeop and self.get_config_boolean('autodeop')) or self.deopNow:
             if self.deopNow:
                 delay = 0
@@ -2137,13 +2140,19 @@ class Ban(CommandWithOp):
         args = self.args.split()
         banmasks = []
         for arg in args:
-            mask = arg
-            if not is_hostmask(arg):
+            if is_nick(arg):
                 hostmask = self.getHostmask(arg)
-                if hostmask:
-                    mask = self.make_banmask(hostmask)
-            if self.has_voice(arg):
-                self.irc.Devoice(arg)
+                if not hostmask:
+                    say("Unknown nick (%s)" % arg, self.buffer)
+                    continue
+                mask = self.make_banmask(hostmask)
+                if self.has_voice(arg):
+                    self.irc.Devoice(arg)
+            elif is_hostmask(arg):
+                mask = arg
+            else:
+                say("'%s' isn't a valid user mask or nick." % arg, self.buffer)
+                continue
             banmasks.append(mask)
         banmasks = set(banmasks) # remove duplicates
         self.ban(*banmasks)
@@ -2198,6 +2207,10 @@ class UnBan(Ban):
                 hostmask = arg
             elif is_nick(arg):
                 hostmask = self.getHostmask(arg)
+                if not hostmask:
+                    # nick unknown to chanop
+                    say("Unknown nick (%s)" % arg, self.buffer)
+                    continue
             else:
                 banmasks.append(arg)
                 continue
@@ -2240,11 +2253,9 @@ class BanKick(Ban, Kick):
             return
 
         hostmask = self.getHostmask(nick)
-        if hostmask:
-            banmask = self.make_banmask(hostmask)
-            self.ban(banmask)
-        else:
-            self.ban(nick)
+        # we already checked that nick is valid, so hostmask shouldn't be None
+        banmask = self.make_banmask(hostmask)
+        self.ban(banmask)
         if self.inChannel(nick):
             self.irc.Kick(nick, reason, wait=1)
 
@@ -2271,11 +2282,9 @@ class MultiBanKick(BanKick):
 
         for nick in nicks:
             hostmask = self.getHostmask(nick)
-            if hostmask:
-                banmask = self.make_banmask(hostmask)
-                self.ban(banmask)
-            else:
-                self.ban(nick)
+            banmask = self.make_banmask(hostmask)
+            self.ban(banmask)
+
         for nick in nicks:
             if self.inChannel(nick):
                 self.irc.Kick(nick, reason, wait=1)
