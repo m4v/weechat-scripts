@@ -2329,8 +2329,22 @@ class Mode(CommandWithOp):
     command = 'omode'
 
     def execute_op(self):
-        mode, _, args = self.args.partition(' ')
-        self.irc.Mode(mode, args)
+        args = self.args.split()
+        modes = args.pop(0)
+        L = []
+        p = ''
+        for c in modes:
+            if c in '+-':
+                p = c
+            elif args:
+                L.append((p + c, args.pop(0)))
+            else:
+                L.append((p + c, None))
+        if not L:
+            return
+
+        for mode, arg in L:
+            self.irc.Mode(mode, arg)
 
 
 class ShowBans(CommandChanop):
