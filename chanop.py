@@ -1232,9 +1232,14 @@ class MaskCache(ServerChannelDict):
 
 class MaskHandler(ServerChannelDict):
     __name__ = ''
+    _hide_msg = False
+
     _hook_mask = ''
     _hook_end = ''
-    _hide_msg = False
+
+    # freenode new signals for list quiet messages
+    _hook_quiet_mask = ''
+    _hook_quiet_end = ''
 
     caches = {}
     _modeTranslation = CaseInsensibleDict()
@@ -1242,20 +1247,29 @@ class MaskHandler(ServerChannelDict):
     _execute = CaseInsensibleDict()
 
     def hook(self):
-        if not self._hook_mask:
-            self._hook_mask = \
-                    weechat.hook_modifier('irc_in_367', callback(self._maskCallback), '')
-        if not self._hook_end:
-            self._hook_end = \
-                    weechat.hook_modifier('irc_in_368', callback(self._endCallback), '')
+        # 367 - ban mask
+        # 368 - end of ban list
+        # 728 - quiet mask
+        # 729 - end of quiet list
+        self.unhook()
+        self._hook_mask = \
+                weechat.hook_modifier('irc_in_367', callback(self._maskCallback), '')
+        self._hook_end = \
+                weechat.hook_modifier('irc_in_368', callback(self._endCallback), '')
+        self._hook_quiet_mask = \
+                weechat.hook_modifier('irc_in_728', callback(self._maskCallback), '')
+        self._hook_quiet_end = \
+                weechat.hook_modifier('irc_in_729', callback(self._endCallback), '')
 
     def unhook(self):
-        if self._hook_mask:
-            weechat.unhook(self._hook_mask)
-            self._hook_mask = ''
-        if self._hook_end:
-            weechat.unhook(self._hook_end)
-            self._hook_end = ''
+        for hook in ('_hook_mask',
+                     '_hook_end',
+                     '_hook_quiet_mask',
+                     '_hook_quiet_end'):
+            attr = getattr(self, hook)
+            if attr:
+                weechat.unhook(attr)
+                setattr(self, hook, '')
 
     def __setitem__(self, key, value):
         try:
@@ -1317,31 +1331,48 @@ class MaskHandler(ServerChannelDict):
             return
         cmd = '/mode %s %s' %(channel, mode)
         self._hide_msg = True
-        debug('fetching masks: %s', cmd)
         weechat.command(buffer, cmd)
 
     def _maskCallback(self, data, modifier, modifier_data, string):
-        """callback for irc_in_367 modifier, a single ban."""
-        #debug(string)
+        """callback for store a single mask.
+
+        irc_in_367 => ban
+        irc_in_728 => quiet
+        """
+
         args = string.split()
-        channel, banmask, op, date = args[3], args[4], None, None
-        try:
-            op = args[5]
-            date = args[6]
-        except:
-            pass
-        self[modifier_data, channel] = (banmask, op, date) # store temporally until irc_368 msg
+        if modifier == 'irc_in_367':
+            mode = 'b'
+            if len(args) < 7:
+                channel, mask = args[3], args[4]
+                op = date = None
+            else:
+                channel, mask, op, date = args[3:]
+        elif modifier == 'irc_in_728':
+            channel, mode, mask, op, date = args[3:]
+
+        debug("MASK %s: %s %s %s %s", modifier, channel, mask, op, date)
+        # store temporally until "end list" msg
+        self[modifier_data, channel] = (mask, op, date)
         if self._hide_msg:
             return ''
         else:
             return string
-    
+
     def _endCallback(self, data, modifier, modifier_data, string):
-        """callback for irc_in_368 modifier that marks the end of channel's ban list."""
-        #debug(string)
+        """callback for end of channel's mask list.
+
+        irc_in_368 => ban
+        irc_in_729 => quiet
+        """
+
         L = string.split()
-        channel, mode = L[3], L[7]
+        if modifier == 'irc_in_368':
+            channel, mode = L[3], L[7]
+        elif modifier == 'irc_in_729':
+            channel, mode = L[3], L[4]
         server = modifier_data
+        debug("MASK END %s: %s %s", modifier, channel, mode)
 
         try:
             maskCache = self.getCache(mode)
