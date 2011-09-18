@@ -189,6 +189,12 @@
 #
 #
 #   History:
+#
+#   2011-09-18
+#   version 0.2.6: bug fixes:
+#   * update script to work with freenode's new quiet messages.
+#   * /omode wouldn't work with several modes.
+#
 #   2011-05-31
 #   version 0.2.5: bug fixes:
 #   * /omode -o nick wouldn't work due to the deopNow switch.
@@ -251,7 +257,7 @@
 
 SCRIPT_NAME    = "chanop"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.2.5"
+SCRIPT_VERSION = "0.2.6"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Helper script for IRC Channel Operators"
 
