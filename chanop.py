@@ -1324,6 +1324,7 @@ class ModeCache(dict):
         cache = MaskCache()
         self[mode] = cache
         self.modes.add(mode)
+        self.type[mode] = mode
         for name in args:
             self.type[name] = mode
 
