@@ -576,6 +576,14 @@ def callback(method):
     setattr(__main__, name, method)
     return name
 
+def weechat_command(buffer, cmd):
+    """I want to always keep debug() calls for this"""
+    if buffer:
+        debug("<white>sending: %r buffer: %s", cmd, buffer)
+    else:
+        debug("<white>sending: %r", cmd)
+    weechat.command(buffer, cmd)
+
 class Infolist(object):
     """Class for reading WeeChat's infolists."""
 
@@ -788,7 +796,7 @@ class BufferVariables(dict):
         return self[k]
 
     def __setattr__(self, k, v):
-        debug('Buffer[%s] %s ... %s => %s', self.buffer, k, self.get(k), v)
+        debug(' -- buffer[%s] %s ... %s => %s', self.buffer, k, self.get(k), v)
         self[k] = v
 
 
@@ -868,8 +876,7 @@ class Message(ChanopBuffers):
             self.send(cmd)
 
     def send(self, cmd):
-        debug('sending: %r', cmd)
-        weechat.command(self.buffer, cmd)
+        weechat_command(self.buffer, cmd)
 
     def __repr__(self):
         return '<Message(%s, %s)>' %(self.command, self.args)
@@ -893,7 +900,7 @@ class IrcCommands(ChanopBuffers):
                 data = 'MODE %s +o %s' % (vars.channel, vars.nick)
                 signal = signal_data.split(None, 1)[1]
                 if signal == data:
-                    debug('+o confirmed')
+                    debug('GOT OP')
                     # add this channel to our watchlist
                     config = 'watchlist.%s' % vars.server
                     channels = CaseInsensibleSet(get_config_list(config))
@@ -1202,7 +1209,7 @@ class ServerChannelDict(CaseInsensibleDict):
     def purge(self):
         for key in self.keys():
             if key not in chanopChannels:
-                #debug('Removing %s.%s list, not in watchlist. (%s items)', key[0], key[1], len(self[key]))
+                debug('removing %s mask list, not in watchlist.', key)
                 del self[key]
         for data in self.itervalues():
             data.purge()
@@ -1233,9 +1240,10 @@ class MaskObject(object):
 
     def deserialize(self, data):
         op, date, expires, hostmasks = data.split(';')
-        assert op and date, "Error reading chanmask option: missing operator or date"
+        assert op and date, "Error reading chanmask option %s, missing operator or date" % self.mask
         if not is_hostmask(op):
-            raise Exception('Error reading chanmask option: invalid usermask %r' % op)
+            raise Exception('Error reading chanmask option %s, invalid usermask %r' \
+                            % (self.mask, op))
 
         self.operator = op
         try:
@@ -1249,7 +1257,8 @@ class MaskObject(object):
         if hostmasks:
             hostmasks = hostmasks.split(',')
             if not all(map(is_hostmask, hostmasks)):
-                raise Exception('Error reading chanmask option: a hostmask is invalid: %s' % hostmasks)
+                raise Exception('Error reading chanmask option %s, a hostmask is invalid: %s' \
+                                % (self.mask, hostmasks))
 
             self.hostmask = hostmasks
 
@@ -1344,13 +1353,13 @@ class ModeCache(dict):
         self.delete(server, channel, mode, mask)
 
     def save(self, server, channel, mode, ban):
-        debug("saving %s.%s +%s %s", server, channel, mode, ban.mask, level=3)
+        debug("saving %s.%s +%s %s", server, channel, mode, ban.mask)
         weechat.config_set_plugin('chanmask.%s.%s.%s.%s' \
                                   % (server, channel, mode, ban.mask),
                                   ban.serialize())
 
     def delete(self, server, channel, mode, mask):
-        debug("deleting %s.%s +%s %s", server, channel, mode, mask, level=3)
+        debug("deleting %s.%s +%s %s", server, channel, mode, mask)
         weechat.config_unset_plugin('chanmask.%s.%s.%s.%s' \
                                     % (server, channel, mode, mask))
 
@@ -1608,16 +1617,17 @@ class UserList(ServerUserList):
         self._purge_time = 3600*2 # 2 hours
 
     def __setitem__(self, nick, user):
+        #debug('<green>%s %s: join, %s', self.server, self.channel, nick)
         if nick not in self:
             user._channels += 1
         if nick in self._purge_list:
-            #debug('UserList: removing from purge list: %s', nick)
+            #debug(' - removed from purge list')
             del self._purge_list[nick]
         ServerUserList.__setitem__(self, nick, user)
 
     def part(self, nick):
         try:
-            #debug('UserList: adding to purge list: %s', nick)
+            #debug('<red>%s %s: part, %s', self.server, self.channel, nick)
             user = self[nick]
             self._purge_list[nick] = user
         except KeyError:
@@ -1661,7 +1671,7 @@ class UserList(ServerUserList):
         n = now()
         for nick, user in self._purge_list.items():
             if (n - user.seen) > self._purge_time:
-                #debug('UserList(%s, %s): forgeting about %s', self.server, self.channel, nick)
+                #debug('%s %s: forgeting about %s', self.server, self.channel, nick)
                 user._channels -= 1
                 try:
                     del self._purge_list[nick]
@@ -1677,7 +1687,7 @@ class UserCache(ServerChannelDict):
     _channels = CaseInsensibleSet()
 
     def generateCache(self, server, channel):
-        debug('generateCache: %s %s', server, channel)
+        debug('* building cache: %s %s', server, channel)
         users = UserList(server, channel)
         try:
             infolist = nick_infolist(server, channel)
@@ -1696,6 +1706,7 @@ class UserCache(ServerChannelDict):
             user = self.remember(server, nick, hostmask)
             users[nick] = user
         self[server, channel] = users
+        debug("new cache of %s users", len(users))
         return users
 
     def remember(self, server, nick, hostmask):
@@ -1705,6 +1716,7 @@ class UserCache(ServerChannelDict):
             if hostmask:
                 user.update(hostmask)
         except KeyError:
+            #debug("%s: new user %s %s", server, nick, hostmask)
             user = UserObject(nick, hostmask)
             cache[nick] = user
         return user
@@ -1725,7 +1737,7 @@ class UserCache(ServerChannelDict):
     def __delitem__(self, k):
         # when we delete a channel, we need to reduce user._channels count
         # so they can be purged later.
-        #debug('UserCache: forgeting about %s', k)
+        #debug('forgeting about %s', k)
         for user in self[k].itervalues():
             user._channels -= 1
         ServerChannelDict.__delitem__(self, k)
@@ -1751,9 +1763,8 @@ class UserCache(ServerChannelDict):
         self._hook_who_end = weechat.hook_modifier(
                 'irc_in_315', callback(self._endWhoCallback), key)
 
-        debug('WHO: %s', channel)
         buffer = weechat.buffer_search('irc', 'server.%s' %server)
-        weechat.command(buffer, '/WHO %s' %channel)
+        weechat_command(buffer, '/who %s' % channel)
 
     def _whoCallback(self, data, modifier, modifier_data, string):
         #debug('%s %s %s', modifier, modifier_data, string)
@@ -1765,7 +1776,7 @@ class UserCache(ServerChannelDict):
 
         nick, user, host = args[7], args[4], args[5]
         hostmask = '%s!%s@%s' %(nick, user, host)
-        debug('WHO: %s', hostmask, level=2)
+        debug('WHO: %s', hostmask)
         self.remember(server, nick, hostmask)
         return ''
 
@@ -1783,7 +1794,6 @@ class UserCache(ServerChannelDict):
         return ''
 
     def purge(self):
-        #debug('UserCache purging...')
         ServerChannelDict.purge(self)
         for cache in self.servercache.itervalues():
             cache.purge()
@@ -1800,7 +1810,7 @@ class CommandChanop(Command, ChanopBuffers):
 
     def parser(self, args):
         if not args:
-            weechat.command('', '/help %s' %self.command)
+            weechat_command('', '/help %s' % self.command)
             raise NoArguments
         self.setup(self.buffer)
 
@@ -2187,6 +2197,7 @@ class UnBan(Ban):
     prefix = '-'
 
     def search_masks(self, hostmask):
+        debug('search_masks: %s', hostmask)
         try:
             masklist = self.maskCache[self.server, self.channel]
         except KeyError:
@@ -2488,7 +2499,7 @@ def signal_parse(f):
             return WEECHAT_RC_OK
         nick = get_nick(signal_data)
         hostmask = signal_data[1:signal_data.find(' ')]
-        debug('%s %s %s', data, signal, signal_data)
+        #debug('<gray>%s %s', signal, signal_data)
         return f(server, channel, nick, hostmask, signal_data)
     decorator.func_name = f.func_name
     return decorator
@@ -2501,7 +2512,7 @@ def signal_parse_no_channel(f):
         channels = userCache.getChannels(server, nick)
         if channels:
             hostmask = signal_data[1:signal_data.find(' ')]
-            debug('%s %s %s', data, signal, signal_data)
+            #debug('<gray>%s %s', signal, signal_data)
             return f(server, channels, nick, hostmask, signal_data)
         return WEECHAT_RC_OK
     decorator.func_name = f.func_name
@@ -2528,7 +2539,7 @@ def get_isupport_value(server, feature):
                 if '/VERSION' in isupport[server]:
                     return ''
                 buffer = weechat.buffer_search('irc', 'server.%s' %server)
-                weechat.command(buffer, '/VERSION')
+                weechat_command(buffer, '/VERSION')
                 isupport[server]['/VERSION'] = True
         return v
 
@@ -2650,7 +2661,7 @@ def mode_cb(server, channel, nick, opHostmask, signal_data):
     affected_users = []
     # update masks
     for action, mode, mask in chanmode_list:
-        debug('MODE: %s%s %s %s', action, mode, mask, opHostmask, level=2)
+        debug('MODE: %s%s %s %s', action, mode, mask, opHostmask)
         if action == '+':
             hostmask = hostmask_match_list(mask, userCache[key].hostmasks())
             if hostmask:
@@ -2713,6 +2724,7 @@ def garbage_collector_cb(data, counter):
     """This takes care of purging users and masks from channels not in watchlist, and
     expired users that parted.
     """
+    debug('* flushing caches')
     modeCache.purge()
     userCache.purge()
     
@@ -2721,7 +2733,7 @@ def garbage_collector_cb(data, counter):
         for serv, chan in userCache:
             for nick in [ nick['name'] for nick in nick_infolist(serv, chan) ]:
                 if nick not in userCache[serv, chan]:
-                    error('User cache out of sync, unknown nick. (%s)' % nick)
+                    error('User cache out of sync, unknown nick. (%s - %s.%s)' % (nick, serv, chan))
 
     return WEECHAT_RC_OK
 
@@ -3040,6 +3052,42 @@ if __name__ == '__main__' and import_ok and \
                                    color_delimiter,
                                    color_reset)
 
+    # -------------------------------------------------------------------------
+    # Debug
+
+    def colorFormat(f):
+        def colorise(s, *args, **kwargs):
+            if s[0] == '<' and '>' in s:
+                color = s[1:s.find('>')]
+                if color.isalpha():
+                    s = s[s.find('>') + 1:]
+                    f(weechat.color(color) + s, *args, **kwargs)
+                    return
+            f(s, *args, **kwargs)
+        return colorise
+
+    if weechat.config_get_plugin('debug'):
+        try:
+            # custom debug module I use, allows me to inspect script's objects.
+            import pybuffer
+            debug = pybuffer.debugBuffer(globals(), '%s_debug' % SCRIPT_NAME)
+            weechat.buffer_set(debug._getBuffer(), 'localvar_set_no_log', '0')
+            debug = colorFormat(debug)
+        except:
+            @colorFormat
+            def debug(s, *args):
+                if not isinstance(s, basestring):
+                    s = str(s)
+                if args:
+                    s = s %args
+                prnt('', '%s\t%s' % (script_nick, s))
+    else:
+        def debug(*args):
+            pass
+
+    # -------------------------------------------------------------------------
+    # Init
+
     # check weechat version
     try:
         version = int(weechat.info_get('version_number', ''))
@@ -3122,32 +3170,6 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_info("chanop_pattern_match",
             "Test if pattern matches text, is case insensible with IRC case rules.",
             "pattern,text", "info_pattern_match", "")
-
-    # -------------------------------------------------------------------------
-    # Debug
-
-    def debugLvl(f):
-        def debug(s, *args, **kwargs):
-            level = kwargs.get('level', 1)
-            lvl = weechat.config_get_plugin('debug')
-            if lvl.isdigit() and level <= int(lvl):
-                return f(s, *args)
-        return debug
-
-    try:
-        # custom debug module I use, allows me to inspect script's objects.
-        import pybuffer
-        debug = pybuffer.debugBuffer(globals(), '%s_debug' % SCRIPT_NAME)
-        debug = debugLvl(debug)
-    except:
-        @debugLvl
-        def debug(s, *args):
-            if not isinstance(s, basestring):
-                s = str(s)
-            if args:
-                s = s %args
-            prnt('', '%s\t%s' % (script_nick, s))
-
 
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
