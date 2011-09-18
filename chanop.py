@@ -735,45 +735,48 @@ class Command(object):
 
 class Bar(object):
     def __init__(self, name, hidden=False, items=''):
+        self.name = name
+        self.hidden = hidden
         self._pointer = ''
-        self._name = name
-        self._hidden = hidden
         self._items = items
 
     def new(self):
-        assert not self._pointer, "Bar %s already created" % self._name
-        pointer = weechat.bar_search(self._name)
+        assert not self._pointer, "Bar %s already created" % self.name
+        pointer = weechat.bar_search(self.name)
         if not pointer:
-            pointer = weechat.bar_new(self._name,
-                                      boolDict[self._hidden],
-                                      '0', 'window', 'active', 
-                                      'bottom', 'horizontal', 'vertical', '0', '1',
-                                      'default', 'cyan', 'blue', 'off', 
+            pointer = weechat.bar_new(self.name, boolDict[self.hidden], '0', 'window',
+                                      'active', 'bottom', 'horizontal', 'vertical',
+                                      '0', '1', 'default', 'cyan', 'blue', 'off', 
                                       self._items) 
             if not pointer:
-                raise Exception, "bar_new failed: %s %s" % (SCRIPT_NAME, self._name)
+                raise Exception, "bar_new failed: %s %s" % (SCRIPT_NAME, self.name)
 
         self._pointer = pointer
 
+    def getPointer(self):
+        return weechat.bar_search(self.name)
+
     def show(self):
-        assert self._pointer
-        if self._hidden:
-            weechat.bar_set(self._pointer, 'hidden', 'off')
-            self._hidden = False
+        pointer = self.getPointer()
+        if pointer and self.hidden:
+            weechat.bar_set(pointer, 'hidden', 'off')
+            self.hidden = False
 
     def hide(self):
-        assert self._pointer
-        if not self._hidden:
-            weechat.bar_set(self._pointer, 'hidden', 'on')
-            self._hidden = True
+        pointer = self.getPointer()
+        if pointer and not self.hidden:
+            weechat.bar_set(pointer, 'hidden', 'on')
+            self.hidden = True
 
     def remove(self):
-        if self._pointer:
-            weechat.bar_remove(self._pointer)
+        pointer = self.getPointer()
+        if pointer:
+            weechat.bar_remove(pointer)
+            self._pointer = ''
 
     def __len__(self):
         """True False evaluation."""
-        if self._pointer:
+        if self.getPointer():
             return 1
         else:
             return 0
@@ -2955,7 +2958,7 @@ def info_pattern_match(data, info_name, arguments):
 chanop_bar_current_buffer = ''
 
 @catchExceptions
-def ban_matches_cb(data, item, window):
+def item_ban_matches_cb(data, item, window):
     #debug('ban matches item: %s %s', item, window)
     global chanop_bar_current_buffer
     buffer = chanop_bar_current_buffer
@@ -3161,7 +3164,7 @@ if __name__ == '__main__' and import_ok and \
     chanop_bar = Bar('chanop_bar', hidden=True, items='chanop_ban_matches')
     chanop_bar.new()
 
-    weechat.bar_item_new('chanop_ban_matches', 'ban_matches_cb', '')
+    weechat.bar_item_new('chanop_ban_matches', 'item_ban_matches_cb', '')
     weechat.hook_modifier('input_text_content', 'input_content_cb', '')
 
     weechat.hook_info("chanop_hostmask_from_nick",
