@@ -193,6 +193,12 @@
 #   version 0.3-dev:
 #   * cycle between different banmasks in /oban /oquiet commands.
 #   * added pop-up bar for show information.
+#   * save ban mask information (date and operator) in weechat options.
+#
+#   2011-09-18
+#   version 0.2.6: bug fixes:
+#   * update script to work with freenode's new quiet messages.
+#   * /omode wouldn't work with several modes.
 #
 #   2011-05-31
 #   version 0.2.5: bug fixes:
