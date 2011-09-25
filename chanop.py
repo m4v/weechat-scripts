@@ -700,6 +700,7 @@ class Command(object):
     def callback(self, data, buffer, args):
         """Called by WeeChat when /command is used."""
         self.data, self.buffer, self.args = data, buffer, args
+        debug("<darkgray>[%s] data: \"%s\" buffer: \"%s\" args: \"%s\"", self.command, data, buffer, args)
         try:
             self.parser(args)  # argument parsing
         except ArgumentError, e:
@@ -1298,11 +1299,12 @@ class MaskList(CaseInsensibleDict):
 #        except KeyError:
 #            return []
 
-    def search(self, s):
-        if is_hostmask(s):
-            return [ mask for mask in self if hostmask_match(mask, s) ]
+    def search(self, pattern, reverseMatch=False):
+        if reverseMatch:
+            L = [ mask for mask in self if hostmask_match(mask, pattern) ]
         else:
-            return pattern_match_list(s, self.iterkeys())
+            L = pattern_match_list(pattern, self.iterkeys())
+        return L
 
     def purge(self):
         pass
@@ -2205,37 +2207,35 @@ class UnBan(Ban):
     completion = '%(chanop_unban_mask)|%(chanop_nicks)|%*'
     prefix = '-'
 
-    def search_masks(self, hostmask):
-        debug('search_masks: %s', hostmask)
+    def search_masks(self, hostmask, **kwargs):
         try:
             masklist = self.maskCache[self.server, self.channel]
         except KeyError:
             return []
-        if callable(hostmask):
 
+        if callable(hostmask):
             def banmask():
-                L = masklist.search(hostmask())
+                L = masklist.search(hostmask(), **kwargs)
                 if L: return L[0]
 
             return [ banmask ]
-        return masklist.search(hostmask)
+        return masklist.search(hostmask, **kwargs)
 
     def execute_op(self):
         args = self.args.split()
         banmasks = []
         for arg in args:
             if is_hostmask(arg):
-                hostmask = arg
+                banmasks.extend(self.search_masks(arg))
             elif is_nick(arg):
                 hostmask = self.getHostmask(arg)
-                if not hostmask:
+                if hostmask:
+                    banmasks.extend(self.search_masks(hostmask, reverseMatch=True))
+                else:
                     # nick unknown to chanop
                     say("Unknown nick (%s)" % arg, self.buffer)
-                    continue
             else:
                 banmasks.append(arg)
-                continue
-            banmasks.extend(self.search_masks(hostmask))
         self.ban(*banmasks)
 
 
