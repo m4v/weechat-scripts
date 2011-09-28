@@ -178,8 +178,13 @@
 #
 ###
 
+import os
+import re
+import sys
+import time
+import getopt
+import tempfile
 from os import path
-import sys, getopt, time, os, re, tempfile
 
 try:
     import weechat
@@ -299,6 +304,7 @@ class linesList(list):
             self.append(s)
 
     def onlyUniq(self):
+        # FIXME set screws up line order.
         s = set(self)
         del self[:]
         self.extend(s)
@@ -429,7 +435,7 @@ def error(s, buffer=''):
 
 def say(s, buffer=''):
     """normal msg"""
-    prnt_date_tags(buffer, 0, 'no_highlight', '%s\t%s' %(script_nick, s))
+    prnt_date_tags(buffer, 0, 'no_highlight,no_log,grep', '%s\t%s' % (script_nick, s))
 
 
 
@@ -796,6 +802,9 @@ def grep_buffer(buffer, head, tail, after_context, before_context, count, regexp
         grep_buffer = weechat.buffer_search('python', SCRIPT_NAME)
         if grep_buffer and buffer == grep_buffer:
             def function(infolist):
+                tags = infolist_string(infolist, 'tags')
+                if 'grep' in tags:
+                    return None
                 prefix = infolist_string(infolist, 'prefix')
                 message = infolist_string(infolist, 'message')
                 if prefix: # only our messages have prefix, ignore it
@@ -804,6 +813,9 @@ def grep_buffer(buffer, head, tail, after_context, before_context, count, regexp
         else:
             infolist_time = weechat.infolist_time
             def function(infolist):
+                tags = infolist_string(infolist, 'tags')
+                if 'grep' in tags:
+                    return None
                 prefix = string_remove_color(infolist_string(infolist, 'prefix'), '')
                 message = string_remove_color(infolist_string(infolist, 'message'), '')
                 date = infolist_time(infolist, 'date')
@@ -1526,6 +1538,54 @@ def cmd_logs(data, buffer, args):
         print_line(msg, buffer)
     return WEECHAT_RC_OK
 
+def cmd_lastlog(data, buffer, args):
+    # XXX no pattern templates
+    pattern = args
+    nick_dict = {}
+
+    def format_line(s):
+        date, nick, msg = s.split('\t', 2) # date, nick, message
+        if '\t' in msg:
+            msg = msg.replace('\t', '    ')
+        try:
+            nick = nick_dict[nick]
+        except KeyError:
+            # cache nick
+            nick_c = color_nick(nick)
+            nick_dict[nick] = nick_c
+            nick = nick_c
+        return date, '%s%s\t%s' % (nick, color_reset, msg)
+
+    try:
+        matched_lines = []
+        regexp = make_regexp(pattern)
+        infolist = weechat.infolist_get('buffer_lines', buffer, '')
+        while weechat.infolist_next(infolist):
+            tags = weechat.infolist_string(infolist, 'tags')
+            if 'grep' in tags:
+                continue
+
+            prefix = weechat.infolist_string(infolist, 'prefix') 
+            message = weechat.infolist_string(infolist, 'message')
+            line = "%s\t%s" % (prefix, message)
+            line_nocolor = weechat.string_remove_color(line, '')
+            if check_string(line_nocolor, regexp):
+                date = weechat.infolist_time(infolist, 'date')
+                date = time.strptime(date, "%Y-%m-%d %H:%M:%S")
+                date = int(time.mktime(date))
+                matched_lines.append((date, line))
+        weechat.infolist_free(infolist)
+
+        if matched_lines:
+            say("%sLastlog for \"%s\":" % (weechat.color('white'), pattern), buffer)
+            for date, line in matched_lines:
+                prnt_date_tags(buffer, date, 'no_highlight,no_log,grep', line)
+            say("%sEnd of Lastlog." % weechat.color('white'), buffer)
+        else:
+            say("%sNothing found with \"%s\"." % (wheechat.color('white'), pattern), buffer)
+    except Exception, e:
+        error(e, buffer)
+    return WEECHAT_RC_OK
 
 ### Completion ###
 def completion_log_files(data, completion_item, buffer, completion):
@@ -1667,6 +1727,7 @@ Examples:
     weechat.hook_command('logs', cmd_logs.__doc__, "[-s|--size] [<filter>]",
             "-s --size: Sort logs by size.\n"
             " <filter>: Only show logs that match <filter>. Use '*' and '?' as wildcards.", '--size', 'cmd_logs', '')
+    weechat.hook_command('lastlog', "", "", "", "", 'cmd_lastlog', '')
 
     weechat.hook_completion('grep_log_files', "list of log files",
             'completion_log_files', '')
