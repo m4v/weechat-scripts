@@ -1540,6 +1540,9 @@ def cmd_logs(data, buffer, args):
 
 def cmd_lastlog(data, buffer, args):
     # XXX no pattern templates
+    # FIXME no limit in the amount of matches
+    # FIXME no help
+    # FIXME lacks features present in /grep, like --hilight --matchcase
     pattern = args
     nick_dict = {}
 
