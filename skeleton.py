@@ -38,7 +38,7 @@ except ImportError:
     print "Get WeeChat now at: http://www.weechat.org/"
     import_ok = False
 
-SCRIPT_NAME    = "skeleton"
+SCRIPT_NAME    = ""
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
 SCRIPT_VERSION = "0.1-dev"
 SCRIPT_LICENSE = "GPL3"
@@ -52,7 +52,7 @@ settings = {}
 script_nick = SCRIPT_NAME
 def error(s, buffer=''):
     """Error msg"""
-    prnt(buffer, '%s%s %s' %(weechat.prefix('error'), script_nick, s))
+    prnt(buffer, '%s%s %s' % (weechat.prefix('error'), script_nick, s))
     if weechat.config_get_plugin('debug'):
         import traceback
         if traceback.sys.exc_type:
@@ -61,7 +61,7 @@ def error(s, buffer=''):
 
 def say(s, buffer=''):
     """normal msg"""
-    prnt(buffer, '%s\t%s' %(script_nick, s))
+    prnt(buffer, '%s\t%s' % (script_nick, s))
 
 # -------------------------------------------------------------------------
 # Utils
@@ -109,8 +109,8 @@ def get_config_boolean(config):
         return boolDict[value]
     except KeyError:
         default = settings[config]
-        error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
-        error("'%s' is invalid, allowed: 'on', 'off'" %value)
+        error("Error while fetching config '%s'. Using default value '%s'." % (config, default))
+        error("'%s' is invalid, allowed: 'on', 'off'" % value)
         return boolDict[default]
 
 def get_config_int(config, allow_empty_string=False):
@@ -121,8 +121,8 @@ def get_config_int(config, allow_empty_string=False):
         if value == '' and allow_empty_string:
             return value
         default = settings[config]
-        error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
-        error("'%s' is not a number." %value)
+        error("Error while fetching config '%s'. Using default value '%s'." % (config, default))
+        error("'%s' is not a number." % value)
         return int(default)
 
 valid_methods = set(())
@@ -130,8 +130,8 @@ def get_config_valid_string(config, valid_strings=valid_methods):
     value = weechat.config_get_plugin(config)
     if value not in valid_strings:
         default = settings[config]
-        error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
-        error("'%s' is an invalid value, allowed: %s." %(value, ', '.join(valid_strings)))
+        error("Error while fetching config '%s'. Using default value '%s'." % (config, default))
+        error("'%s' is an invalid value, allowed: %s." % (value, ', '.join(valid_strings)))
         return default
     return value
 
@@ -139,8 +139,8 @@ def get_config_valid_string(config, valid_strings=valid_methods):
 # Main
 
 if __name__ == '__main__' and import_ok and \
-            weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
-        SCRIPT_DESC, '', ''):
+            weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
+                             SCRIPT_DESC, '', ''):
 
     # colors
     COLOR_RESET           = weechat.color('reset')
@@ -162,27 +162,21 @@ if __name__ == '__main__' and import_ok and \
     # -------------------------------------------------------------------------
     # Debug
 
-    def debugLvl(f):
-        def debug(s, *args, **kwargs):
-            level = kwargs.get('level', 1)
-            lvl = weechat.config_get_plugin('debug')
-            if lvl.isdigit() and level <= int(lvl):
-                return f(s, *args)
-        return debug
-
-    try:
-        # custom debug module I use, allows me to inspect script's objects.
-        import pybuffer
-        debug = pybuffer.debugBuffer(globals(), '%s_debug' % SCRIPT_NAME)
-        debug = debugLvl(debug)
-    except:
-        @debugLvl
+    if weechat.config_get_plugin('debug'):
+        try:
+            # custom debug module I use, allows me to inspect script's objects.
+            import pybuffer
+            debug = pybuffer.debugBuffer(globals(), '%s_debug' % SCRIPT_NAME)
+        except ImportError:
+            def debug(s, *args):
+                if not isinstance(s, basestring):
+                    s = str(s)
+                if args:
+                    s = s %args
+                prnt('', '%s\t%s' % (script_nick, s))
+    else:
         def debug(s, *args):
-            if not isinstance(s, basestring):
-                s = str(s)
-            if args:
-                s = s %args
-            prnt('', '%s\t%s' % (script_nick, s))
+            pass
 
 
 # vim:set shiftwidth=4 tabstop=4 softtabstop=4 expandtab textwidth=100:
