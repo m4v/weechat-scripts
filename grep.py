@@ -1540,11 +1540,12 @@ def cmd_logs(data, buffer, args):
 
 def cmd_lastlog(data, buffer, args):
     # XXX no pattern templates
-    # FIXME no limit in the amount of matches
     # FIXME no help
     # FIXME lacks features present in /grep, like --hilight --matchcase
     pattern = args
     nick_dict = {}
+    # XXX make it configurable.
+    max_lines = 100
 
     def format_line(s):
         date, nick, msg = s.split('\t', 2) # date, nick, message
@@ -1580,10 +1581,18 @@ def cmd_lastlog(data, buffer, args):
         weechat.infolist_free(infolist)
 
         if matched_lines:
+            if len(matched_lines) > max_lines:
+                say("%sMore than %s matches, use /grep instead." % (weechat.color('white'),
+                                                                    max_lines),
+                                                                    buffer)
+                return WEECHAT_RC_OK
+
             say("%sLastlog for \"%s\":" % (weechat.color('white'), pattern), buffer)
             for date, line in matched_lines:
                 prnt_date_tags(buffer, date, 'no_highlight,no_log,grep', line)
-            say("%sEnd of Lastlog." % weechat.color('white'), buffer)
+            say("%sEnd of Lastlog, %s matches." % (weechat.color('white'),
+                                                   len(matched_lines)),
+                                                   buffer)
         else:
             say("%sNothing found with \"%s\"." % (wheechat.color('white'), pattern), buffer)
     except Exception, e:
