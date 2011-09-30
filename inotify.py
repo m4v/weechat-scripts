@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 ###
-# Copyright (c) 2009-2010 by Elián Hanisch <lambdae2@gmail.com>
+# Copyright (c) 2009-2011 by Elián Hanisch <lambdae2@gmail.com>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,7 +17,7 @@
 ###
 
 ###
-# Notifications for WeeChat
+# Notifications for WeeChat (needs WeeChat 0.3.4)
 #
 #   Notification script that uses libnotify or dbus, supports WeeChat inside screen.
 #   Uses a xmlrpc daemon that must be running in the receiving machine (remotely or locally)
@@ -142,18 +142,6 @@ from fnmatch import fnmatch
 socket.setdefaulttimeout(4)
 
 ### Messages ###
-def debug(s, prefix=''):
-    """Debug msg"""
-    if not weechat.config_get_plugin('debug'): return
-    buffer_name = 'DEBUG_' + SCRIPT_NAME
-    buffer = weechat.buffer_search('python', buffer_name)
-    if not buffer:
-        buffer = weechat.buffer_new(buffer_name, '', '', '', '')
-        weechat.buffer_set(buffer, 'nicklist', '0')
-        weechat.buffer_set(buffer, 'time_for_each_line', '0')
-        weechat.buffer_set(buffer, 'localvar_set_no_log', '1')
-    weechat.prnt(buffer, '%s\t%s' %(prefix, s))
-
 def error(s, prefix='', buffer='', trace=''):
     """Error msg"""
     if weechat.config_get_plugin('quiet'): return
@@ -327,7 +315,7 @@ class Server(object):
 
     @catch_exceptions
     def send_rpc(self, *args):
-        debug('sending rpc: %s' %' '.join(map(repr, args)))
+        debug('sending rpc: %s', ' '.join(map(repr, args)))
         passwd = weechat.config_get_plugin('passwd')
         if self.remote:
             return self._send_rpc_process(passwd, *args)
@@ -362,7 +350,7 @@ class Server(object):
 
         args = ', '.join(map(quoted, args))
         cmd = rpc_process_cmd %{'server_uri':self.address, 'method':self.method, 'args':args}
-        debug('\nRemote cmd:%s\n' %cmd)
+        debug('\nRemote cmd:%s\n' % cmd)
         weechat.hook_process(cmd, 30000, 'rpc_process_cb', '')
 
     @catch_exceptions
@@ -416,12 +404,14 @@ def rpc_process_cb(data, command, rc, stdout, stderr):
         error(stderr)
     return WEECHAT_RC_OK
 
-color_table = ('teal', 'darkmagenta', 'darkgreen', 'brown', 'blue', 'darkblue', 'darkcyan', 'magenta', 'green', 'grey')
+color_table = ( 'teal', 'darkmagenta', 'darkgreen', 'brown', 'blue', 
+                'darkblue', 'darkcyan', 'magenta', 'green', 'grey',
+                )
 
-def color_tag(nick):
+def color_nick(nick):
     n = len(color_table)
     #generic_nick = nick.strip('_`').lower()
-    id = (sum(map(ord, nick))%n)
+    id = (sum(map(ord, nick)) % n)
     #debug('%s:%s' %(nick, id))
     return '<font color=%s>&lt;%s&gt;</font>' %(color_table[id], nick)
 
@@ -448,7 +438,7 @@ def format(s, nick=''):
 
     if nick:
         if get_config_boolean('color_nick'):
-            nick = color_tag(nick)
+            nick = color_nick(nick)
         else:
             nick = '&lt;%s&gt;' %nick
         s = '<b>%s</b> %s' %(nick, s)
@@ -456,6 +446,8 @@ def format(s, nick=''):
 
 def send_notify(s, channel='', nick=''):
     #command = getattr(server, 'kde4')
+    debug("%sNotification channel: %s nick: %s text: %s", weechat.color('white'),
+                                                          channel, nick, s)
     s = format(s, nick)
     server.enqueue(s, channel)
 
@@ -496,24 +488,35 @@ def notify_msg(workaround, buffer, time, tags, display, hilight, prefix, msg):
     if workaround and 'notify_message' not in tags and 'notify_private' not in tags:
         # weechat 0.3.0 bug
         return WEECHAT_RC_OK
-    #debug('  '.join((buffer, time, tags, display, hilight, prefix, 'msg_len:%s' %len(msg))),
-    #        prefix='MESSAGE')
+
+    tags = tags.split(',')
     private = 'notify_private' in tags
     if (hilight == '1' or private) and display == '1':
-        if 'irc_action' in tags:
-            prefix, _, msg = msg.partition(' ')
-            msg = '%s %s' %(config_string('weechat.look.prefix_action'), msg)
-        prefix = get_nick(prefix)
-        if prefix not in ignore_nick \
+        debug((buffer, time, tags, display, hilight, prefix))
+        debug(msg)
+        nick = None
+        for tag in tags:
+            if tag.startswith('nick_'):
+                nick = tag[5:]
+                break
+        if not nick:
+            return WEECHAT_RC_OK
+
+        if 'irc_notice' in tags or 'irc_action' in tags:
+            msg = msg[msg.find(' ') + 1:]
+        #if 'irc_action' in tags:
+        #    prefix, _, msg = msg.partition(' ')
+         #   msg = '%s %s' % (config_string('weechat.look.prefix_action'), msg)
+        #prefix = get_nick(prefix)
+        if nick not in ignore_nick \
                 and msg not in ignore_text \
                 and not is_displayed(buffer):
-            #debug('%sSending notification: %s' %(weechat.color('lightgreen'), channel), prefix='NOTIFY')
             if not private:
                 channel = weechat.buffer_get_string(buffer, 'short_name')
                 if channel not in ignore_channel:
-                    send_notify(msg, channel=channel, nick=prefix)
+                    send_notify(msg, channel=channel, nick=nick)
             else:
-                send_notify(msg, channel=prefix)
+                send_notify(msg, channel=nick)
     return WEECHAT_RC_OK
 
 def cmd_notify(data, buffer, args):
@@ -550,6 +553,28 @@ def server_update(*args):
 if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, SCRIPT_DESC,
         '', ''):
+
+    # -------------------------------------------------------------------------
+    # Debug
+
+    if weechat.config_get_plugin('debug'):
+        try:
+            # custom debug module I use, allows me to inspect script's objects.
+            import pybuffer
+            debug = pybuffer.debugBuffer(globals(), '%s_debug' % SCRIPT_NAME)
+        except:
+            def debug(s, *args):
+                if not isinstance(s, basestring):
+                    s = str(s)
+                if args:
+                    s = s %args
+                prnt('', '%s\t%s' %(script_nick, s))
+    else:
+        def debug(*args):
+            pass
+
+    # -------------------------------------------------------------------------
+    # Init
 
     # pretty nick
     color_delimiter = weechat.color('chat_delimiters')
