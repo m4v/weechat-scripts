@@ -133,7 +133,9 @@ except:
     print "Get WeeChat now at: http://www.weechat.org/"
     import_ok = False
 
-import xmlrpclib, socket
+import re
+import socket
+import xmlrpclib
 from fnmatch import fnmatch
 
 # remote daemon timeout
@@ -423,6 +425,7 @@ def color_tag(nick):
     #debug('%s:%s' %(nick, id))
     return '<font color=%s>&lt;%s&gt;</font>' %(color_table[id], nick)
 
+urlRe = re.compile('(?P<url>(https?://\S+|www\S+))')
 def format(s, nick=''):
     if '<' in s:
         s = s.replace('<', '&lt;')
@@ -432,6 +435,17 @@ def format(s, nick=''):
         s = s.replace('"', '&quot;')
     if '\n' in s:
         s = s.replace('\n', '<br/>')
+
+    # make hyperlinks
+    def makelink(match):
+        url = match.group('url')
+        txt = url
+        if len(txt) > 30:
+            txt = txt[:20] + '&hellip;' + txt[-10:]
+        return '<a href="%s">%s</a>' % (url, txt)
+
+    s = urlRe.sub(makelink, s)
+
     if nick:
         if get_config_boolean('color_nick'):
             nick = color_tag(nick)
