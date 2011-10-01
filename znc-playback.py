@@ -17,11 +17,21 @@
 ###
 
 ###
-#
+#   Needs WeeChat 0.3.4
 #
 #   Commands:
 #
 #   Settings:
+#   * plugins.var.python.znc-playback.timestamp:
+#     Timestamp format used by ZNC during playback, default is "[%H:%M:%S]".
+#     Only prepended timestamps supported.
+#     
+#     The default timestamp should be good enough in most cases, but since it lacks year, month and
+#     day information, logs might end up with wrong dates if the day changed during playback. So is
+#     advisable to configure ZNC and znc-playback to use timestamps like "[%y/%m/%d %H:%M:%S]"
+#
+#   * plugins.var.python.znc-playback.send_signals:
+#     TODO
 #
 #   History:
 #   <date>
@@ -127,9 +137,9 @@ def playback_cb(data, modifier, modifier_data, string):
                                      WEECHAT_HOOK_SIGNAL_STRING,
                                      buffer_name)
             debug("* buffer playback for %s", buffer_name)
-            buffer = weechat.buffer_search(plugin, buffer_name)
             get_config_options()
             nick_talked.clear()
+            buffer = weechat.buffer_search(plugin, buffer_name)
             buffer_playback[buffer_name] = buffer
         elif line == 'Playback Complete.':
             buffer = buffer_playback[buffer_name]
@@ -150,17 +160,20 @@ def playback_cb(data, modifier, modifier_data, string):
 
     #debug(string)
 
+    def strip_timestamp(s):
+        words = znc_timestamp.count(' ') + 1
+        p = 0
+        for i in range(words):
+            p = s[p:].find(' ') + p + 1
+        return s[:p - 1], s[p:]
+
     prefix, s, line = string.partition('\t')
     if 'irc_action' in tags or 'irc_notice' in tags:
-        _prefix, s, line = line.partition(' ')
-        timestamp, s, line = line.partition(' ')
+        _prefix, _, line = line.partition(' ')
+        timestamp, line = strip_timestamp(line)
         line = '%s %s' % (_prefix, line)
     else:
-        timestamp, s, line = line.partition(' ')
-
-    if ' ' in znc_timestamp:
-        error("configured timestamp is '%s', it can't have spaces." % znc_timestamp)
-        return string
+        timestamp, line = strip_timestamp(line)
 
     try:
         t = time.strptime(timestamp, znc_timestamp)
@@ -395,8 +408,8 @@ def get_config_options():
 
 print_hook = ''
 if __name__ == '__main__' and import_ok and \
-        weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
-        SCRIPT_DESC, '', ''):
+        weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
+                         SCRIPT_DESC, '', ''):
 
     get_config_options()
 
