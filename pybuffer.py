@@ -203,23 +203,26 @@ class SimpleBuffer(object):
         self.__name__ = name
         self._pointer = ''
 
-    def _getBuffer(self):
-        # we need to always search the buffer, since there's no close callback we can't know if the
-        # buffer was closed.
-        buffer = weechat.buffer_search('python', self.__name__)
-        if not buffer:
-            buffer = self.create()
-        return buffer
-
     def _create(self):
         return weechat.buffer_new(self.__name__, '', '', '', '')
 
     def create(self):
-        buffer = self._create()
-        if self._title:
-            weechat.buffer_set(buffer, 'title', self._title)
+        # we need to always search the buffer, since there's no close callback we can't know if the
+        # buffer was closed.
+        buffer = weechat.buffer_search('python', self.__name__)
+        if not buffer:
+            buffer = self._create()
+            if self._title:
+                weechat.buffer_set(buffer, 'title', self._title)
         self._pointer = buffer
         return buffer
+
+    _getBuffer = create
+
+    def close(self):
+        buffer = weechat.buffer_search('python', self.__name__)
+        if buffer:
+            weechat.buffer_close(buffer)
 
     def title(self, s):
         self._title = s
@@ -258,17 +261,37 @@ class SimpleBuffer(object):
 class Buffer(SimpleBuffer):
     """WeeChat buffer. With input and close methods."""
     def _create(self):
-        return weechat.buffer_new(self.__name__, callback(self.input), '', callback(self.close), '')
+        return weechat.buffer_new(self.__name__,
+                                  callback(self.cbInput), '',
+                                  callback(self.cbClose), '')
+
+    def create(self):
+        buffer = weechat.buffer_search('python', self.__name__)
+        if buffer:
+            # close it because the callbacks migth be no longer valid
+            weechat.buffer_close(buffer)
+        buffer = self._create()
+        if self._title:
+            weechat.buffer_set(buffer, 'title', self._title)
+        self._pointer = buffer
+        return buffer
+
+    def close(self):
+        if self._pointer:
+            weechat.buffer_close(self._pointer)
 
     def _getBuffer(self):
         if self._pointer:
             return self._pointer
-        return SimpleBuffer._getBuffer(self)
+        return self.create()
 
-    def input(self, data, buffer, input):
+    def cbInput(self, data, buffer, input):
         return WEECHAT_RC_OK
 
-    def close(self, data, buffer):
+    def input(self, s):
+        self.cbInput('', '', s)
+
+    def cbClose(self, data, buffer):
         self._pointer = ''
         return WEECHAT_RC_OK
 
@@ -334,7 +357,7 @@ class PythonBuffer(Buffer):
             self.input(data, buffer, '\n')
         return WEECHAT_RC_OK
 
-    def input(self, data, buffer, input):
+    def cbInput(self, data, buffer, input):
         """Python code evaluation."""
         try:
             need_more = self.console.push(input)
@@ -366,8 +389,8 @@ class PyBufferCommand(Command):
             buffer = PythonBuffer(SCRIPT_NAME)
             buffer.title("Use \"search([pattern])\" for search WeeChat API functions.")
             # import weechat and its functions.
-            buffer.input('', '', 'import weechat')
-            buffer.input('', '', 'from weechat import *')
+            buffer.input('import weechat')
+            buffer.input('from weechat import *')
             buffer.display()
             self.current_buffer = buffer
         else:
