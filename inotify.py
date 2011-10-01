@@ -408,7 +408,7 @@ color_table = ( 'teal', 'darkmagenta', 'darkgreen', 'brown', 'blue',
                 'darkblue', 'darkcyan', 'magenta', 'green', 'grey',
                 )
 
-def color_nick(nick):
+def format_nick(nick):
     n = len(color_table)
     #generic_nick = nick.strip('_`').lower()
     id = (sum(map(ord, nick)) % n)
@@ -438,7 +438,7 @@ def format(s, nick=''):
 
     if nick:
         if get_config_boolean('color_nick'):
-            nick = color_nick(nick)
+            nick = format_nick(nick)
         else:
             nick = '&lt;%s&gt;' %nick
         s = '<b>%s</b> %s' %(nick, s)
