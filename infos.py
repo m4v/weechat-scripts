@@ -22,9 +22,6 @@
 #   Commands:
 #   * /infos
 #   
-#   TODO
-#   * make it use it own buffer.
-#
 #   History:
 #   2011-10-
 #   version 0.1: new script!
