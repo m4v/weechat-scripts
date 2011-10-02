@@ -97,12 +97,18 @@ except:
 
 import os
 import re
+import csv
 import socket
 import struct
 
-### ip database
+# -------------------------------------------------------------------------
+# ip database
+
 database_url = 'http://geolite.maxmind.com/download/geoip/database/GeoIPCountryCSV.zip'
 database_file = 'GeoIPCountryWhois.csv'
+
+database_url_ipv6 = 'http://geolite.maxmind.com/download/geoip/database/GeoIPv6.csv.gz'
+database_file_ipv6 = 'GeoIPv6.csv'
 
 ### config
 settings = {
@@ -294,6 +300,13 @@ def is_ip(s):
     except socket.error:
         return False
 
+def is_ipv6(s):
+    """Returns whether or not a given string is an IPV6 address."""
+    try:
+        return bool(socket.inet_pton(socket.AF_INET6, s))
+    except socket.error:
+        return False
+
 _valid_label = re.compile(r'^([\da-z]|[\da-z][-\da-z]*[\da-z])$', re.I)
 def is_domain(s):
     """
@@ -363,35 +376,59 @@ def sum_ip(ip):
     """Converts the ip number from dot-decimal notation to a single decimal number."""
     return struct.unpack(">L", socket.inet_pton(socket.AF_INET, ip))[0]
 
+def sum_ipv6(ipv6):
+    """Converts the ipv6 address to a decimal number."""
+    L = struct.unpack('>8H', socket.inet_pton(socket.AF_INET6, ipv6))
+    n = i = 0
+    for p in reversed(L):
+        n += p << (16 * i)
+        i += 1
+    return n
+
+csv.register_dialect('spaces', skipinitialspace=True)
 unknown = ('--', 'unknown')
+
 def search_in_database(ip):
     """
     search_in_database(ip_number) => (code, country)
     returns ('--', 'unknown') if nothing found
     """
-    import csv
     global ip_database
-    if not ip or not ip_database:
+    if not ip:
         return unknown
+
+    db = None
+    if is_ip(ip):
+        db = ip_database
+        n = sum_ip(ip)
+    elif is_ipv6(ip):
+        # FIXME I'm lazy
+        db = os.path.join(get_script_dir(), database_file_ipv6)
+        n = sum_ipv6(ip)
+    if not db:
+        return unknown
+
     try:
         # do a binary search.
-        n = sum_ip(ip)
-        fd = open(ip_database)
-        reader = csv.reader(fd)
-        max = os.path.getsize(ip_database)
+        fd = open(db)
+        reader = csv.reader(fd, 'spaces')
+        max = os.path.getsize(db)
         last_high = last_low = min = 0
         while True:
-            mid = (max + min)/2
+            mid = (max + min) / 2
+            #print "--"
+            #print "[%s --- %s --- %s]" % (min, mid, max)
             fd.seek(mid)
             fd.readline() # move cursor to next line
-            _, _, low, high, code, country = reader.next()
+            iplow, iphigh, low, high, code, country = reader.next()
             if low == last_low and high == last_high:
                 break
+            #print "[%s --- %s] %s" % (iplow, iphigh, ip)
             if n < long(low):
                 max = mid
             elif n > long(high):
                 min = mid
-            elif n > long(low) and n < long(high):
+            elif n >= long(low) and n <= long(high):
                 return (code, country)
             else:
                 break
@@ -484,7 +521,7 @@ def whois_cb(data, signal, signal_data):
     return WEECHAT_RC_OK
 
 def info_search_ip(data, info_name, arguments):
-    if not is_ip(arguments):
+    if not (is_ip(arguments) or is_ipv6(arguments)):
         return ''
 
     return ','.join(search_in_database(arguments))
