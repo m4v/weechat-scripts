@@ -95,7 +95,10 @@ try:
 except:
     pytz_module = False
 
-import os, re, socket
+import os
+import re
+import socket
+import struct
 
 ### ip database
 database_url = 'http://geolite.maxmind.com/download/geoip/database/GeoIPCountryCSV.zip'
@@ -287,7 +290,7 @@ def get_ip_process_cb(data, command, rc, stdout, stderr):
 def is_ip(s):
     """Returns whether or not a given string is an IPV4 address."""
     try:
-        return bool(socket.inet_aton(s))
+        return bool(socket.inet_pton(socket.AF_INET, s))
     except socket.error:
         return False
 
@@ -357,9 +360,8 @@ def get_ip_from_user(user):
             return ip
 
 def sum_ip(ip):
-    """Converts the ip number from dot-decimal notation to decimal."""
-    L = map(int, ip.split('.'))
-    return L[0]*16777216 + L[1]*65536 + L[2]*256 + L[3]
+    """Converts the ip number from dot-decimal notation to a single decimal number."""
+    return struct.unpack(">L", socket.inet_pton(socket.AF_INET, ip))[0]
 
 unknown = ('--', 'unknown')
 def search_in_database(ip):
