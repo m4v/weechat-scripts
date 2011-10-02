@@ -442,7 +442,9 @@ def get_country_datetime(code):
     except:
         return None
 
-### commands
+# -------------------------------------------------------------------------
+# callbacks
+
 def cmd_country(data, buffer, args):
     """Shows country and local time for a given ip, uri or nick."""
     if not args:
@@ -467,7 +469,6 @@ def cmd_country(data, buffer, args):
         print_country(host, buffer)
     return WEECHAT_RC_OK
 
-### signal callbacks
 def whois_cb(data, signal, signal_data):
     """function for /WHOIS"""
     if not get_config_boolean('show_in_whois') or not check_database():
@@ -480,7 +481,15 @@ def whois_cb(data, signal, signal_data):
     print_country(host, buffer, quiet=True, broken=True, nick=nick)
     return WEECHAT_RC_OK
 
-### main
+def info_search_ip(data, info_name, arguments):
+    if not is_ip(arguments):
+        return ''
+
+    return ','.join(search_in_database(arguments))
+
+# -------------------------------------------------------------------------
+# main
+
 if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
         SCRIPT_DESC, '', ''):
 
@@ -502,6 +511,10 @@ if import_ok and weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SC
             "       update: Downloads/updates ip database with country codes.\n"
             "nick, ip, uri: Gets country and local time for a given ip, domain or nick.",
             'update||%(nick)', 'cmd_country', '')
+    weechat.hook_info("country_search_ip",
+                      "search country of a ip address, argument must be an ip address, domainds"\
+                      " won't work.", "<ip>", "info_search_ip", "")
+            
 
     # settings
     for opt, val in settings.iteritems():
