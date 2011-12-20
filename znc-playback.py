@@ -106,6 +106,7 @@ def catchExceptions(f):
 # Script Callbacks
 
 buffer_playback = {}
+current_playback = ''
 nick_talked = set()
 
 _hostmaskRe = re.compile(r':?\S+!\S+@\S+') # poor but good enough
@@ -131,6 +132,7 @@ def playback_cb(data, modifier, modifier_data, string):
     
     global buffer_playback
     if 'nick_***' in tags:
+        global current_playback
         line = string.partition('\t')[2]
         if line == 'Buffer Playback...':
             weechat.hook_signal_send("znc-playback-start",
@@ -141,10 +143,12 @@ def playback_cb(data, modifier, modifier_data, string):
             nick_talked.clear()
             buffer = weechat.buffer_search(plugin, buffer_name)
             buffer_playback[buffer_name] = buffer
+            current_playback = buffer_name
         elif line == 'Playback Complete.':
             buffer = buffer_playback[buffer_name]
             del buffer_playback[buffer_name]
             debug("* end of playback for %s", buffer_name)
+            current_playback = ''
             weechat.hook_signal_send("znc-playback-stop",
                                      WEECHAT_HOOK_SIGNAL_STRING,
                                      buffer_name)
@@ -180,7 +184,7 @@ def playback_cb(data, modifier, modifier_data, string):
     except ValueError, e:
         # bad time format.
         error(e)
-        #debug("%s\n%s" % (modifier_data, string))
+        debug("Timestamp error: %s\n%s" % (modifier_data, string))
         return string
     else:
         if t[0] == 1900:
@@ -275,9 +279,14 @@ def playback_cb(data, modifier, modifier_data, string):
         # QUIT messages should be sent only once, but since there's
         # one quit per channel, use PART instead.
         if send_signals:
-            weechat.hook_signal_send(server + ",irc_in_PART", 
+            if not reason:
+                weechat.hook_signal_send(server + ",irc_in_PART", 
                                      WEECHAT_HOOK_SIGNAL_STRING,
-                                     ":%s PART %s :%s" % (hostmask, channel, reason))
+                                     ":%s PART %s" % (hostmask, channel))
+            else:
+                weechat.hook_signal_send(server + ",irc_in_PART", 
+                                         WEECHAT_HOOK_SIGNAL_STRING,
+                                         ":%s PART %s :%s" % (hostmask, channel, reason))
 
     elif line.startswith('is now known as '):
         tags.add('irc_nick')
@@ -403,10 +412,14 @@ def get_config_options():
     send_signals = get_config_boolean('send_signals')
     znc_timestamp = weechat.config_get_plugin('timestamp')
 
+
+def info_current_playback(data, info_name, arguments):
+    global current_playback
+    return current_playback
+
 # -----------------------------------------------------------------------------
 # Main
 
-print_hook = ''
 if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
                          SCRIPT_DESC, '', ''):
@@ -425,8 +438,12 @@ if __name__ == '__main__' and import_ok and \
         if not weechat.config_is_set_plugin(opt):
             weechat.config_set_plugin(opt, val)
 
-    print_hook = weechat.hook_modifier('weechat_print', 'playback_cb', '')
+    weechat.hook_modifier('weechat_print', 'playback_cb', '')
 
+    weechat.hook_info("znc-playback",
+            "Returns the name \"<server>.<channel>\" of the playback currently "\
+            "in progess. Returns \"\" if there's none.",
+            "", "info_current_playback", "")
     # -------------------------------------------------------------------------
     # Debug
 
