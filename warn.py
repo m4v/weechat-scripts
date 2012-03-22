@@ -38,15 +38,20 @@
 #     current: print in whatever buffer you're currently looking at.
 #     warn_buffer: create a new buffer and print there.
 #
+#   * plugins.var.python.warn.autowarn_bans:
+#     Enable automatically setting warns for bans. When a ban is set, the
+#     banmask is used for a new warning. This feature depends of chanop.py
+#     script and if the channel is in chanop's watchlist.
+#
 #   * plugins.var.python.warn.ignore_channels:
 #     Comma separated list of patterns for ignore joins in matching channels.
 #     Wildcards '*', '?' can be used.
 #     An ignore exception can be added by prefixing '!' in the pattern.
 #
-#   * plugins.var.python.warn.ignore_ban_forwards_to:
-#     (only for patterns set by chanop.py when a ban is set)
-#     Comma separated list of patterns for ignore bans with a matching channel forward.
-#     Wildcards '*', '?' can be used.
+#   * plugins.var.python.warn.ignore_autowarn_forwards:
+#     (only for patterns set from bans when autowarn_bans is enabled)
+#     Comma separated list of patterns for ignore bans with a matching channel
+#     forward. Wildcards '*', '?' can be used.
 #     An ignore exception can be added by prefixing '!' in the pattern.
 #
 #   * plugins.var.python.warn.mask.*:
@@ -60,6 +65,12 @@ SCRIPT_VERSION = "0.1"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Monitor join messages and warn about known users."
 
+settings = {
+        'warning_buffer'             : 'core',
+        'autowarn_bans'              : 'on',
+        'ignore_channels'            : '',
+        'ignore_autowarn_forwards'   : '##fix_your_connection',
+        } 
 
 try:
     import weechat
@@ -187,13 +198,6 @@ def pattern_match(regexp, string):
 # -----------------------------------------------------------------------------
 # Config Settings
 
-settings = {
-        'warning_buffer'        : 'core',
-        'ignore_ban_forwards_to': '##fix_your_connection',
-        'ignore_channels'       : '',
-        } 
-
-
 valid_strings = set(('core', 'channel', 'current', 'warn_buffer'))
 def get_config_valid_string(config, valid_strings=valid_strings):
     value = weechat.config_get_plugin(config)
@@ -203,6 +207,17 @@ def get_config_valid_string(config, valid_strings=valid_strings):
         error("'%s' is an invalid value, allowed: %s." % (value, ', '.join(valid_strings)))
         return default
     return value
+
+boolDict = {'on':True, 'off':False}
+def get_config_boolean(config):
+    value = weechat.config_get_plugin(config)
+    try:
+        return boolDict[value]
+    except KeyError:
+        default = settings[config]
+        error("Error while fetching config '%s'. Using default value '%s'." %(config, default))
+        error("'%s' is invalid, allowed: 'on', 'off'" %value)
+        return boolDict[default]
 
 # -----------------------------------------------------------------------------
 # WeeChat classes
@@ -436,7 +451,7 @@ class SimpleBuffer(object):
 # -----------------------------------------------------------------------------
 # Script Classes
 
-class MonitorPatterns(CaseInsensibleSet):
+class WarnPatterns(CaseInsensibleSet):
     _updated = False
     _config = 'python.%s.mask' % SCRIPT_NAME
     def __contains__(self, v):
@@ -459,7 +474,7 @@ class MonitorPatterns(CaseInsensibleSet):
         CaseInsensibleSet.clear(self)
         self._updated = False
 
-warnPatterns = MonitorPatterns()
+warnPatterns = WarnPatterns()
 
 class Ignores(object):
     def __init__(self, ignore_type):
@@ -488,7 +503,7 @@ class Ignores(object):
 # -----------------------------------------------------------------------------
 # Script Commands
 
-class Monitor(Command):
+class Warn(Command):
     description, help = "Manages the list of warning patterns.", ""
     usage = "add <pattern> [<comment>] || del <pattern> [<pattern> ..] || list <word>\n"\
             "\n"\
@@ -563,14 +578,14 @@ def signal_parse(f):
         if channel[0] == ':':
             channel = channel[1:]
         hostmask = signal_data[1:signal_data.find(' ')]
-        #debug('%s %s %s', data, signal, signal_data)
+        debug('%s %s %s', data, signal, signal_data)
         return f(server, channel, hostmask, signal_data)
     decorator.func_name = f.func_name
     return decorator
 
 @signal_parse
 def join_cb(server, channel, hostmask, signal_data):
-    if channel in ignoreChannels:
+    if channel in ignoreJoins:
         return WEECHAT_RC_OK
 
     for mask in warnPatterns:
@@ -596,6 +611,9 @@ def join_cb(server, channel, hostmask, signal_data):
     return WEECHAT_RC_OK
 
 def banmask_cb(data, signal, signal_data):
+    if not get_config_boolean('autowarn_bans'):
+        return WEECHAT_RC_OK
+
     #debug('BAN: %s %s', signal, signal_data)
     args = signal_data.split()
     # sanity check
@@ -608,10 +626,14 @@ def banmask_cb(data, signal, signal_data):
         mask, forward = mask.split('$', 1)
         if forward in ignoreForwards:
             return WEECHAT_RC_OK
+
     if mode == 'b' and mask not in warnPatterns:
         s = ' '.join(map(format_hostmask, users.split(',')))
         op_nick = weechat.info_get('irc_nick_from_host', op)
-        comment = "Ban in %s by %s on %s, affected %s" % (channel, op_nick, time.asctime(), s)
+        comment = "Ban in %s by %s on %s, affected %s" % (channel,
+                                                          op_nick,
+                                                          time.strftime("%Y-%m-%d"),
+                                                          s)
         comment = weechat.string_remove_color(comment, '')
         weechat.config_set_plugin('mask.%s' % mask, comment)
         warnPatterns.add(mask)
@@ -624,7 +646,7 @@ def clear_warn_pattern(data, config, value):
 
 def ignore_update(*args):
     ignoreForwards._get_ignores()
-    ignoreChannels._get_ignores()
+    ignoreJoins._get_ignores()
     return WEECHAT_RC_OK
 
 def warn_cmpl(data, completion_item, buffer, completion):
@@ -639,7 +661,10 @@ if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
         SCRIPT_DESC, '', ''):
 
-    # script name changed, so rename all options first. Uncomment when needed.
+    # script name changed, for rename all old options, uncomment the block below, and reload the
+    # script. Then use "/unset plugins.var.python.monitor.*" for remove all old options (make sure
+    # the new options are working).
+
     #old_name = 'monitor'
     #infolist = Infolist('option', 'plugins.var.python.%s.*' % old_name)
     #for opt in infolist:
@@ -668,11 +693,11 @@ if __name__ == '__main__' and import_ok and \
 
     # hook signals
     weechat.hook_signal('*,irc_in_join', 'join_cb', '')
-    weechat.hook_signal('*,irc_in_join_znc', 'join_cb', '')
-    weechat.hook_signal('*,chanop_mode_*', 'banmask_cb', '')
+    if get_config_boolean('autowarn_bans'):
+        weechat.hook_signal('*,chanop_mode_*', 'banmask_cb', '')
 
-    ignoreForwards = Ignores('ignore_ban_forwards_to')
-    ignoreChannels = Ignores('ignore_channels')
+    ignoreForwards = Ignores('ignore_autowarn_forwards')
+    ignoreJoins = Ignores('ignore_channels')
 
     # hook config
     weechat.hook_config('plugins.var.python.%s.mask.*' % SCRIPT_NAME, 'clear_warn_pattern', '')
@@ -682,7 +707,7 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_completion('warn_patterns', '', 'warn_cmpl', '')
 
     # hook commands
-    Monitor().hook()
+    Warn().hook()
 
     # -------------------------------------------------------------------------
     # Debug
