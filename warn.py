@@ -253,12 +253,9 @@ class Infolist(object):
             'option_name' :'string',
             'value'       :'string',
             'host'        :'string',
-            'flags'       :'integer',
             'prefixes'    :'string',
             'is_connected':'integer',
             }
-
-    _use_flags = False
 
     def __init__(self, name, args=''):
         self.cursor = 0
@@ -280,20 +277,8 @@ class Infolist(object):
 
     def __getitem__(self, name):
         """Implement the evaluation of self[name]."""
-        if self._use_flags and name == 'prefixes':
-            name = 'flags'
         value = getattr(weechat, 'infolist_%s' %self.fields[name])(self.pointer, name)
-        if self._use_flags and name == 'flags':
-            value = self._flagsAsString(value)
         return value
-
-    def _flagsAsString(self, n):
-        s = ''
-        if n & 32:
-            s += '+'
-        if n & 8:
-            s += '@'
-        return s
 
     def __iter__(self):
         def generator():
