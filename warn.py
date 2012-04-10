@@ -54,9 +54,6 @@
 #     forward. Wildcards '*', '?' can be used.
 #     An ignore exception can be added by prefixing '!' in the pattern.
 #
-#   * plugins.var.python.warn.mask.*:
-#     Patterns.
-#
 ###
 
 SCRIPT_NAME    = "warn"
@@ -82,6 +79,7 @@ except ImportError:
     import_ok = False
 
 import re
+import csv
 import time
 import string
 
@@ -104,16 +102,49 @@ def say(s, buffer=''):
 
 def format_hostmask(hostmask):
     nick, host = hostmask.split('!', 1)
-    return '%s%s%s(%s%s%s)%s' % (color_chat_nick,
+    return '%s%s%s(%s%s%s)%s' % (COLOR_CHAT_NICK,
                                  nick,
-                                 color_chat_delimiter,
-                                 color_chat_host,
+                                 COLOR_CHAT_DELIMITERS,
+                                 COLOR_CHAT_HOST,
                                  host,
-                                 color_chat_delimiter,
-                                 color_reset)
+                                 COLOR_CHAT_DELIMITERS,
+                                 COLOR_RESET)
 
 def format_color(s, color):
-    return '%s%s%s' % (color, s, color_reset)
+    return '%s%s%s' % (color, s, COLOR_RESET)
+
+def time_elapsed(elapsed, ret=None, level=2):
+    time_hour = 3600
+    time_day  = 86400
+    time_year = 31536000
+
+    if ret is None:
+        ret = []
+
+    if not elapsed:
+        return ''
+
+    if elapsed > time_year:
+        years, elapsed = elapsed // time_year, elapsed % time_year
+        ret.append('%s%s' %(years, 'y'))
+    elif elapsed > time_day:
+        days, elapsed = elapsed // time_day, elapsed % time_day
+        ret.append('%s%s' %(days, 'd'))
+    elif elapsed > time_hour:
+        hours, elapsed = elapsed // time_hour, elapsed % time_hour
+        ret.append('%s%s' %(hours, 'h'))
+    elif elapsed > 60:
+        mins, elapsed = elapsed // 60, elapsed % 60
+        ret.append('%s%s' %(mins, 'm'))
+    else:
+        secs, elapsed = elapsed, 0
+        ret.append('%s%s' %(secs, 's'))
+
+    if len(ret) >= level or not elapsed:
+        return ' '.join(ret)
+
+    ret = time_elapsed(elapsed, ret, level)
+    return ret
 
 # -----------------------------------------------------------------------------
 # IRC String
@@ -160,6 +191,22 @@ class CaseInsensibleSet(set):
 
     def remove(self, v):
         set.remove(self, self.normalize(v))
+
+
+class CaseInsensibleDict(dict):
+    key = staticmethod(caseInsensibleKey)
+
+    def __setitem__(self, k, v):
+        dict.__setitem__(self, self.key(k), v)
+
+    def __getitem__(self, k):
+        return dict.__getitem__(self, self.key(k))
+
+    def __delitem__(self, k):
+        dict.__delitem__(self, self.key(k))
+
+    def __contains__(self, k):
+        return dict.__contains__(self, self.key(k))
 
 # -----------------------------------------------------------------------------
 # Regexp matching
@@ -219,8 +266,22 @@ def get_config_boolean(config):
         error("'%s' is invalid, allowed: 'on', 'off'" %value)
         return boolDict[default]
 
+def get_dir(filename):
+    import os
+    basedir = weechat.info_get('weechat_dir', '')
+    return os.path.join(basedir, filename.lower())
+
 # -----------------------------------------------------------------------------
 # WeeChat classes
+
+def catchExceptions(f):
+    def function(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except Exception, e:
+            error('%s %s' % (e, args))
+    function.func_name = f.func_name
+    return function
 
 def callback(method):
     """This function will take a bound method or function and make it a callback."""
@@ -242,6 +303,7 @@ def callback(method):
         name = func
     # set our callback
     import __main__
+    method = catchExceptions(method)
     setattr(__main__, name, method)
     return name
 
@@ -436,30 +498,170 @@ class SimpleBuffer(object):
 # -----------------------------------------------------------------------------
 # Script Classes
 
-class WarnPatterns(CaseInsensibleSet):
+class WarnObject(object):
+    def __init__(self, pattern='', comment='', date=0, expires=0, channels=[]):
+        self.id = None
+        self.pattern = pattern
+        self.comment = comment
+        if not date:
+            self.date = int(time.time())
+        else:
+            self.date = date
+        self.expires = expires
+        self.channels = CaseInsensibleSet(channels)
+
+    def serialize(self):
+        L = [ self.id, self.pattern, self.comment, self.date, self.expires ]
+        L.extend(self.channels)
+        return L
+
+    def deserialize(self, L):
+        self.id, self.pattern, self.comment, self.date, self.expires = L[:5]
+        self.channels = CaseInsensibleSet(L[5:])
+        self.id = int(self.id)
+        self.date = int(self.date)
+        self.expires = int(self.expires)
+
+    def __str__(self):
+        return "%s<%s %s>" % (self.__class__.__name__, self.id, self.pattern)
+
+    __repr__ = __str__
+
+    def isValidChannel(self, channel):
+        if not self.channels:
+            return True
+        return channel in self.channels
+
+
+class WarnDatabase(CaseInsensibleDict):
     _updated = False
     _config = 'python.%s.mask' % SCRIPT_NAME
-    def __contains__(self, v):
-        if not self._updated:
-            self.__update()
-        return CaseInsensibleSet.__contains__(self, v)
+    _last_id = 0
+    _id_dict = {}
 
-    def __iter__(self):
-        if not self._updated:
-            self.__update()
-        return CaseInsensibleSet.__iter__(self)
+    def updateOnDemand(f):
+        def update(self, *args, **kwargs):
+            if not self._updated:
+                self.__update()
+            return f(self, *args, **kwargs)
+        return update
+
+    __contains__ = updateOnDemand(CaseInsensibleDict.__contains__)
+    __iter__     = updateOnDemand(CaseInsensibleDict.__iter__)
+
+    @updateOnDemand
+    def itervalues(self):
+        return sorted(CaseInsensibleDict.itervalues(self), key=lambda x: x.id)
+
+    def values(self):
+        return list(self.itervalues())
+
+    @updateOnDemand
+    def __getitem__(self, k):
+        if isinstance(k, int) or (isinstance(k, basestring) and k.isdigit()):
+            return self._id_dict.__getitem__(int(k))
+        return CaseInsensibleDict.__getitem__(self, k)
 
     def __update(self):
         self._updated = True
+        self.readDB()
+        # import and remove old warn configs
         infolist = Infolist('option', 'plugins.var.%s.*' % self._config)
         n = len(self._config) + 1
-        self.update([ opt['option_name'][n:] for opt in infolist ])
+        for opt in infolist:
+            pattern = opt['option_name'][n:]
+            comment = opt['value']
+            self.add(pattern, comment=comment)
+            weechat.config_unset_plugin('mask.%s' % pattern)
+
+    def writeDB(self):
+        filename = get_dir('warn_patterns.csv')
+        try:
+            fd = open(filename, 'wb')
+            writer = csv.writer(fd)
+            writer.writerows(self.getrows())
+            fd.close()
+        except IOError:
+            error('Failed to write warn database in %s' % file)
+
+    def readDB(self):
+        filename = get_dir('warn_patterns.csv')
+        try:
+            reader = csv.reader(open(filename, 'rb'))
+        except IOError:
+            return
+
+        for row in reader:
+            obj = WarnObject()
+            obj.deserialize(row)
+            self._add(obj)
+        self._getLastId()
+
+    def _getLastId(self):
+        if self:
+            self._last_id = max([ obj.id for obj in self.itervalues() ])
+        return self._last_id
+
+    _last_purge = 0
+    def purge(self):
+        if time.time() - self._last_purge < 60:
+            return
+
+        self._last_purge = int(time.time())
+        for obj in self.values():
+            if obj.expires and self._last_purge > (obj.date + obj.expires):
+                debug("purging %s" % obj)
+                self.rem(obj.pattern)
+
+    def getId(self):
+        self._last_id += 1
+        return self._last_id
+
+    def getrows(self):
+        def generator():
+            for obj in self.itervalues():
+                yield obj.serialize()
+
+        return generator()
+
+    def _add(self, obj):
+        if obj.id in self._id_dict:
+            raise Exception("Id is not unique.")
+        self[obj.pattern] = obj
+        self._id_dict[obj.id] = obj
+
+    def add(self, pattern, **kwargs):
+        if pattern not in self:
+            obj = WarnObject(pattern, **kwargs)
+            id = kwargs.get('id', None)
+            if id is None:
+                obj.id = self.getId()
+            else:
+                obj.id = id
+            self._add(obj)
+        else:
+            obj = self[pattern]
+            debug("add args: %s", kwargs)
+            # FIXME update new values
+
+    def rem(self, k):
+        if isinstance(k, int) or (isinstance(k, basestring) and k.isdigit()):
+            pattern = self._id_dict[int(k)].pattern
+        else:
+            pattern = k
+        if pattern in self:
+            obj = self[pattern]
+            del self[pattern]
+            del self._id_dict[obj.id]
 
     def clear(self):
-        CaseInsensibleSet.clear(self)
+        CaseInsensibleDict.clear(self)
+        self._id_dict.clear()
         self._updated = False
+        self._last_id = 0
 
-warnPatterns = WarnPatterns()
+warnDB = WarnDatabase()
+
 
 class Ignores(object):
     def __init__(self, ignore_type):
@@ -485,6 +687,7 @@ class Ignores(object):
                 return True
         return False
 
+
 # -----------------------------------------------------------------------------
 # Script Commands
 
@@ -503,12 +706,15 @@ class Warn(Command):
 
     def parser(self, args):
         if not args:
-            self.print_pattern_list()
+            self.printAll()
             raise NoArguments
+
         args = args.split()
         try:
             cmd = args.pop(0)
-            if cmd not in ('add', 'del', 'list') or len(args) < 1:
+            if cmd not in ('add', 'del', 'list'):
+                raise Exception
+            if cmd in ('add', 'del') and len(args) < 1:
                 raise Exception
         except:
             raise ArgumentError("please see /help warn.")
@@ -523,33 +729,53 @@ class Warn(Command):
         else:
             self.mask = args
 
-    def print_pattern_list(self, pattern=None):
-        L = []
-        for mask in warnPatterns:
-            comment = weechat.config_get_plugin('mask.%s' % mask)
-            if pattern is None \
-                    or (pattern in mask or pattern in comment):
-                L.append((mask, comment))
+    def printAll(self):
+        for obj in warnDB.itervalues():
+            self.printWarn(obj)
 
-        if L:
-            for mask, comment in L:
-                say("%s (%s)" % (format_color(mask, color_chat_delimiter),
-                                 comment))
-        elif pattern:
-            say("No patterns found with '%s'." % pattern)
-        else:
+        if not warnDB:
             say("No patterns set.")
+
+    def printWarn(self, obj):
+        say("%s[%s%s%s] %s %s%s" % (COLOR_CHAT_DELIMITERS,
+                                  COLOR_CHAT_BUFFER,
+                                  obj.id,
+                                  COLOR_CHAT_DELIMITERS,
+                                  obj.pattern,
+                                  COLOR_RESET,
+                                  obj.comment))
+
+    def printWarnFull(self, obj):
+        say("%s[%s%s%s] %s" % (COLOR_CHAT_DELIMITERS,
+                               COLOR_CHAT_BUFFER,
+                               obj.id,
+                               COLOR_CHAT_DELIMITERS,
+                               obj.pattern))
+        say("comment: %s" % obj.comment)
+        if obj.expires:
+            expires = (obj.date + obj.expires) - int(time.time())
+            expires = time_elapsed(expires)
+        else:
+            expires = "never"
+        say("added: %s expires: %s" % (time.strftime("%Y-%m-%d", time.localtime(obj.date)),
+                                       expires))
 
     def execute(self):
         if self.cmd == 'add':
-            weechat.config_set_plugin('mask.%s' % self.mask, self.comment)
-            # config_set_plugin doesn't trigger hook_config callback, bug?
-            warnPatterns.add(self.mask)
+            warnDB.add(self.mask, comment=self.comment)
+            warnDB.writeDB()
         elif self.cmd == 'del':
             for mask in self.mask:
-                weechat.config_unset_plugin('mask.%s' % mask)
+                warnDB.rem(mask)
+            warnDB.writeDB()
         elif self.cmd == 'list':
-            self.print_pattern_list(self.mask[0])
+            try:
+                if self.mask:
+                    self.printWarnFull(warnDB[self.mask[0]])
+                else:
+                    self.printAll()
+            except KeyError:
+                say("Wrong id or pattern.")
 
 
 # -----------------------------------------------------------------------------
@@ -568,14 +794,20 @@ def signal_parse(f):
     decorator.func_name = f.func_name
     return decorator
 
+@catchExceptions
 @signal_parse
 def join_cb(server, channel, hostmask, signal_data):
     if channel in ignoreJoins:
         return WEECHAT_RC_OK
 
-    for mask in warnPatterns:
+    warnDB.purge()
+    for mask in warnDB:
         match = pattern_match(mask, hostmask)
         if match:
+            obj = warnDB[mask]
+            if not obj.isValidChannel(channel):
+                continue
+
             value = get_config_valid_string('warning_buffer')
             buffer = ''
             if value == 'channel':
@@ -587,11 +819,17 @@ def join_cb(server, channel, hostmask, signal_data):
                 if not buffer:
                     buffer = weechat.buffer_new(SCRIPT_NAME, '', '', '', '')
             prnt_date_tags(buffer, 0, 'notify_highlight', 
-                "%s\t%s joined %s (%s \"%s\")" % (script_nick, 
-                                                 format_hostmask(hostmask),
-                                                 format_color(channel, color_chat_channel),
-                                                 format_color(mask, color_chat_delimiter),
-                                                 weechat.config_get_plugin('mask.%s' % mask)))
+                "%s\t%s joined %s%s %s[%s%s%s] %s%s \"%s\"" % (script_nick,
+                                        format_hostmask(hostmask),
+                                        COLOR_CHAT_CHANNEL,
+                                        channel,
+                                            COLOR_CHAT_DELIMITERS,
+                                            COLOR_CHAT_BUFFER,
+                                            obj.id,
+                                            COLOR_CHAT_DELIMITERS,
+                                            mask,
+                                            COLOR_RESET,
+                                            obj.comment))
             break
     return WEECHAT_RC_OK
 
@@ -612,21 +850,13 @@ def banmask_cb(data, signal, signal_data):
         if forward in ignoreForwards:
             return WEECHAT_RC_OK
 
-    if mode == 'b' and mask not in warnPatterns:
-        s = ' '.join(map(format_hostmask, users.split(',')))
+    if mode == 'b' and mask not in warnDB:
+        s = ' '.join(users.split(','))
         op_nick = weechat.info_get('irc_nick_from_host', op)
-        comment = "Ban in %s by %s on %s, affected %s" % (channel,
-                                                          op_nick,
-                                                          time.strftime("%Y-%m-%d"),
-                                                          s)
+        comment = "Ban in %s by %s: %s" % (channel, op_nick, s)
         comment = weechat.string_remove_color(comment, '')
-        weechat.config_set_plugin('mask.%s' % mask, comment)
-        warnPatterns.add(mask)
-    return WEECHAT_RC_OK
-
-def clear_warn_pattern(data, config, value):
-    #debug('CONFIG: %s %s %s' % (data, config, value))
-    warnPatterns.clear()
+        # FIXME make expire time configurable
+        warnDB.add(mask, comment=comment, expires=3600*24*7)
     return WEECHAT_RC_OK
 
 def ignore_update(*args):
@@ -635,8 +865,13 @@ def ignore_update(*args):
     return WEECHAT_RC_OK
 
 def warn_cmpl(data, completion_item, buffer, completion):
-    for mask in warnPatterns:
+    for mask in warnDB:
         weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_END)
+    return WEECHAT_RC_OK
+
+@catchExceptions
+def script_unload():
+    warnDB.writeDB()
     return WEECHAT_RC_OK
 
 # -----------------------------------------------------------------------------
@@ -644,32 +879,22 @@ def warn_cmpl(data, completion_item, buffer, completion):
 
 if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
-        SCRIPT_DESC, '', ''):
-
-    # script name changed, for rename all old options, uncomment the block below, and reload the
-    # script. Then use "/unset plugins.var.python.monitor.*" for remove all old options (make sure
-    # the new options are working).
-
-    #old_name = 'monitor'
-    #infolist = Infolist('option', 'plugins.var.python.%s.*' % old_name)
-    #for opt in infolist:
-    #   name = opt['option_name'][len('python.%s.' % old_name):]
-    #   name = name.replace(old_name, SCRIPT_NAME, 1)
-    #   weechat.config_set_plugin(name, opt['value'])
+        SCRIPT_DESC, 'script_unload', ''):
 
     # colors
-    color_chat_delimiter = weechat.color('chat_delimiters')
-    color_chat_nick      = weechat.color('chat_nick')
-    color_chat_host      = weechat.color('chat_host')
-    color_chat_channel   = weechat.color('chat_channel')
-    color_reset          = weechat.color('reset')
+    COLOR_CHAT_DELIMITERS = weechat.color('chat_delimiters')
+    COLOR_CHAT_NICK       = weechat.color('chat_nick')
+    COLOR_CHAT_HOST       = weechat.color('chat_host')
+    COLOR_CHAT_BUFFER     = weechat.color('chat_buffer')
+    COLOR_CHAT_CHANNEL    = weechat.color('chat_channel')
+    COLOR_RESET           = weechat.color('reset')
 
     # pretty SCRIPT_NAME
-    script_nick = '%s[%s%s%s]%s' % (color_chat_delimiter,
-                                    color_chat_nick,
+    script_nick = '%s[%s%s%s]%s' % (COLOR_CHAT_DELIMITERS,
+                                    COLOR_CHAT_NICK,
                                     SCRIPT_NAME,
-                                    color_chat_delimiter,
-                                    color_reset)
+                                    COLOR_CHAT_DELIMITERS,
+                                    COLOR_RESET)
 
     # settings
     for opt, val in settings.iteritems():
@@ -685,7 +910,6 @@ if __name__ == '__main__' and import_ok and \
     ignoreJoins = Ignores('ignore_channels')
 
     # hook config
-    weechat.hook_config('plugins.var.python.%s.mask.*' % SCRIPT_NAME, 'clear_warn_pattern', '')
     weechat.hook_config('plugins.var.python.%s.ignore_*' % SCRIPT_NAME, 'ignore_update', '')
 
     # hook completer
