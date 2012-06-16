@@ -1884,6 +1884,7 @@ class CommandChanop(Command, ChanopBuffers):
 class CommandWithOp(CommandChanop):
     """Base class for all the commands that requires op status for work."""
     _enable_deopNow = True
+    deop_delay = 0
 
     def __init__(self, *args, **kwargs):
         CommandChanop.__init__(self, *args, **kwargs)
@@ -1921,7 +1922,7 @@ class CommandWithOp(CommandChanop):
         self.irc.Op()
         if (self.autodeop and self.get_config_boolean('autodeop')) or self.deopNow:
             if self.deopNow:
-                delay = 0
+                delay = self.deop_delay
             else:
                 delay = self.get_config_int('autodeop_delay')
             if delay > 0:
@@ -2263,6 +2264,7 @@ class BanKick(Ban, Kick):
     help = "Combines /oban and /okick commands. See /help oban and /help okick."
     command = 'obankick'
     completion = '%(chanop_nicks)'
+    deop_delay = 2
 
     def execute_op(self):
         nick, s, reason = self.args.partition(' ')
@@ -2304,8 +2306,10 @@ class MultiBanKick(BanKick):
             banmask = self.make_banmask(hostmask)
             self.ban(banmask)
 
+        self.deop_delay = 1
         for nick in nicks:
             if self.inChannel(nick):
+                self.deop_delay += 1
                 self.irc.Kick(nick, reason, wait=1)
 
 
