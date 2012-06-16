@@ -2676,10 +2676,13 @@ def mode_cb(server, channel, nick, opHostmask, signal_data):
             hostmask = hostmask_match_list(mask, userCache[key].hostmasks())
             if hostmask:
                 affected_users.extend(hostmask)
+            if mask != '*!*@*':
+                # sending this signal with a *!*@* is annoying
+                weechat.hook_signal_send("%s,chanop_mode_%s" % (server, mode),
+                                         weechat.WEECHAT_HOOK_SIGNAL_STRING,
+                                         "%s %s %s %s" % (opHostmask, channel,
+                                                          mask, ','.join(hostmask)))
             modeCache.add(server, channel, mode, mask, operator=opHostmask, hostmask=hostmask)
-            weechat.hook_signal_send("%s,chanop_mode_%s" %(server, mode),
-                    weechat.WEECHAT_HOOK_SIGNAL_STRING,
-                    "%s %s %s %s" %(opHostmask, channel, mask, ','.join(hostmask)))
         elif action == '-':
             modeCache.remove(server, channel, mode, mask)
 
