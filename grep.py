@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 ###
-# Copyright (c) 2009-2011 by Elián Hanisch <lambdae2@gmail.com>
+# Copyright (c) 2009-2012 by Elián Hanisch <lambdae2@gmail.com>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -64,8 +64,9 @@
 #
 #   History:
 #   2012-
-#   version 
+#   version 0.8:
 #   * removed log_filter option, I hardly use it now and slows down the log completer.
+#   * removed options --all and --buffer
 #
 #   2011-01-09
 #   version 0.7.2: bug fixes
@@ -185,6 +186,7 @@ import time
 import getopt
 import tempfile
 from os import path
+from fnmatch import fnmatch
 
 try:
     import weechat
@@ -195,7 +197,7 @@ except ImportError:
 
 SCRIPT_NAME    = "grep"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.7.2-dev"
+SCRIPT_VERSION = "0.8-dev"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Search in buffers and logs"
 SCRIPT_COMMAND = "grep"
@@ -402,6 +404,8 @@ def get_config_int(config, allow_empty_string=False):
 
 def get_home():
     home = weechat.config_string(weechat.config_get('logger.file.path'))
+    # this path must end in /, makes other stuff easier.
+    home = os.path.join(home, '')
     return home.replace('%h', weechat.info_get('weechat_dir', ''))
 
 def strip_home(s, dir=''):
@@ -434,7 +438,6 @@ cache_dir = {} # note: don't remove, needed for completion if the script was loa
 def dir_list(dir, include_dir=False):
     """Returns a list of files in 'dir' and its subdirs."""
     global cache_dir
-    from os import walk
     #debug('dir_list: listing in %s' %dir)
     key = (dir, include_dir)
     try:
@@ -443,142 +446,78 @@ def dir_list(dir, include_dir=False):
         pass
     
     file_list = []
-    extend = file_list.extend
-    join = path.join
-    for basedir, subdirs, files in walk(dir):
+    for basedir, subdirs, files in os.walk(dir):
         if include_dir:
-            subdirs = map(lambda s: join(s, ''), subdirs)
+            subdirs = map(lambda s: os.path.join(s, ''), subdirs)
             files.extend(subdirs)
-        files_path = map(lambda f: join(basedir, f), files)
-        extend(files_path)
+        files_path = map(lambda f: os.path.join(basedir, f), files)
+        file_list.extend(files_path)
 
     cache_dir[key] = file_list
     #debug('dir_list: got %s' %str(file_list))
     return file_list
 
-def get_file_by_pattern(pattern, all=False):
-    """Returns the first log whose path matches 'pattern',
-    if all is True returns all logs that matches."""
+def get_file_by_pattern(pattern):
+    """Returns all logs whose path matches <pattern>."""
     if not pattern: return []
     #debug('get_file_by_filename: searching for %s.' %pattern)
     # do envvar expandsion and check file
     file = path.expanduser(pattern)
     file = path.expandvars(file)
     if path.isfile(file):
-        return [file]
+        return [ file ]
     # lets see if there's a matching log
+    files = []
     home_dir = get_home()
-    file = path.join(home_dir, pattern)
-    if path.isfile(file):
-        return [file]
-    else:
-        from fnmatch import fnmatch
-        file = []
-        file_list = dir_list(home_dir)
-        n = len(home_dir)
-        for log in file_list:
-            basename = log[n:]
-            if fnmatch(basename, pattern):
-                file.append(log)
-        #debug('get_file_by_filename: got %s.' %file)
-        if not all and file:
-            file.sort()
-            return [ file[-1] ]
-        return file
+    file_list = dir_list(home_dir)
+    n = len(home_dir)
+    for log in file_list:
+        basename = log[n:]
+        if fnmatch(basename, pattern):
+            files.append(log)
+    #debug('get_file_by_filename: got %s.' %file)
+    return files
 
-def get_file_by_buffer(buffer):
-    """Given buffer pointer, finds log's path or returns None."""
+def get_file_by_buffer(buffers):
+    """Given a buffer pointer list, find their log's path."""
     #debug('get_file_by_buffer: searching for %s' %buffer)
+    result = []
     infolist = weechat.infolist_get('logger_buffer', '', '')
-    if not infolist: return
+    if not infolist: return result
     try:
         while weechat.infolist_next(infolist):
             pointer = weechat.infolist_pointer(infolist, 'buffer')
-            if pointer == buffer:
+            if pointer in buffers:
                 file = weechat.infolist_string(infolist, 'log_filename')
                 if weechat.infolist_integer(infolist, 'log_enabled'):
                     #debug('get_file_by_buffer: got %s' %file)
-                    return file
-                #else:
-                #    debug('get_file_by_buffer: got %s but log not enabled' %file)
+                    result.append(file)
     finally:
-        #debug('infolist gets freed')
+        weechat.infolist_free(infolist)
+    return result
+
+def get_buffer_by_pattern(pattern):
+    """Given a buffer name pattern, returns the pointers of matching buffers."""
+    #debug('get_buffer_by_name: searching for %s' %buffer_name)
+    result = []
+    try:
+        infolist = weechat.infolist_get('buffer', '', '')
+        while weechat.infolist_next(infolist):
+            buffer_name = weechat.infolist_string(infolist, 'full_name')
+            if fnmatch(buffer_name, pattern):
+                #debug('get_buffer_by_name: found %s' %name)
+                pointer = weechat.buffer_search(*buffer_name.split('.', 1))
+                result.append(pointer)
+    finally:
         weechat.infolist_free(infolist)
 
-def get_file_by_name(buffer_name):
-    """Given a buffer name, returns its log path or None. buffer_name should be in 'server.#channel'
-    or '#channel' format."""
-    #debug('get_file_by_name: searching for %s' %buffer_name)
-    # common mask options
-    config_masks = ('logger.mask.irc', 'logger.file.mask')
-    # since there's no buffer pointer, we try to replace some local vars in mask, like $channel and
-    # $server, then replace the local vars left with '*', and use it as a mask for get the path with
-    # get_file_by_pattern
-    for config in config_masks:
-        mask = weechat.config_string(weechat.config_get(config))
-        #debug('get_file_by_name: mask: %s' %mask)
-        if '$name' in mask:
-            mask = mask.replace('$name', buffer_name)
-        elif '$channel' in mask or '$server' in mask:
-            if '.' in buffer_name and \
-                    '#' not in buffer_name[:buffer_name.find('.')]: # the dot isn't part of the channel name
-                #    ^ I'm asuming channel starts with #, i'm lazy.
-                server, channel = buffer_name.split('.', 1)
-            else:
-                server, channel = '*', buffer_name
-            if '$channel' in mask:
-                mask = mask.replace('$channel', channel)
-            if '$server' in mask:
-                mask = mask.replace('$server', server)
-        # change the unreplaced vars by '*'
-        from string import letters
-        if '%' in mask:
-            # vars for time formatting
-            mask = mask.replace('%', '$')
-        if '$' in mask:
-            masks = mask.split('$')
-            masks = map(lambda s: s.lstrip(letters), masks)
-            mask = '*'.join(masks)
-            if mask[0] != '*':
-                mask = '*' + mask
-        #debug('get_file_by_name: using mask %s' %mask)
-        file = get_file_by_pattern(mask)
-        #debug('get_file_by_name: got file %s' %file)
-        if file:
-            return file
-    return None
-
-def get_buffer_by_name(buffer_name):
-    """Given a buffer name returns its buffer pointer or None."""
-    #debug('get_buffer_by_name: searching for %s' %buffer_name)
-    pointer = weechat.buffer_search('', buffer_name)
-    if not pointer:
-        try:
-            infolist = weechat.infolist_get('buffer', '', '')
-            while weechat.infolist_next(infolist):
-                short_name = weechat.infolist_string(infolist, 'short_name')
-                name = weechat.infolist_string(infolist, 'name')
-                if buffer_name in (short_name, name):
-                    #debug('get_buffer_by_name: found %s' %name)
-                    pointer = weechat.buffer_search('', name)
-                    return pointer
-        finally:
-            weechat.infolist_free(infolist)
-    #debug('get_buffer_by_name: got %s' %pointer)
-    return pointer
-
-def get_all_buffers():
-    """Returns list with pointers of all open buffers."""
-    buffers = []
-    infolist = weechat.infolist_get('buffer', '', '')
-    while weechat.infolist_next(infolist):
-        buffers.append(weechat.infolist_pointer(infolist, 'pointer'))
-    weechat.infolist_free(infolist)
+    # don't search in grep buffer
     grep_buffer = weechat.buffer_search('python', SCRIPT_NAME)
-    if grep_buffer and grep_buffer in buffers:
+    if grep_buffer and grep_buffer in result:
         # remove it from list
-        del buffers[buffers.index(grep_buffer)]
-    return buffers
+        del result[result.index(grep_buffer)]
+
+    return result
 
 ### Grep ###
 def make_regexp(pattern, matchcase=False):
@@ -891,7 +830,7 @@ def show_matching_lines():
     if search_in_buffers:
         regexp = make_regexp(pattern, matchcase)
         for buffer in search_in_buffers:
-            buffer_name = weechat.buffer_get_string(buffer, 'name')
+            buffer_name = weechat.buffer_get_string(buffer, 'full_name')
             matched_lines[buffer_name] = grep_buffer(buffer, head, tail, after_context,
                     before_context, count, regexp, hilight, exact, invert)
 
@@ -1265,9 +1204,9 @@ def cmd_grep_parsing(args):
     """Parses args for /grep and grep input buffer."""
     global pattern_tmpl, pattern, matchcase, number, count, exact, hilight, invert
     global tail, head, after_context, before_context
-    global log_name, buffer_name, only_buffers, all
-    opts, args = getopt.gnu_getopt(args.split(), 'cmHeahtivn:bA:B:C:o', ['count', 'matchcase', 'hilight',
-        'exact', 'all', 'head', 'tail', 'number=', 'buffer', 'after-context=', 'before-context=',
+    global log_name, buffer_name
+    opts, args = getopt.gnu_getopt(args.split(), 'cmHehtivn:A:B:C:o', ['count', 'matchcase', 'hilight',
+        'exact', 'head', 'tail', 'number=', 'after-context=', 'before-context=',
         'context=', 'invert', 'only-match'])
     #debug(opts, 'opts: '); debug(args, 'args: ')
     if len(args) >= 2:
@@ -1334,16 +1273,12 @@ def cmd_grep_parsing(args):
         elif opt in ('e', 'exact', 'o', 'only-match'):
             exact = not exact
             invert = False
-        elif opt in ('a', 'all'):
-            all = not all
         elif opt in ('h', 'head'):
             head = not head
             tail = False
         elif opt in ('t', 'tail'):
             tail = not tail
             head = False
-        elif opt in ('b', 'buffer'):
-            only_buffers = True
         elif opt in ('n', 'number'):
             number = positive_number(opt, val)
         elif opt in ('C', 'context'):
@@ -1403,9 +1338,8 @@ def cmd_grep(data, buffer, args):
         return WEECHAT_RC_OK
 
     cmd_init()
-    global log_name, buffer_name, only_buffers, all
+    global log_name, buffer_name
     log_name = buffer_name = ''
-    only_buffers = all = False
 
     # parse
     try:
@@ -1414,45 +1348,24 @@ def cmd_grep(data, buffer, args):
         error('Argument error, %s' %e)
         return WEECHAT_RC_OK
 
-    # find logs
-    log_file = search_buffer = None
-    if log_name:
-        log_file = get_file_by_pattern(log_name, all)
-        if not log_file:
-            error("Couldn't find any log for %s. Try /logs" %log_name)
-            return WEECHAT_RC_OK
-    elif all:
-        search_buffer = get_all_buffers()
-    elif buffer_name:
-        search_buffer = get_buffer_by_name(buffer_name)
-        if not search_buffer:
-            # there's no buffer, try in the logs
-            log_file = get_file_by_name(buffer_name)
-            if not log_file:
-                error("Logs or buffer for '%s' not found." %buffer_name)
-                return WEECHAT_RC_OK
-        else:
-            search_buffer = [search_buffer]
-    else:
-        search_buffer = [buffer]
-
-    # make the log list
+    # find logs or buffers
     global search_in_files, search_in_buffers
-    search_in_files = []
-    search_in_buffers = []
-    if log_file:
-        search_in_files = log_file
-    elif not only_buffers:
-        #debug(search_buffer)
-        for pointer in search_buffer:
-            log = get_file_by_buffer(pointer)
-            #debug('buffer %s log %s' %(pointer, log))
-            if log:
-                search_in_files.append(log)
-            else:
-                search_in_buffers.append(pointer)
+    search_in_files = search_in_buffers = []
+    if log_name:
+        search_in_files = get_file_by_pattern(log_name)
+        if not search_in_files:
+            error("Couldn't find any log for %s. Try /logs" % log_name)
+            return WEECHAT_RC_OK
+    elif buffer_name:
+        search_in_buffers = get_buffer_by_pattern(buffer_name)
+        if not search_in_buffers:
+            error("Couldn't find any buffer for %s." % buffer_name)
+            return WEECHAT_RC_OK
     else:
-        search_in_buffers = search_buffer
+        # search current buffer's log
+        search_in_files = get_file_by_buffer([ buffer ])
+        if not search_in_files:
+            search_in_buffers = [ buffer ]
 
     # grepping
     try:
@@ -1482,7 +1395,6 @@ def cmd_logs(data, buffer, args):
     home_dir = get_home()
     file_list = dir_list(home_dir)
     if pattern:
-        from fnmatch import fnmatch
         home_len = len(home_dir)
         def match(file):
             file = file[home_len:] # pattern shouldn't match home dir
@@ -1587,15 +1499,12 @@ def completion_log_files(data, completion_item, buffer, completion):
     home_dir = get_home()
     home_dir_len = len(home_dir)
     for log in dir_list(home_dir, include_dir=True):
-        # strip home dir and any leading '/'
-        log = log[home_dir_len:]
-        if log[0] == '/':
-            log = log[1:]
+        log = log[home_dir_len:] # strip home dir
         weechat.hook_completion_list_add(completion, log, 0, weechat.WEECHAT_LIST_POS_END)
     return WEECHAT_RC_OK
 
 def completion_grep_args(data, completion_item, buffer, completion):
-    for arg in ('count', 'all', 'matchcase', 'hilight', 'exact', 'head', 'tail', 'number', 'buffer',
+    for arg in ('count', 'matchcase', 'hilight', 'exact', 'head', 'tail', 'number',
             'after-context', 'before-context', 'context', 'invert', 'only-match'):
         weechat.hook_completion_list_add(completion, '--' + arg, 0, weechat.WEECHAT_LIST_POS_SORT)
     for tmpl in templates:
@@ -1666,19 +1575,15 @@ if __name__ == '__main__' and import_ok and \
 
 
     weechat.hook_command(SCRIPT_COMMAND, cmd_grep.__doc__,
-            "[log <file> | buffer <name> | stop] [-a|--all] [-b|--buffer] [-c|--count] [-m|--matchcase] "
-            "[-H|--hilight] [-o|--only-match] [-i|-v|--invert] [(-h|--head)|(-t|--tail) [-n|--number <n>]] "
-            "[-A|--after-context <n>] [-B|--before-context <n>] [-C|--context <n> ] <expression>",
+            "log <pattern> [<options>] <expression> || buffer <pattern> [<options>] <expression> || stop",
 # help
 """
-     log <file>: Search in one log that matches <file> in the logger path.
-                 Use '*' and '?' as wildcards.
-  buffer <name>: Search in buffer <name>, if there's no buffer with <name> it will
-                 try to search for a log file.
-           stop: Stops a currently running search.
-       -a --all: Search in all open buffers.
-                 If used with 'log <file>' search in all logs that matches <file>.
-    -b --buffer: Search only in buffers, not in file logs.
+Grep by default will search in current buffer's log, you can use
+   log: Search in log files. The search will be done in the logs that matches <pattern>. Use '*' and '?' as wildcards.
+buffer: Search in buffers. The search will be done in the buffers that matches <pattern>. Use '*' and '?' as wildcards.
+  stop: Stops a currently running search.
+
+Grep options:
      -c --count: Just count the number of matched lines instead of showing them.
  -m --matchcase: Don't do case insensible search.
    -H --hilight: Colour exact matches in output buffer.
@@ -1714,7 +1619,7 @@ Examples:
     /grep %{escape *.*}
 """,
             # completion template
-            "buffer %(buffers_names) %(grep_arguments)|%*"
+            "buffer %(buffers_plugins_names) %(grep_arguments)|%*"
             "||log %(grep_log_files) %(grep_arguments)|%*"
             "||stop"
             "||%(grep_arguments)|%*",
