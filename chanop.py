@@ -503,7 +503,7 @@ def get_nick(s):
 
 def get_user(s, trim=False):
     """'nick!user@host' => 'user'"""
-    assert is_hostmask(s)
+    assert is_hostmask(s), "Invalid hostmask: %s" % s
     s = s[s.find('!') + 1:s.find('@')]
     if trim:
         # remove the stuff not part of the username.
@@ -515,7 +515,7 @@ def get_user(s, trim=False):
 
 def get_host(s):
     """'nick!user@host' => 'host'"""
-    assert is_hostmask(s)
+    assert is_hostmask(s), "Invalid hostmask: %s" % s
     if ' ' in s:
         return s[s.find('@') + 1:s.find(' ')]
     return s[s.find('@') + 1:]
@@ -540,7 +540,6 @@ def irc_buffer(buffer):
         channel = get_string(buffer, 'localvar_channel')
         server = get_string(buffer, 'localvar_server')
         return (server, channel)
-
 
 # -----------------------------------------------------------------------------
 # WeeChat classes 
@@ -2152,7 +2151,7 @@ class Ban(CommandWithOp):
                     if is_ip(ip):
                         host = '*%s' % ip
             s = '%s!%s@%s' %(nick, user, host)
-            assert is_hostmask(s), "Invalid banmask: %s" %s
+            assert is_hostmask(s), "Invalid hostmask: %s" % s
             return s
 
         if callable(hostmask):
