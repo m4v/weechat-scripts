@@ -36,11 +36,6 @@
 #   * plugins.var.python.grep.go_to_buffer:
 #     Automatically go to grep buffer when search is over. Valid values: on, off
 #
-#   * plugins.var.python.grep.log_filter:
-#     Coma separated list of patterns that grep will use for exclude logs, e.g.
-#     if you use '*server/*' any log in the 'server' folder will be excluded
-#     when using the command '/grep log'
-#
 #   * plugins.var.python.grep.show_summary:
 #     Shows summary for each log. Valid values: on, off
 #
@@ -64,9 +59,14 @@
 #   * possibly add option for defining time intervals
 #   * try to reduce memory usage when matching lots of lines
 #   * fix using "\" at the end of the regex
+#   * fix using "'" in regexs
 #
 #
 #   History:
+#   2012-
+#   version 
+#   * removed log_filter option, I hardly use it now and slows down the log completer.
+#
 #   2011-01-09
 #   version 0.7.2: bug fixes
 #
@@ -195,7 +195,7 @@ except ImportError:
 
 SCRIPT_NAME    = "grep"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.7.2"
+SCRIPT_VERSION = "0.7.2-dev"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Search in buffers and logs"
 SCRIPT_COMMAND = "grep"
@@ -203,7 +203,6 @@ SCRIPT_COMMAND = "grep"
 ### Default Settings ###
 settings = {
 'clear_buffer'      : 'off',
-'log_filter'        : '',
 'go_to_buffer'      : 'on',
 'max_lines'         : '4000',
 'show_summary'      : 'on',
@@ -401,13 +400,6 @@ def get_config_int(config, allow_empty_string=False):
         error("'%s' is not a number." %value)
         return int(default)
 
-def get_config_log_filter():
-    filter = weechat.config_get_plugin('log_filter')
-    if filter:
-        return filter.split(',')
-    else:
-        return []
-
 def get_home():
     home = weechat.config_string(weechat.config_get('logger.file.path'))
     return home.replace('%h', weechat.info_get('weechat_dir', ''))
@@ -415,8 +407,7 @@ def get_home():
 def strip_home(s, dir=''):
     """Strips home dir from the begging of the log path, this makes them sorter."""
     if not dir:
-        global home_dir
-        dir = home_dir
+        dir = get_home()
     l = len(dir)
     if s[:l] == dir:
         return s[l:]
@@ -438,14 +429,12 @@ def say(s, buffer=''):
     prnt_date_tags(buffer, 0, 'no_highlight,no_log,grep', '%s\t%s' % (script_nick, s))
 
 
-
 ### Log files and buffers ###
 cache_dir = {} # note: don't remove, needed for completion if the script was loaded recently
-def dir_list(dir, filter_list=(), filter_excludes=True, include_dir=False):
+def dir_list(dir, include_dir=False):
     """Returns a list of files in 'dir' and its subdirs."""
     global cache_dir
     from os import walk
-    from fnmatch import fnmatch
     #debug('dir_list: listing in %s' %dir)
     key = (dir, include_dir)
     try:
@@ -453,31 +442,16 @@ def dir_list(dir, filter_list=(), filter_excludes=True, include_dir=False):
     except KeyError:
         pass
     
-    filter_list = filter_list or get_config_log_filter()
-    dir_len = len(dir)
-    if filter_list:
-        def filter(file):
-            file = file[dir_len:] # pattern shouldn't match home dir
-            for pattern in filter_list:
-                if fnmatch(file, pattern):
-                    return filter_excludes
-            return not filter_excludes
-    else:
-        filter = lambda f : not filter_excludes
-
     file_list = []
     extend = file_list.extend
     join = path.join
-    def walk_path():
-        for basedir, subdirs, files in walk(dir):
-            #if include_dir:
-            #    subdirs = map(lambda s : join(s, ''), subdirs)
-            #    files.extend(subdirs)
-            files_path = map(lambda f : join(basedir, f), files)
-            files_path = [ file for file in files_path if not filter(file) ]
-            extend(files_path)
+    for basedir, subdirs, files in walk(dir):
+        if include_dir:
+            subdirs = map(lambda s: join(s, ''), subdirs)
+            files.extend(subdirs)
+        files_path = map(lambda f: join(basedir, f), files)
+        extend(files_path)
 
-    walk_path()
     cache_dir[key] = file_list
     #debug('dir_list: got %s' %str(file_list))
     return file_list
@@ -493,7 +467,7 @@ def get_file_by_pattern(pattern, all=False):
     if path.isfile(file):
         return [file]
     # lets see if there's a matching log
-    global home_dir
+    home_dir = get_home()
     file = path.join(home_dir, pattern)
     if path.isfile(file):
         return [file]
@@ -907,7 +881,7 @@ def show_matching_lines():
     """
     global pattern, matchcase, number, count, exact, hilight, invert
     global tail, head, after_context, before_context
-    global search_in_files, search_in_buffers, matched_lines, home_dir
+    global search_in_files, search_in_buffers, matched_lines
     global time_start
     matched_lines = linesDict()
     #debug('buffers:%s \nlogs:%s' %(search_in_buffers, search_in_files))
@@ -955,7 +929,7 @@ def show_matching_lines():
                     dir=weechat.info_get('weechat_dir', ''))
             cmd = grep_process_cmd %dict(logs=files_string, head=head, pattern=pattern, tail=tail,
                     hilight=hilight, after_context=after_context, before_context=before_context,
-                    exact=exact, matchcase=matchcase, home_dir=home_dir, script_path=script_path,
+                    exact=exact, matchcase=matchcase, home_dir=get_home(), script_path=script_path,
                     count=count, invert=invert, bytecode=bytecode, filename=tmpFile.name,
                     python=weechat.info_get('python2_bin', '') or 'python')
 
@@ -1277,14 +1251,13 @@ def buffer_input(data, buffer, input_data):
 ### Commands ###
 def cmd_init():
     """Resets global vars."""
-    global home_dir, cache_dir, nick_dict
+    global cache_dir, nick_dict
     global pattern_tmpl, pattern, matchcase, number, count, exact, hilight, invert
     global tail, head, after_context, before_context
     hilight = ''
     head = tail = after_context = before_context = invert = False
     matchcase = count = exact = False
     pattern_tmpl = pattern = number = None
-    home_dir = get_home()
     cache_dir = {} # for avoid walking the dir tree more than once per command
     nick_dict = {} # nick cache for don't calculate nick color every time
 
@@ -1491,14 +1464,13 @@ def cmd_grep(data, buffer, args):
 def cmd_logs(data, buffer, args):
     """List files in Weechat's log dir."""
     cmd_init()
-    global home_dir
     sort_by_size = False
-    filter = []
+    pattern = None
 
     try:
         opts, args = getopt.gnu_getopt(args.split(), 's', ['size'])
         if args:
-            filter = args
+            pattern = args[0]
         for opt, var in opts:
             opt = opt.strip('-')
             if opt in ('size', 's'):
@@ -1507,8 +1479,19 @@ def cmd_logs(data, buffer, args):
         error('Argument error, %s' %e)
         return WEECHAT_RC_OK
 
-    # is there's a filter, filter_excludes should be False
-    file_list = dir_list(home_dir, filter, filter_excludes=not filter)
+    home_dir = get_home()
+    file_list = dir_list(home_dir)
+    if pattern:
+        from fnmatch import fnmatch
+        home_len = len(home_dir)
+        def match(file):
+            file = file[home_len:] # pattern shouldn't match home dir
+            if fnmatch(file, pattern):
+                return True
+            return False
+        
+        file_list = filter(match, file_list)
+
     if sort_by_size:
         file_list.sort(key=get_size)
     else:
@@ -1601,13 +1584,14 @@ def cmd_lastlog(data, buffer, args):
 
 ### Completion ###
 def completion_log_files(data, completion_item, buffer, completion):
-    #debug('completion: %s' %', '.join((data, completion_item, buffer, completion)))
-    global home_dir
-    l = len(home_dir)
-    completion_list_add = weechat.hook_completion_list_add
-    WEECHAT_LIST_POS_END = weechat.WEECHAT_LIST_POS_END
-    for log in dir_list(home_dir):
-        completion_list_add(completion, log[l:], 0, WEECHAT_LIST_POS_END)
+    home_dir = get_home()
+    home_dir_len = len(home_dir)
+    for log in dir_list(home_dir, include_dir=True):
+        # strip home dir and any leading '/'
+        log = log[home_dir_len:]
+        if log[0] == '/':
+            log = log[1:]
+        weechat.hook_completion_list_add(completion, log, 0, weechat.WEECHAT_LIST_POS_END)
     return WEECHAT_RC_OK
 
 def completion_grep_args(data, completion_item, buffer, completion):
@@ -1665,7 +1649,6 @@ def delete_bytecode():
 if __name__ == '__main__' and import_ok and \
         weechat.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, \
         SCRIPT_DESC, 'delete_bytecode', ''):
-    home_dir = get_home()
 
     # for import ourselves
     global script_path
@@ -1736,9 +1719,10 @@ Examples:
             "||stop"
             "||%(grep_arguments)|%*",
             'cmd_grep' ,'')
-    weechat.hook_command('logs', cmd_logs.__doc__, "[-s|--size] [<filter>]",
+    weechat.hook_command('logs', cmd_logs.__doc__, "[-s|--size] [<pattern>]",
             "-s --size: Sort logs by size.\n"
-            " <filter>: Only show logs that match <filter>. Use '*' and '?' as wildcards.", '--size', 'cmd_logs', '')
+            " <pattern>: Only show logs that match <pattern>. Use '*' and '?' as wildcards.",
+            '--size', 'cmd_logs', '')
     weechat.hook_command('lastlog', "", "", "", "", 'cmd_lastlog', '')
 
     weechat.hook_completion('grep_log_files', "list of log files",
