@@ -23,7 +23,7 @@
 #   * /infos
 #   
 #   History:
-#   2011-10-
+#   2011-10-02
 #   version 0.1: new script!
 #
 ###
@@ -221,7 +221,7 @@ if __name__ == '__main__' and import_ok and \
                                     COLOR_RESET)
 
     weechat.hook_command("infos", "View and use WeeChat infos", 
-                         "get <info_name> [<arguments>] || show [<info_name>]",
+                         "show [<info_name>] || get <info_name> [<arguments>]",
                          "show: Shows information about all infos or info <info_name>.\n"\
                          " get: Get info <info_name>.",
                          "get|show %(infos_info_list)",
