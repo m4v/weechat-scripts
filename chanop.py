@@ -2170,11 +2170,9 @@ class Ban(CommandWithOp):
                 mask = self.make_banmask(hostmask)
                 if self.has_voice(arg):
                     self.irc.Devoice(arg)
-            elif is_hostmask(arg):
-                mask = arg
             else:
-                say("'%s' isn't a valid user mask or nick." % arg, self.buffer)
-                continue
+                # probably an extban
+                mask = arg
             banmasks.append(mask)
         banmasks = set(banmasks) # remove duplicates
         self.ban(*banmasks)
