@@ -79,6 +79,7 @@ except ImportError:
     import_ok = False
 
 import re
+import os
 import csv
 import time
 import string
@@ -576,13 +577,15 @@ class WarnDatabase(CaseInsensibleDict):
 
     def writeDB(self):
         filename = get_dir('warn_patterns.csv')
+        tmp = get_dir('warn_patterns.csv.tmp')
         try:
-            fd = open(filename, 'wb')
+            fd = open(tmp, 'wb')
             writer = csv.writer(fd)
             writer.writerows(self.getrows())
             fd.close()
+            os.rename(tmp, filename)
         except IOError:
-            error('Failed to write warn database in %s' % file)
+            error('Failed to write warn database in %s' % filename)
 
     def readDB(self):
         filename = get_dir('warn_patterns.csv')
