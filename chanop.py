@@ -787,6 +787,21 @@ class Bar(object):
         else:
             return 0
 
+class PopupBar(Bar):
+    _timer_hook = ''
+    popup_mode = False
+
+    def popup(self, delay=5):
+        self.show()
+        if self._timer_hook:
+            weechat.unhook(self._timer_hook)
+        self._timer_hook = weechat.hook_timer(delay * 1000, 0, 1, callback(self._timer), '')
+
+    def _timer(self, data, counter): 
+        self.hide()
+        self._timer_hook = ''
+        return WEECHAT_RC_OK
+
 # -----------------------------------------------------------------------------
 # Per buffer variables
 
@@ -2827,14 +2842,23 @@ def unban_mask_cmpl(mode, completion_item, buffer, completion):
         if not maskSync.queue:
             def callback():
                 masklist = maskCache[key]
+                global chanop_bar_status
                 if masklist:
-                    say('Got %s +%s masks.' % (len(masklist), mode), buffer)
+#                    say('Got %s +%s masks.' % (len(masklist), mode), buffer)
+                    chanop_bar_status = 'Got %s +%s masks.' % (len(masklist), mode)
                 else:
-                    say('No +%s masks found.' % mode, buffer)
+ #                   say('No +%s masks found.' % mode, buffer)
+                    chanop_bar_status = 'No +%s masks found.' % mode
+                weechat.bar_item_update('chanop_status')
+                chanop_bar.popup()
                 cmpl_unban(masklist)
 
             maskSync.fetch(server, channel, mode, callback)
-            say('Fetching +%s masks in %s, please wait...' %(mode, channel), buffer)
+  #          say('Fetching +%s masks in %s, please wait...' %(mode, channel), buffer)
+            global chanop_bar_status
+            chanop_bar_status = 'Fetching +%s masks in %s, please wait...' %(mode, channel)
+            weechat.bar_item_update('chanop_status')
+            chanop_bar.popup()
     else:
         # mask list is up to date, do completion
         cmpl_unban(maskCache[key])
@@ -3014,10 +3038,18 @@ def item_ban_matches_cb(data, item, window):
         return affects('(nobody)')
     return affects('(%s) ' % len(affected), affected)
 
+chanop_bar_status = ''
+def item_status_cb(data, item, window):
+    global chanop_bar_status
+    if chanop_bar_status:
+        return "[%s] %s" % (SCRIPT_NAME, chanop_bar_status)
+    else:
+        return "[%s]" % SCRIPT_NAME
+
 @catchExceptions
 def input_content_cb(data, modifier, modifier_data, string):
     #debug('input_content_cb: %s %s %r', modifier, modifier_data, string)
-    global chanop_bar_current_buffer
+    global chanop_bar_current_buffer, chanop_bar_status
     if not chanop_bar:
         return string
 
@@ -3028,9 +3060,13 @@ def input_content_cb(data, modifier, modifier_data, string):
             chanop_bar.show()
             chanop_bar_current_buffer = modifier_data
             weechat.bar_item_update('chanop_ban_matches')
+            if chanop_bar_status:
+                chanop_bar_status = ''
+                weechat.bar_item_update('chanop_bar_status')
             return string
 
-    chanop_bar.hide()
+    if not chanop_bar._timer_hook:
+        chanop_bar.hide()
     return string
 
 # -----------------------------------------------------------------------------
@@ -3171,10 +3207,11 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_timer(30*60*1000, 0, 0, 'garbage_collector_cb', '')
 
     # TODO add option for disable bar
-    chanop_bar = Bar('chanop_bar', hidden=True, items='chanop_ban_matches')
+    chanop_bar = PopupBar('chanop_bar', hidden=True, items='chanop_status,chanop_ban_matches')
     chanop_bar.new()
 
     weechat.bar_item_new('chanop_ban_matches', 'item_ban_matches_cb', '')
+    weechat.bar_item_new('chanop_status', 'item_status_cb', '')
     weechat.hook_modifier('input_text_content', 'input_content_cb', '')
 
     weechat.hook_info("chanop_hostmask_from_nick",
