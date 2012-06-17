@@ -194,6 +194,7 @@
 #   * cycle between different banmasks in /oban /oquiet commands.
 #   * added pop-up bar for show information.
 #   * save ban mask information (date and operator) in weechat options.
+#   * remove workarounds for < 0.3.2 weechat versions
 #
 #   2011-09-18
 #   version 0.2.6: bug fixes:
@@ -259,6 +260,8 @@
 #   2009-10-31
 #   version 0.1: Initial release
 ###
+
+WEECHAT_VERSION = (0x30200, '0.3.2')
 
 SCRIPT_NAME    = "chanop"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
@@ -525,12 +528,6 @@ def is_channel(s):
 
 def is_nick(s):
     return weechat.info_get('irc_is_nick', s)
-
-# for old WeeChat
-_nickchars = re.escape(r'[]\`_^{|}')
-_nickRe = re.compile(r'^[A-Za-z%s][-0-9A-Za-z%s]*$' %(_nickchars, _nickchars))
-def _is_nick(s):
-    return bool(_nickRe.match(s))
 
 def irc_buffer(buffer):
     """Returns pair (server, channel) or None if buffer isn't an irc channel"""
@@ -3142,10 +3139,9 @@ if __name__ == '__main__' and import_ok and \
         version = int(weechat.info_get('version_number', ''))
     except:
         version = 0
-    #debug(version)
-    if version < 0x30200:
-        error('WeeChat < 0.3.2: using irc_is_nick workaround.')
-        is_nick = _is_nick # prior to 0.3.2 didn't have irc_is_nick info
+    if version < WEECHAT_VERSION[0]:
+        error("This version of WeeChat isn't supported. Use %s or later." % WEECHAT_VERSION[1])
+        raise Exception('unsupported weechat version')
     if version < 0x30300: # prior to 0.3.3 didn't have support for ISUPPORT msg
         error('WeeChat < 0.3.3: using ISUPPORT workaround.')
         weechat.hook_signal('*,irc_in_005', 'isupport_cb', '')
