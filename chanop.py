@@ -1500,46 +1500,29 @@ class MaskSync(object):
         weechat_command(buffer, cmd)
 
     def _maskCallback(self, data, modifier, modifier_data, string):
-        """callback for store a single mask.
-
-        irc_in_367 => ban
-        irc_in_728 => quiet
-        """
-
+        """callback for store a single mask."""
+        #debug("MASK %s: %s %s", modifier, modifier_data, string)
+        server, channel, mode = self.queue[0]
         args = string.split()
         if modifier == 'irc_in_367':
-            mode = 'b'
-            if len(args) < 7:
-                channel, mask = args[3], args[4]
+            try:
+                mask, op, date = args[4:]
+            except IndexError:
+                mask = args[4]
                 op = date = None
-            else:
-                channel, mask, op, date = args[3:]
         elif modifier == 'irc_in_728':
-            channel, mode, mask, op, date = args[3:]
+            mask, op, date = args[5:]
 
-        debug("MASK %s: %s %s %s %s", modifier, channel, mask, op, date)
         # store temporally until "end list" msg
-        self._maskbuffer[modifier_data, channel].append((mask, op, date))
+        self._maskbuffer[server, channel].append((mask, op, date))
         if self._hide_msg:
-            return ''
-        else:
-            return string
+            string = ''
+        return string
 
     def _endCallback(self, data, modifier, modifier_data, string):
-        """callback for end of channel's mask list.
-
-        irc_in_368 => ban
-        irc_in_729 => quiet
-        """
-
-        L = string.split()
-        if modifier == 'irc_in_368':
-            channel, mode = L[3], L[7]
-        elif modifier == 'irc_in_729':
-            channel, mode = L[3], L[4]
-        server = modifier_data
-        debug("MASK END %s: %s %s", modifier, channel, mode)
-
+        """callback for end of channel's mask list."""
+        #debug("MASK END %s: %s %s", modifier, modifier_data, string)
+        server, channel, mode = self.queue.pop(0)
         maskCache = modeCache[mode]
         try:
             for banmask, op, date in self._maskbuffer[server, channel]:
@@ -1554,26 +1537,20 @@ class MaskSync(object):
         masklist.synced = now()
         modeCache.updateConfig(server, channel, mode)
 
-        # run finishing functions if any
+        # run hooked functions if any
         if (server, channel) in self._callback:
             self._callback[server, channel]()
             del self._callback[server, channel]
 
-        try:
-            if self._hide_msg:
-                return ''
-            else:
-                return string
-        finally:
-            if self.queue:
-                # this is the one we just did
-                del self.queue[0]
-            if self.queue:
-                next = self.queue[0]
-                self._fetch(*next)
-            else:
-                assert not self._maskbuffer, "buffer not empty %s" % self._maskbuffer.keys()
-                self._hide_msg = False
+        if self._hide_msg:
+            string = ''
+        if self.queue:
+            next = self.queue[0]
+            self._fetch(*next)
+        else:
+            assert not self._maskbuffer, "mask buffer not empty: %s" % self._maskbuffer.keys()
+            self._hide_msg = False
+        return string
 
 maskSync = MaskSync()
 
