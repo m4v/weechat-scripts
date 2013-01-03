@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 ###
-# Copyright (c) 2009-2011 by Elián Hanisch <lambdae2@gmail.com>
+# Copyright (c) 2009-2013 by Elián Hanisch <lambdae2@gmail.com>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -305,12 +305,19 @@ chars = string.maketrans('', '')
 script_nick = SCRIPT_NAME
 def error(s, buffer=''):
     """Error msg"""
-    prnt(buffer, '%s%s %s' %(weechat.prefix('error'), script_nick, s))
+    prnt(buffer, '%s%s %s' % (weechat.prefix('error'), script_nick, s))
     if weechat.config_get_plugin('debug'):
         import traceback
         if traceback.sys.exc_type:
             trace = traceback.format_exc()
             prnt('', trace)
+
+def debug(s, *args):
+    if not isinstance(s, basestring):
+        s = str(s)
+    if args:
+        s = s % args
+    prnt('', '%s\t%s' % (script_nick, s))
 
 def say(s, buffer=''):
     """normal msg"""
@@ -581,9 +588,9 @@ def callback(method):
 def weechat_command(buffer, cmd):
     """I want to always keep debug() calls for this"""
     if buffer:
-        debug("<white>sending: %r buffer: %s", cmd, buffer)
+        debug("%ssending: %r buffer: %s", COLOR_WHITE, cmd, buffer)
     else:
-        debug("<white>sending: %r", cmd)
+        debug("%ssending: %r", COLOR_WHITE, cmd)
     weechat.command(buffer, cmd)
 
 class Infolist(object):
@@ -659,7 +666,6 @@ class Infolist(object):
 
     def free(self):
         if self.pointer:
-            #debug('Freeing Infolist')
             weechat.infolist_free(self.pointer)
             self.pointer = ''
 
@@ -696,7 +702,11 @@ class Command(object):
     def callback(self, data, buffer, args):
         """Called by WeeChat when /command is used."""
         self.data, self.buffer, self.args = data, buffer, args
-        debug("<darkgray>[%s] data: \"%s\" buffer: \"%s\" args: \"%s\"", self.command, data, buffer, args)
+        debug("%s[%s] data: \"%s\" buffer: \"%s\" args: \"%s\"", COLOR_DARKGRAY,
+                                                                 self.command,
+                                                                 data,
+                                                                 buffer,
+                                                                 args)
         try:
             self.parser(args)  # argument parsing
         except ArgumentError, e:
@@ -1616,7 +1626,7 @@ class UserList(ServerUserList):
         self._purge_time = 3600*2 # 2 hours
 
     def __setitem__(self, nick, user):
-        #debug('<green>%s %s: join, %s', self.server, self.channel, nick)
+        #debug('%s %s: join, %s', self.server, self.channel, nick)
         if nick not in self:
             user._channels += 1
         if nick in self._purge_list:
@@ -1626,7 +1636,7 @@ class UserList(ServerUserList):
 
     def part(self, nick):
         try:
-            #debug('<red>%s %s: part, %s', self.server, self.channel, nick)
+            #debug('%s %s: part, %s', self.server, self.channel, nick)
             user = self[nick]
             self._purge_list[nick] = user
         except KeyError:
@@ -2498,7 +2508,7 @@ def signal_parse(f):
             return WEECHAT_RC_OK
         nick = get_nick(signal_data)
         hostmask = signal_data[1:signal_data.find(' ')]
-        #debug('<gray>%s %s', signal, signal_data)
+        #debug('%s %s', signal, signal_data)
         return f(server, channel, nick, hostmask, signal_data)
     decorator.func_name = f.func_name
     return decorator
@@ -2511,7 +2521,7 @@ def signal_parse_no_channel(f):
         channels = userCache.getChannels(server, nick)
         if channels:
             hostmask = signal_data[1:signal_data.find(' ')]
-            #debug('<gray>%s %s', signal, signal_data)
+            #debug('%s %s', signal, signal_data)
             return f(server, channels, nick, hostmask, signal_data)
         return WEECHAT_RC_OK
     decorator.func_name = f.func_name
@@ -3067,6 +3077,8 @@ if __name__ == '__main__' and import_ok and \
     color_mask      = weechat.color('white')
     color_channel   = weechat.color('lightred')
     color_reset     = weechat.color('reset')
+    COLOR_WHITE     = weechat.color('white')
+    COLOR_DARKGRAY  = weechat.color('darkgray')
 
     # pretty [chanop]
     script_nick = '%s[%s%s%s]%s' %(color_delimiter,
@@ -3078,33 +3090,16 @@ if __name__ == '__main__' and import_ok and \
     # -------------------------------------------------------------------------
     # Debug
 
-    def colorFormat(f):
-        def colorise(s, *args, **kwargs):
-            if s[0] == '<' and '>' in s:
-                color = s[1:s.find('>')]
-                if color.isalpha():
-                    s = s[s.find('>') + 1:]
-                    f(weechat.color(color) + s, *args, **kwargs)
-                    return
-            f(s, *args, **kwargs)
-        return colorise
-
     if weechat.config_get_plugin('debug'):
         try:
             # custom debug module I use, allows me to inspect script's objects.
             import pybuffer
             debug = pybuffer.debugBuffer(globals(), '%s_debug' % SCRIPT_NAME)
             weechat.buffer_set(debug._getBuffer(), 'localvar_set_no_log', '0')
-            debug = colorFormat(debug)
         except:
-            @colorFormat
-            def debug(s, *args):
-                if not isinstance(s, basestring):
-                    s = str(s)
-                if args:
-                    s = s %args
-                prnt('', '%s\t%s' % (script_nick, s))
+            pass
     else:
+        # disable debug msg
         def debug(*args):
             pass
 
@@ -3158,9 +3153,9 @@ if __name__ == '__main__' and import_ok and \
 
     maskSync.hook()
 
-    weechat.hook_config('plugins.var.python.%s.enable_multi_kick' %SCRIPT_NAME,
+    weechat.hook_config('plugins.var.python.%s.enable_multi_kick' % SCRIPT_NAME,
             'enable_multi_kick_conf_cb', '')
-    weechat.hook_config('plugins.var.python.%s.watchlist.*' %SCRIPT_NAME,
+    weechat.hook_config('plugins.var.python.%s.watchlist.*' % SCRIPT_NAME,
             'update_chanop_watchlist_cb', '')
 
     weechat.hook_completion('chanop_unban_mask', 'channelmode b masks', 'unban_mask_cmpl', 'b')
@@ -3177,7 +3172,7 @@ if __name__ == '__main__' and import_ok and \
     weechat.hook_signal('*,irc_in_mode', 'mode_cb', '')
 
     # run our cleaner function every 30 min.
-    weechat.hook_timer(30*60*1000, 0, 0, 'garbage_collector_cb', '')
+    weechat.hook_timer(1000 * 60 * 30, 0, 0, 'garbage_collector_cb', '')
 
     # TODO add option for disable bar
     chanop_bar = PopupBar('chanop_bar', hidden=True, items='chanop_status,chanop_ban_matches')
