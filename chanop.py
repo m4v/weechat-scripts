@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 ###
-# Copyright (c) 2009-2011 by Elián Hanisch <lambdae2@gmail.com>
+# Copyright (c) 2009-2013 by Elián Hanisch <lambdae2@gmail.com>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -189,6 +189,9 @@
 #
 #
 #   History:
+#   2013-01-02
+#   version 0.2.7: bug fixes:
+#   * fix /obankick, don't deop before kicking.
 #
 #   2011-09-18
 #   version 0.2.6: bug fixes:
@@ -257,7 +260,7 @@
 
 SCRIPT_NAME    = "chanop"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.2.6"
+SCRIPT_VERSION = "0.2.7"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Helper script for IRC Channel Operators"
 
