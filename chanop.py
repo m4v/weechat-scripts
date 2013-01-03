@@ -196,6 +196,10 @@
 #   * save ban mask information (date and operator) in weechat options.
 #   * remove workarounds for < 0.3.2 weechat versions
 #
+#   2013-01-02
+#   version 0.2.7: bug fixes:
+#   * fix /obankick, don't deop before kicking.
+#
 #   2011-09-18
 #   version 0.2.6: bug fixes:
 #   * update script to work with freenode's new quiet messages.
