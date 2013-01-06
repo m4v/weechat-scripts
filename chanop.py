@@ -295,11 +295,13 @@ except ImportError:
     print "Get WeeChat now at: http://www.weechat.org/"
     import_ok = False
 
+import os
 import re
+import time
 import string
 import getopt
-import time
 from collections import defaultdict
+from shelve import DbfilenameShelf as Shelf
 
 chars = string.maketrans('', '')
 
@@ -1357,81 +1359,53 @@ class MaskCache(ServerChannelDict):
             pass
 
 
-class ModeCache(dict):
+class ChanopCache(Shelf):
+    def __init__(self, filename):
+        path = os.path.join(weechat.info_get('weechat_dir', ''), filename)
+        Shelf.__init__(self, path, writeback=True)
+
+
+class ModeCache(ChanopCache):
     """class for store channel modes lists."""
-    def __init__(self):
+    def __init__(self, filename):
+        ChanopCache.__init__(self, filename)
         self.modes = set()
-        self.type = CaseInsensibleDict()
+        self.map = CaseInsensibleDict()
 
-    def addMode(self, mode, *args):
-        assert mode not in self.modes
+        # reset all sync timers
+        for cache in self.itervalues():
+            for masklist in cache.itervalues():
+                masklist.synced = 0
 
-        cache = MaskCache()
-        self[mode] = cache
-        self.modes.add(mode)
-        self.type[mode] = mode
+    def registerMode(self, mode, *args):
+        if mode not in self:
+            cache = MaskCache()
+            self[mode] = cache
+
+        if mode not in self.modes:
+            self.modes.add(mode)
+
+        self.map[mode] = mode
         for name in args:
-            self.type[name] = mode
+            self.map[name] = mode
 
     def __getitem__(self, mode):
         try:
-            return dict.__getitem__(self, mode)
+            return ChanopCache.__getitem__(self, mode)
         except KeyError:
-            return dict.__getitem__(self, self.type[mode])
+            return ChanopCache.__getitem__(self, self.map[mode])
 
     def add(self, server, channel, mode, mask, **kwargs):
         assert mode in self.modes
-        ban = self[mode].add(server, channel, mask, **kwargs)
-        self.save(server, channel, mode, ban)
+        self[mode].add(server, channel, mask, **kwargs)
 
     def remove(self, server, channel, mode, mask):
         self[mode].remove(server, channel, mask)
-        self.delete(server, channel, mode, mask)
-
-    def save(self, server, channel, mode, ban):
-        debug("saving %s.%s +%s %s", server, channel, mode, ban.mask)
-        weechat.config_set_plugin('chanmask.%s.%s.%s.%s' \
-                                  % (server, channel, mode, ban.mask),
-                                  ban.serialize())
-
-    def delete(self, server, channel, mode, mask):
-        debug("deleting %s.%s +%s %s", server, channel, mode, mask)
-        weechat.config_unset_plugin('chanmask.%s.%s.%s.%s' \
-                                    % (server, channel, mode, mask))
-
-    def updateConfig(self, server, channel, mode):
-        if (server, channel) not in chanopChannels:
-            return
-
-        mode = self.type[mode]
-        L = self[mode][server, channel]
-        if not L.synced:
-            return 
-
-        prefix = 'python.%s.chanmask.%s.%s.%s' % (SCRIPT_NAME, server, channel, mode)
-        infolist = Infolist('option', 'plugins.var.%s.*' % prefix)
-        knownmask = CaseInsensibleSet()
-        n = len(prefix)
-        while infolist.next():
-            mask = infolist['option_name'][n + 1:]
-            if mask not in L:
-                self.delete(server, channel, mode, mask)
-            else:
-                knownmask.add(mask)
-                L[mask].deserialize(infolist['value'])
-
-        for mask, ban in L.iteritems():
-            if mask not in knownmask and is_hostmask(ban.operator):
-                self.save(server, channel, mode, ban)
 
     def purge(self):
         for cache in self.itervalues():
             cache.purge()
 
-
-modeCache = ModeCache()
-modeCache.addMode('b', 'ban', 'bans')
-modeCache.addMode('q', 'quiet', 'quiets')
 
 class MaskSync(object):
     """Class for fetch and sync bans of any channel and mode."""
@@ -1538,18 +1512,19 @@ class MaskSync(object):
         #debug("MASK END %s: %s %s", modifier, modifier_data, string)
         server, channel, mode = self.queue.pop(0)
         maskCache = modeCache[mode]
-        try:
-            for banmask, op, date in self._maskbuffer[server, channel]:
-                maskCache.add(server, channel, banmask, operator=op, date=date)
-            masklist = maskCache[server, channel]
-        except KeyError:
-            masklist = maskCache[server, channel] = MaskList(server, channel)
-        finally:
-            if (server, channel) in self._maskbuffer:
-                del self._maskbuffer[server, channel]
 
-        masklist.synced = now()
-        modeCache.updateConfig(server, channel, mode)
+        # delete old masks in cache
+        if (server, channel) in maskCache:
+            masklist = maskCache[server, channel]
+            banmasks = [ L[0] for L in self._maskbuffer[server, channel] ]
+            for mask in masklist.keys():
+                if mask not in banmasks:
+                    del masklist[mask]
+
+        for banmask, op, date in self._maskbuffer[server, channel]:
+            maskCache.add(server, channel, banmask, operator=op, date=date)
+        del self._maskbuffer[server, channel]
+        maskCache[server, channel].synced = now()
 
         # run hooked functions if any
         if (server, channel) in self._callback:
@@ -2099,7 +2074,10 @@ class Ban(CommandWithOp):
     banmask = []
     mode = 'b'
     prefix = '+'
-    maskCache = modeCache[mode]
+
+    def __init__(self):
+        self.maskCache = modeCache[self.mode]
+        CommandWithOp.__init__(self)
 
     def parser(self, args):
         if not args:
@@ -2247,7 +2225,6 @@ class Quiet(Ban):
     completion = '%(chanop_nicks)|%(chanop_ban_mask)|%*'
 
     mode = 'q'
-    maskCache = modeCache[mode]
 
 
 class UnQuiet(UnBan):
@@ -2257,7 +2234,6 @@ class UnQuiet(UnBan):
     completion = '%(chanop_unquiet_mask)|%(chanop_nicks)|%*'
 
     mode = 'q'
-    maskCache = modeCache[mode]
 
 
 class BanKick(Ban, Kick):
@@ -2391,10 +2367,7 @@ class ShowBans(CommandChanop):
         if not type:
             raise ValueError, 'missing argument'
         try:
-            if type in modeCache.modes:
-                mode = type
-            else:
-                mode = modeCache.type[type]
+            mode = modeCache.map[type]
         except KeyError:
             raise ValueError, 'incorrect argument'
 
@@ -3128,6 +3101,34 @@ if __name__ == '__main__' and import_ok and \
     for opt, val in settings.iteritems():
         if not weechat.config_is_set_plugin(opt):
             weechat.config_set_plugin(opt, val)
+
+    modeCache = ModeCache('chanop_mode_cache.dat')
+    modeCache.registerMode('b', 'ban', 'bans')
+    modeCache.registerMode('q', 'quiet', 'quiets')
+
+    # -------------------------------------------------------------------------
+    # remove old chanmask config and save them in shelf
+
+    prefix = 'python.%s.chanmask' % SCRIPT_NAME
+    infolist = Infolist('option', 'plugins.var.%s.*' % prefix)
+    n = len(prefix)
+    while infolist.next():
+        option = infolist['option_name'][n + 1:]
+        server, channel, mode, mask = option.split('.', 3)
+        if mode in modeCache:
+            cache = modeCache[mode]
+            if (server, channel) in cache:
+                masklist = cache[server, channel]
+            else:
+                masklist = cache[server, channel] = MaskList(server, channel)
+        if mask in masklist:
+            masklist[mask].deserialize(infolist['value'])
+        else:
+            obj = masklist[mask] = MaskObject(mask)
+            obj.deserialize(infolist['value'])
+        weechat.config_unset_plugin('chanmask.%s.%s.%s.%s' \
+                % (server, channel, mode, mask))
+    del infolist
 
     # hook /oop /odeop
     Op().hook()
