@@ -193,8 +193,9 @@
 #   version 0.3-dev:
 #   * cycle between different banmasks in /oban /oquiet commands.
 #   * added pop-up bar for show information.
-#   * save ban mask information (date and operator) in weechat options.
+#   * save ban mask information (date and operator)
 #   * remove workarounds for < 0.3.2 weechat versions
+#   * python 3.0 compatibility (not tested)
 #
 #   2013-01-02
 #   version 0.2.7: bug fixes:
@@ -291,8 +292,8 @@ try:
     from weechat import WEECHAT_RC_OK, prnt
     import_ok = True
 except ImportError:
-    print "This script must be run under WeeChat."
-    print "Get WeeChat now at: http://www.weechat.org/"
+    print("This script must be run under WeeChat.")
+    print("Get WeeChat now at: http://www.weechat.org/")
     import_ok = False
 
 import os
@@ -319,7 +320,7 @@ def error(s, buffer=''):
             prnt('', trace)
 
 def debug(s, *args):
-    if not isinstance(s, basestring):
+    if not isinstance(s, str):
         s = str(s)
     if args:
         s = s % args
@@ -561,7 +562,7 @@ def catchExceptions(f):
     def function(*args, **kwargs):
         try:
             return f(*args, **kwargs)
-        except Exception, e:
+        except Exception as e:
             error(e)
     return function
 
@@ -715,7 +716,7 @@ class Command(object):
                                                                  args)
         try:
             self.parser(args)  # argument parsing
-        except ArgumentError, e:
+        except ArgumentError as e:
             error('Argument error, %s' %e)
         except NoArguments:
             pass
@@ -742,7 +743,7 @@ class Command(object):
                                        self.completion,
                                        self._callback, '')
         if pointer == '':
-            raise Exception, "hook_command failed: %s %s" %(SCRIPT_NAME, self.command)
+            raise Exception("hook_command failed: %s %s" % (SCRIPT_NAME, self.command))
         self._pointer = pointer
 
     def unhook(self):
@@ -768,7 +769,7 @@ class Bar(object):
                                       '0', '1', 'default', 'cyan', 'blue', 'off', 
                                       self._items) 
             if not pointer:
-                raise Exception, "bar_new failed: %s %s" % (SCRIPT_NAME, self.name)
+                raise Exception("bar_new failed: %s %s" % (SCRIPT_NAME, self.name))
 
         self._pointer = pointer
 
@@ -1062,7 +1063,7 @@ class IrcCommands(ChanopBuffers):
 
         value = self.replace_vars(self.get_config('op_command'))
         if not value:
-            raise Exception, "No command defined for get op."
+            raise Exception("No command defined for get op.")
         msg = self.OpMessage(value)
         self.queue(msg, insert=True)
 
@@ -1168,7 +1169,7 @@ class CaseInsensibleDict(dict):
     key = staticmethod(caseInsensibleKey)
 
     def __init__(self, **kwargs):
-        for k, v in kwargs.iteritems():
+        for k, v in kwargs.items():
             self[k] = v
 
     def __setitem__(self, k, v):
@@ -1248,7 +1249,7 @@ class ServerChannelDict(CaseInsensibleDict):
             if key not in chanopChannels:
                 debug('removing %s mask list, not in watchlist.', key)
                 del self[key]
-        for data in self.itervalues():
+        for data in self.values():
             data.purge()
 
 # -----------------------------------------------------------------------------
@@ -1312,7 +1313,7 @@ class MaskList(CaseInsensibleDict):
         if mask in self:
             # mask exists, update it
             ban = self[mask]
-            for attr, value in kwargs.iteritems():
+            for attr, value in kwargs.items():
                 if value and not getattr(ban, attr):
                     setattr(ban, attr, value)
         else:
@@ -1330,7 +1331,7 @@ class MaskList(CaseInsensibleDict):
         if reverseMatch:
             L = [ mask for mask in self if hostmask_match(mask, pattern) ]
         else:
-            L = pattern_match_list(pattern, self.iterkeys())
+            L = pattern_match_list(pattern, self.keys())
         return L
 
     def purge(self):
@@ -1373,8 +1374,8 @@ class ModeCache(ChanopCache):
         self.map = CaseInsensibleDict()
 
         # reset all sync timers
-        for cache in self.itervalues():
-            for masklist in cache.itervalues():
+        for cache in self.values():
+            for masklist in cache.values():
                 masklist.synced = 0
 
     def registerMode(self, mode, *args):
@@ -1403,7 +1404,7 @@ class ModeCache(ChanopCache):
         self[mode].remove(server, channel, mask)
 
     def purge(self):
-        for cache in self.itervalues():
+        for cache in self.values():
             cache.purge()
 
 
@@ -1622,17 +1623,15 @@ class UserList(ServerUserList):
             pass
 
     def values(self):
-        if not all(self.itervalues()):
+        if not all(ServerUserList.values(self)):
             userCache.who(self.server, self.channel)
-        L = list(self.itervalues())
-        L.sort(key=lambda x:x.seen)
-        return reversed(L)
+        return sorted(ServerUserList.values(self), key=lambda x:x.seen, reverse=True)
     
     def hostmasks(self, sorted=False, all=False):
         if sorted:
             users = self.values()
         else:
-            users = self.itervalues()
+            users = ServerUserList.values(self)
         if all:
             # return all known hostmasks
             return [ hostmask for user in users for hostmask in user._hostmask ]
@@ -1643,7 +1642,7 @@ class UserList(ServerUserList):
     def nicks(self, *args, **kwargs):
 #        if not all(self.itervalues()):
 #            userCache.who(self.server, self.channel)
-        L = list(self.iteritems())
+        L = list(self.items())
         L.sort(key=lambda x:x[1].seen)
         return reversed([x[0] for x in L])
 
@@ -1726,7 +1725,7 @@ class UserCache(ServerChannelDict):
         # when we delete a channel, we need to reduce user._channels count
         # so they can be purged later.
         #debug('forgeting about %s', k)
-        for user in self[k].itervalues():
+        for user in self[k].values():
             user._channels -= 1
         ServerChannelDict.__delitem__(self, k)
 
@@ -1783,7 +1782,7 @@ class UserCache(ServerChannelDict):
 
     def purge(self):
         ServerChannelDict.purge(self)
-        for cache in self.servercache.itervalues():
+        for cache in self.servercache.values():
             cache.purge()
 
 userCache = UserCache()
@@ -1807,7 +1806,7 @@ class CommandChanop(Command, ChanopBuffers):
         try:
             self.execute_chanop()   # call our command and queue messages for WeeChat
             self.irc.run()          # run queued messages
-        except InvalidIRCBuffer, e:
+        except InvalidIRCBuffer as e:
             error('Not in a IRC channel (%s)' % e)
             self.irc.clear()
         self.infolist = None    # free irc_nick infolist
@@ -2090,8 +2089,8 @@ class Ban(CommandWithOp):
         args = args.split()
         try:
             (opts, args) = getopt.gnu_getopt(args, 'hune', ('host', 'user', 'nick', 'exact'))
-        except getopt.GetoptError, e:
-            raise ArgumentError, e
+        except getopt.GetoptError as e:
+            raise ArgumentError(e)
         self.banmask = []
         for k, v in opts:
             if k in ('-h', '--host'):
@@ -2365,11 +2364,11 @@ class ShowBans(CommandChanop):
             self.channel = channel
         type, _, args = args.partition(' ')
         if not type:
-            raise ValueError, 'missing argument'
+            raise ValueError('missing argument')
         try:
             mode = modeCache.map[type]
         except KeyError:
-            raise ValueError, 'incorrect argument'
+            raise ValueError('incorrect argument')
 
         if mode not in supported_modes(self.server):
             self.clear()
@@ -2448,7 +2447,7 @@ class ShowBans(CommandChanop):
         if masklist:
             mask_count = len(masklist)
             self.prnt('\n%s[%s %s]' %(color_channel, key[0], key[1]))
-            masks = [ m for m in masklist.itervalues() ]
+            masks = [ m for m in masklist.values() ]
             masks.sort(key=lambda x: x.date)
             for ban in masks:
                 op = self.server
@@ -2610,7 +2609,7 @@ def mode_cb(server, channel, nick, opHostmask, signal_data):
     # check if channel is in watchlist
     key = (server, channel)
     allkeys = CaseInsensibleSet()
-    for maskCache in modeCache.itervalues():
+    for maskCache in modeCache.values():
         allkeys.update(maskCache)
         if key not in allkeys and key not in chanopChannels:
             # from a channel we're not tracking
@@ -2794,7 +2793,7 @@ def unban_mask_cmpl(mode, completion_item, buffer, completion):
                 return
         elif not masklist:
             return
-        for mask in masklist.iterkeys():
+        for mask in masklist.keys():
             #debug('unban mask: %s', mask)
             weechat.hook_completion_list_add(completion, mask, 0, weechat.WEECHAT_LIST_POS_END)
 
@@ -3098,7 +3097,7 @@ if __name__ == '__main__' and import_ok and \
         error('WeeChat < 0.3.4: using irc_nick infolist workaround.')
         Infolist._use_flags = True
 
-    for opt, val in settings.iteritems():
+    for opt, val in settings.items():
         if not weechat.config_is_set_plugin(opt):
             weechat.config_set_plugin(opt, val)
 
