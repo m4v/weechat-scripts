@@ -148,7 +148,7 @@
 #     Examples:
 #     apply exemptions with mask autocompletion
 #     /alias -completion %(chanop_ban_mask) exemption /mode $channel +e
-#     if you use grep.py script, grep with host autocompletion, for look clones. 
+#     if you use grep.py script, grep with host autocompletion, for look clones.
 #     /alias -completion %(chanop_hosts) ogrep /grep
 #
 #   * chanop_unban_mask (used in /ounban)
@@ -306,8 +306,8 @@ from shelve import DbfilenameShelf as Shelf
 
 chars = string.maketrans('', '')
 
-################
-### Messages ###
+# -----------------------------------------------------------------------------
+# Messages
 
 script_nick = SCRIPT_NAME
 def error(s, buffer=''):
@@ -330,8 +330,8 @@ def say(s, buffer=''):
     """normal msg"""
     prnt(buffer, '%s\t%s' %(script_nick, s))
 
-##############
-### Config ###
+# -----------------------------------------------------------------------------
+# Config
 
 # TODO Need to refactor all this too
 
@@ -399,8 +399,8 @@ def get_config_specific(config, server='', channel=''):
     return value
 
 
-#############
-### Utils ###
+# -----------------------------------------------------------------------------
+# Utils
 
 now = lambda: int(time.time())
 
@@ -438,8 +438,8 @@ def time_elapsed(elapsed, ret=None, level=2):
     return ret
 
 
-#################
-### IRC utils ###
+# -----------------------------------------------------------------------------
+# IRC utils
 
 _hostmaskRe = re.compile(r':?\S+!\S+@\S+') # poor but good enough
 def is_hostmask(s):
@@ -553,7 +553,7 @@ def irc_buffer(buffer):
         return (server, channel)
 
 # -----------------------------------------------------------------------------
-# WeeChat classes 
+# WeeChat classes
 
 class InvalidIRCBuffer(Exception):
     pass
@@ -700,8 +700,8 @@ class Command(object):
     def __init__(self):
         assert self.command, "No command defined"
         self.__name__ = self.command
-        self._pointer = ''   
-        self._callback = ''   
+        self._pointer = ''
+        self._callback = ''
 
     def __call__(self, *args):
         return self.callback(*args)
@@ -766,8 +766,8 @@ class Bar(object):
         if not pointer:
             pointer = weechat.bar_new(self.name, boolDict[self.hidden], '0', 'window',
                                       'active', 'bottom', 'horizontal', 'vertical',
-                                      '0', '1', 'default', 'cyan', 'blue', 'off', 
-                                      self._items) 
+                                      '0', '1', 'default', 'cyan', 'blue', 'off',
+                                      self._items)
             if not pointer:
                 raise Exception("bar_new failed: %s %s" % (SCRIPT_NAME, self.name))
 
@@ -811,7 +811,7 @@ class PopupBar(Bar):
             weechat.unhook(self._timer_hook)
         self._timer_hook = weechat.hook_timer(delay * 1000, 0, 1, callback(self._timer), '')
 
-    def _timer(self, data, counter): 
+    def _timer(self, data, counter):
         self.hide()
         self._timer_hook = ''
         return WEECHAT_RC_OK
@@ -883,8 +883,8 @@ class ChanopBuffers(object):
         return get_config_int(config, self.get_config)
 
 
-##########################
-### IRC messages queue ###
+# -----------------------------------------------------------------------------
+# IRC messages queue
 
 class Message(ChanopBuffers):
     command = None
@@ -1138,8 +1138,8 @@ class IrcCommands(ChanopBuffers):
         return '<IrcCommands(%s)>' % ', '.join(map(repr, self.commands))
 
 
-#########################
-### User/Mask classes ###
+# -----------------------------------------------------------------------------
+# User/Mask classes
 
 _rfc1459trans = string.maketrans(string.ascii_uppercase + r'\[]',
                                  string.ascii_lowercase + r'|{}')
@@ -1149,7 +1149,7 @@ def IRClower(s):
 class CaseInsensibleString(str):
     def __init__(self, s=''):
         self.lowered = IRClower(s)
-    
+
     lower    = lambda self: self.lowered
     translate = lambda self, trans: self.lowered
     __eq__   = lambda self, s: self.lowered == IRClower(s)
@@ -1271,7 +1271,7 @@ class MaskObject(object):
 
     def serialize(self):
         data = ';'.join([ self.operator,
-                          str(self.date), 
+                          str(self.date),
                           str(self.expires),
                           ','.join(self.hostmask) ])
         return data
@@ -1455,7 +1455,7 @@ class MaskSync(object):
         buffer = weechat.buffer_search('irc', 'server.%s' %server)
         if not buffer or not weechat.info_get('irc_is_channel', channel):
             # invalid server or channel
-            return 
+            return
 
         # check modes
         if mode not in supported_modes(server):
@@ -1470,7 +1470,7 @@ class MaskSync(object):
                 return
         except KeyError:
             pass
-        
+
         if not self.queue:
             self.queue.append((server, channel, mode))
             self._fetch(server, channel, mode)
@@ -1626,7 +1626,7 @@ class UserList(ServerUserList):
         if not all(ServerUserList.values(self)):
             userCache.who(self.server, self.channel)
         return sorted(ServerUserList.values(self), key=lambda x:x.seen, reverse=True)
-    
+
     def hostmasks(self, sorted=False, all=False):
         if sorted:
             users = self.values()
@@ -1743,7 +1743,7 @@ class UserCache(ServerChannelDict):
             return
 
         self._channels.add((server, channel))
-        
+
         key = ('%s.%s' %(server, channel)).lower()
         self._hook_who = weechat.hook_modifier(
                 'irc_in_352', callback(self._whoCallback), key)
@@ -1877,7 +1877,7 @@ class CommandWithOp(CommandChanop):
     def setup(self, buffer):
         self.deopNow = False
         CommandChanop.setup(self, buffer)
-    
+
     def parser(self, args):
         CommandChanop.parser(self, args)
         args = args.split()
@@ -1965,7 +1965,7 @@ class Deop(Op, CommandWithOp):
     "Removes operator privileges from yourself or users.", "[nick [nick ... ]]", ""
     command = 'odeop'
     completion = '%(nicks)'
-    
+
     prefix = '-'
     _enable_deopNow = False
 
@@ -2468,8 +2468,8 @@ class ShowBans(CommandChanop):
                                                                            mask_count))
 
 
-########################
-### Script callbacks ###
+# -----------------------------------------------------------------------------
+# Script callbacks
 
 # Decorators
 def signal_parse(f):
@@ -2625,7 +2625,7 @@ def mode_cb(server, channel, nick, opHostmask, signal_data):
     action = ''
     chanmode_list = []
     args = args.split()
-    
+
     # user channel mode, such as +v or +o, get only the letters and not the prefixes
     usermodes = ''.join(map(lambda c: c.isalpha() and c or '', prefix))
     chanmodes = chanmodes.split(',')
@@ -2715,7 +2715,7 @@ def garbage_collector_cb(data, counter):
     debug('* flushing caches')
     modeCache.purge()
     userCache.purge()
-    
+
     if weechat.config_get_plugin('debug'):
         # extra check that everything is right.
         for serv, chan in userCache:
@@ -2834,14 +2834,14 @@ def ban_mask_cmpl(users, data, completion_item, buffer, completion):
         return WEECHAT_RC_OK
 
     input, _, pattern = input.rpartition(' ')
-    
+
     global banmask_cmpl_list
     if is_hostmask(pattern):
         if not banmask_cmpl_list:
             maskList = pattern_match_list(pattern, users.hostmasks(sorted=True, all=True))
             if maskList:
                 banmask_cmpl_list = [ pattern ]
-            
+
             def add(mask):
                 if mask not in banmask_cmpl_list:
                     banmask_cmpl_list.append(mask)
