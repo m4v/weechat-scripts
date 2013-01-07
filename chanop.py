@@ -284,6 +284,7 @@ settings = {
 'kick_reason'           :'',
 'enable_multi_kick'     :'off',
 'display_affected'      :'on',
+'enable_bar'            :'on',
 }
 
 
@@ -781,6 +782,7 @@ class Bar(object):
         if pointer and self.hidden:
             weechat.bar_set(pointer, 'hidden', 'off')
             self.hidden = False
+        return pointer
 
     def hide(self):
         pointer = self.getPointer()
@@ -806,10 +808,10 @@ class PopupBar(Bar):
     popup_mode = False
 
     def popup(self, delay=5):
-        self.show()
-        if self._timer_hook:
-            weechat.unhook(self._timer_hook)
-        self._timer_hook = weechat.hook_timer(delay * 1000, 0, 1, callback(self._timer), '')
+        if self.show():
+            if self._timer_hook:
+                weechat.unhook(self._timer_hook)
+            self._timer_hook = weechat.hook_timer(delay * 1000, 0, 1, callback(self._timer), '')
 
     def _timer(self, data, counter):
         self.hide()
@@ -2754,6 +2756,15 @@ def update_chanop_watchlist_cb(data, config, value):
     chanopChannels.update([ (server, channel) for channel in L ])
     return WEECHAT_RC_OK
 
+def enable_bar_cb(data, config, value):
+    if boolDict[value]:
+        chanop_bar.new()
+        weechat.bar_item_new('chanop_ban_matches', 'item_ban_matches_cb', '')
+        weechat.bar_item_new('chanop_status', 'item_status_cb', '')
+        weechat.hook_modifier('input_text_content', 'input_content_cb', '')
+    else:
+        chanop_bar.remove()
+    return WEECHAT_RC_OK
 
 # WeeChat completions
 def cmpl_get_irc_users(f):
@@ -2802,23 +2813,29 @@ def unban_mask_cmpl(mode, completion_item, buffer, completion):
         if not maskSync.queue:
             def callback():
                 masklist = maskCache[key]
-                global chanop_bar_status
-                if masklist:
-#                    say('Got %s +%s masks.' % (len(masklist), mode), buffer)
-                    chanop_bar_status = 'Got %s +%s masks.' % (len(masklist), mode)
+                if chanop_bar:
+                    global chanop_bar_status
+                    if masklist:
+                        chanop_bar_status = 'Got %s +%s masks.' % (len(masklist), mode)
+                    else:
+                        chanop_bar_status = 'No +%s masks found.' % mode
+                    chanop_bar.popup()
+                    weechat.bar_item_update('chanop_status')
                 else:
- #                   say('No +%s masks found.' % mode, buffer)
-                    chanop_bar_status = 'No +%s masks found.' % mode
-                weechat.bar_item_update('chanop_status')
-                chanop_bar.popup()
+                    if masklist:
+                        say('Got %s +%s masks.' % (len(masklist), mode), buffer)
+                    else:
+                       say('No +%s masks found.' % mode, buffer)
                 cmpl_unban(masklist)
 
             maskSync.fetch(server, channel, mode, callback)
-  #          say('Fetching +%s masks in %s, please wait...' %(mode, channel), buffer)
-            global chanop_bar_status
-            chanop_bar_status = 'Fetching +%s masks in %s, please wait...' %(mode, channel)
-            weechat.bar_item_update('chanop_status')
-            chanop_bar.popup()
+            if chanop_bar:
+                global chanop_bar_status
+                chanop_bar_status = 'Fetching +%s masks in %s, please wait...' %(mode, channel)
+                weechat.bar_item_update('chanop_status')
+                chanop_bar.popup()
+            else:
+                say('Fetching +%s masks in %s, please wait...' %(mode, channel), buffer)
     else:
         # mask list is up to date, do completion
         cmpl_unban(maskCache[key])
@@ -3002,9 +3019,17 @@ chanop_bar_status = ''
 def item_status_cb(data, item, window):
     global chanop_bar_status
     if chanop_bar_status:
-        return "[%s] %s" % (SCRIPT_NAME, chanop_bar_status)
+        return "%s[%s%s%s]%s %s" % (COLOR_BAR_DELIM,
+                                    COLOR_BAR_FG, 
+                                    SCRIPT_NAME,
+                                    COLOR_BAR_DELIM,
+                                    color_reset,
+                                    chanop_bar_status)
     else:
-        return "[%s]" % SCRIPT_NAME
+        return "%s[%s%s%s]" % (COLOR_BAR_DELIM,
+                               COLOR_BAR_FG,
+                               SCRIPT_NAME,
+                               COLOR_BAR_DELIM)
 
 @catchExceptions
 def input_content_cb(data, modifier, modifier_data, string):
@@ -3055,6 +3080,8 @@ if __name__ == '__main__' and import_ok and \
     color_reset     = weechat.color('reset')
     COLOR_WHITE     = weechat.color('white')
     COLOR_DARKGRAY  = weechat.color('darkgray')
+    COLOR_BAR_DELIM = weechat.color('bar_delim')
+    COLOR_BAR_FG    = weechat.color('bar_fg')
 
     # pretty [chanop]
     script_nick = '%s[%s%s%s]%s' %(color_delimiter,
@@ -3161,6 +3188,9 @@ if __name__ == '__main__' and import_ok and \
             'enable_multi_kick_conf_cb', '')
     weechat.hook_config('plugins.var.python.%s.watchlist.*' % SCRIPT_NAME,
             'update_chanop_watchlist_cb', '')
+    weechat.hook_config('plugins.var.python.%s.enable_bar' % SCRIPT_NAME,
+            'enable_bar_cb', '')
+
 
     weechat.hook_completion('chanop_unban_mask', 'channelmode b masks', 'unban_mask_cmpl', 'b')
     weechat.hook_completion('chanop_unquiet_mask', 'channelmode q masks', 'unban_mask_cmpl', 'q')
@@ -3178,13 +3208,15 @@ if __name__ == '__main__' and import_ok and \
     # run our cleaner function every 30 min.
     weechat.hook_timer(1000 * 60 * 30, 0, 0, 'garbage_collector_cb', '')
 
-    # TODO add option for disable bar
-    chanop_bar = PopupBar('chanop_bar', hidden=True, items='chanop_status,chanop_ban_matches')
-    chanop_bar.new()
-
-    weechat.bar_item_new('chanop_ban_matches', 'item_ban_matches_cb', '')
-    weechat.bar_item_new('chanop_status', 'item_status_cb', '')
-    weechat.hook_modifier('input_text_content', 'input_content_cb', '')
+    chanop_bar = PopupBar('chanop_bar', hidden=True, 
+            items='chanop_status,chanop_ban_matches')
+    if get_config_boolean('enable_bar'):
+        chanop_bar.new()
+        weechat.bar_item_new('chanop_ban_matches', 'item_ban_matches_cb', '')
+        weechat.bar_item_new('chanop_status', 'item_status_cb', '')
+        weechat.hook_modifier('input_text_content', 'input_content_cb', '')
+    else:
+        chanop_bar.remove()
 
     weechat.hook_info("chanop_hostmask_from_nick",
             "Returns nick's hostmask if is known. Returns '' otherwise.",
