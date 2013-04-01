@@ -129,6 +129,12 @@
 #     This also applies to /obankick command, multiple bankicks would be enabled.
 #     Valid values: 'on', 'off' Default: 'off'
 #
+#   * plugins.var.python.chanop.enable_bar:
+#     This will enable a pop-up bar for displaying chanop messages that would 
+#     otherwise be printed in the buffer. This bar also shows in realtime the
+#     users affected by a ban you're about to set.
+#     Valid values: 'on', 'off' Default: 'on'
+#
 #
 #   The following configs are defined per server and are updated by the script only.
 #
@@ -177,8 +183,7 @@
 #
 #
 #   TODO
-#   * use dedicated config file like in urlgrab.py
-#    (win free config value validation by WeeChat)
+#   * use dedicated config file like in urlgrab.py?
 #   * ban expire time
 #   * save ban.mask and ban.hostmask across reloads
 #   * allow to override quiet command (for quiet with ChanServ)
