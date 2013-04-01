@@ -807,7 +807,7 @@ class PopupBar(Bar):
     _timer_hook = ''
     popup_mode = False
 
-    def popup(self, delay=5):
+    def popup(self, delay=10):
         if self.show():
             if self._timer_hook:
                 weechat.unhook(self._timer_hook)
@@ -2042,34 +2042,34 @@ class MultiKick(Kick):
         else:
             self.irc.clear()
 
+ban_help = \
+"Mask options:\n"\
+" -h  --host: Match hostname (*!*@host)\n"\
+" -n  --nick: Match nick     (nick!*@*)\n"\
+" -u  --user: Match username (*!user@*)\n"\
+" -e --exact: Use exact hostmask.\n"\
+"\n"\
+"If no mask options are supplied, configured defaults are used.\n"\
+"\n"\
+"Completer:\n"\
+"%(script)s will attempt to guess a complete banmask from current\n"\
+"users when using <tab> in an incomplete banmask. Using <tab> in a\n"\
+"complete banmask will generate variations of it. \n"\
+"\n"\
+"Examples:\n"\
+" /%(cmd)s somebody --user --host\n"\
+"   will ban with *!user@hostname mask.\n"\
+" /%(cmd)s nick!*@<tab>\n"\
+"   will autocomple with 'nick!*@host'.\n"\
+" /%(cmd)s nick!*@*<tab>\n"\
+"   will cycle through different banmask variations for the same user.\n"
 
 class Ban(CommandWithOp):
     description = "Ban user or hostmask."
     usage = \
     "<nick|mask> [<nick|mask> ... ] [ [--host] [--user] [--nick] | --exact ]"
-    help = \
-    "Mask options:\n"\
-    " -h  --host: Match hostname (*!*@host)\n"\
-    " -n  --nick: Match nick     (nick!*@*)\n"\
-    " -u  --user: Match username (*!user@*)\n"\
-    " -e --exact: Use exact hostmask.\n"\
-    "\n"\
-    "If no mask options are supplied, configured defaults are used.\n"\
-    "\n"\
-    "Completer:\n"\
-    "%(script)s will attempt to guess a complete banmask from current\n"\
-    "users when using <tab> in an incomplete banmask. Using <tab> in a\n"\
-    "complete banmask will generate variations of it. \n"\
-    "\n"\
-    "Examples:\n"\
-    "/oban somebody --user --host\n"\
-    "  will ban with *!user@hostname mask.\n"\
-    "If channel has an user \"nick!~c0a80001@gateway/web/freenode/ip.192.168.0.1\":\n"\
-    " /oban nick!*@<tab>\n"\
-    " /oban nick!*@gateway/web/freenode/ip.192.168.0.1<tab>\n"\
-    " /oban *!*@gateway/web/freenode/ip.192.168.0.1<tab>\n"\
-    " /oban *!*@*192.168.0.1\n" % {'script': SCRIPT_NAME}
     command = 'oban'
+    help = ban_help % {'script': SCRIPT_NAME, 'cmd': command}
     completion = '%(chanop_nicks)|%(chanop_ban_mask)|%*'
 
     banmask = []
@@ -2221,8 +2221,9 @@ class UnBan(Ban):
 
 class Quiet(Ban):
     description = "Silence user or hostmask."
-    help = "This command is only for networks that support channel mode 'q'. See /help oban as well."
     command = 'oquiet'
+    help = "This command is only for networks that support channel mode 'q'.\n\n" \
+            + ban_help % {'script': SCRIPT_NAME, 'cmd': command}
     completion = '%(chanop_nicks)|%(chanop_ban_mask)|%*'
 
     mode = 'q'
@@ -2766,7 +2767,9 @@ def enable_bar_cb(data, config, value):
         chanop_bar.remove()
     return WEECHAT_RC_OK
 
-# WeeChat completions
+# -----------------------------------------------------------------------------
+# Completers
+
 def cmpl_get_irc_users(f):
     """Check if completion is done in a irc channel, and pass the buffer's user list."""
     @catchExceptions
