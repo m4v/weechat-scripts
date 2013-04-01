@@ -2985,23 +2985,22 @@ def item_ban_matches_cb(data, item, window):
 
     command, _, content = input.partition(' ')
 
-    def affects(msg, L=None):
-        if L:
-            s = ' '.join([ get_nick(h) for h in L ])
-        else:
-            s = ''
-        return '%s affects: %s%s' % (command, msg, s)
+    if command[1:] not in ('oban', 'oquiet'):
+        return ''
+
+    def format(s):
+        return '%s affects: %s' % (command, s)
 
     channel = weechat.buffer_get_string(buffer, 'localvar_channel')
     if not channel or not is_channel(channel):
-        return affects('(not an IRC channel)')
+        return format('(not an IRC channel)')
 
     server = weechat.buffer_get_string(buffer, 'localvar_server')
     users = userCache[server, channel]
     content = content.split()
     masks = [ mask for mask in content if is_hostmask(mask) or is_nick(mask) ]
     if not masks:
-        return affects('(no valid user mask or nick)')
+        return format('(no valid user mask or nick)')
 
     #debug('ban matches item: %s', masks)
 
@@ -3015,8 +3014,10 @@ def item_ban_matches_cb(data, item, window):
     #debug('ban matches item: %s', affected)
 
     if not affected:
-        return affects('(nobody)')
-    return affects('(%s) ' % len(affected), affected)
+        return format('(nobody)')
+
+    L = set([ get_nick(h) for h in affected ])
+    return format('(%s) %s' % (len(L), ' '.join(L)))
 
 chanop_bar_status = ''
 def item_status_cb(data, item, window):
