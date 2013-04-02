@@ -319,22 +319,21 @@ script_nick = SCRIPT_NAME
 def error(s, buffer=''):
     """Error msg"""
     prnt(buffer, '%s%s %s' % (weechat.prefix('error'), script_nick, s))
-    if weechat.config_get_plugin('debug'):
+    value = weechat.config_get_plugin('debug')
+    if value and boolDict[value]:
         import traceback
         if traceback.sys.exc_type:
             trace = traceback.format_exc()
             prnt('', trace)
 
-def debug(s, *args):
-    if not isinstance(s, str):
-        s = str(s)
-    if args:
-        s = s % args
-    prnt('', '%s\t%s' % (script_nick, s))
-
 def say(s, buffer=''):
     """normal msg"""
     prnt(buffer, '%s\t%s' %(script_nick, s))
+
+def _debug_nop(*args):
+    pass
+
+debug = _debug_nop
 
 # -----------------------------------------------------------------------------
 # Config
@@ -2733,8 +2732,9 @@ def garbage_collector_cb(data, counter):
 
     return WEECHAT_RC_OK
 
-
+# -----------------------------------------------------------------------------
 # Config callbacks
+
 def enable_multi_kick_conf_cb(data, config, value):
     global cmd_kick, cmd_bankick
     cmd_kick.unhook()
@@ -2770,6 +2770,32 @@ def enable_bar_cb(data, config, value):
         weechat.hook_modifier('input_text_content', 'input_content_cb', '')
     else:
         chanop_bar.remove()
+    return WEECHAT_RC_OK
+
+def enable_debug_cb(data, config, value):
+    global debug
+    if value and boolDict[value]:
+        try:
+            # custom debug module I use, allows me to inspect script's objects.
+            import pybuffer
+            debug = pybuffer.debugBuffer(globals(), '%s_debug' % SCRIPT_NAME)
+            weechat.buffer_set(debug._getBuffer(), 'localvar_set_no_log', '0')
+        except:
+            def debug(s, *args):
+                if not isinstance(s, str):
+                    s = str(s)
+                if args:
+                    s = s % args
+                prnt('', '%s\t%s' % (script_nick, s))
+    else:
+        try:
+            if hasattr(debug, 'close'):
+                debug.close()
+        except NameError:
+            pass
+
+        debug = _debug_nop
+
     return WEECHAT_RC_OK
 
 # -----------------------------------------------------------------------------
@@ -3102,18 +3128,8 @@ if __name__ == '__main__' and import_ok and \
     # -------------------------------------------------------------------------
     # Debug
 
-    if weechat.config_get_plugin('debug'):
-        try:
-            # custom debug module I use, allows me to inspect script's objects.
-            import pybuffer
-            debug = pybuffer.debugBuffer(globals(), '%s_debug' % SCRIPT_NAME)
-            weechat.buffer_set(debug._getBuffer(), 'localvar_set_no_log', '0')
-        except:
-            pass
-    else:
-        # disable debug msg
-        def debug(*args):
-            pass
+    enable_debug_cb('', '', weechat.config_get_plugin('debug'))
+    weechat.hook_config('plugins.var.python.%s.debug' % SCRIPT_NAME, 'enable_debug_cb', '')
 
     # -------------------------------------------------------------------------
     # Init
@@ -3199,7 +3215,6 @@ if __name__ == '__main__' and import_ok and \
             'update_chanop_watchlist_cb', '')
     weechat.hook_config('plugins.var.python.%s.enable_bar' % SCRIPT_NAME,
             'enable_bar_cb', '')
-
 
     weechat.hook_completion('chanop_unban_mask', 'channelmode b masks', 'unban_mask_cmpl', 'b')
     weechat.hook_completion('chanop_unquiet_mask', 'channelmode q masks', 'unban_mask_cmpl', 'q')
