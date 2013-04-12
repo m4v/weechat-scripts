@@ -1531,7 +1531,11 @@ class MaskSync(object):
         for banmask, op, date in self._maskbuffer[server, channel]:
             maskCache.add(server, channel, banmask, operator=op, date=date)
         del self._maskbuffer[server, channel]
-        maskCache[server, channel].synced = now()
+        try:
+            maskList = maskCache[server, channel]
+        except KeyError:
+            maskList = maskCache[server, channel] = MaskList(server, channel)
+        maskList.synced = now()
 
         # run hooked functions if any
         if (server, channel) in self._callback:
