@@ -194,8 +194,8 @@
 #
 #
 #   History:
-#   DATE
-#   version 0.3-dev:
+#   2013-04-14
+#   version 0.3:
 #   * cycle between different banmasks in /oban /oquiet commands.
 #   * added pop-up bar for show information.
 #   * save ban mask information (date and operator)
@@ -275,11 +275,11 @@ WEECHAT_VERSION = (0x30200, '0.3.2')
 
 SCRIPT_NAME    = "chanop"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.3-dev"
+SCRIPT_VERSION = "0.3"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Helper script for IRC Channel Operators"
 
-### default settings ###
+# default settings
 settings = {
 'op_command'            :'/msg chanserv op $channel $nick',
 'autodeop'              :'on',
@@ -291,7 +291,6 @@ settings = {
 'display_affected'      :'on',
 'enable_bar'            :'on',
 }
-
 
 try:
     import weechat
@@ -330,10 +329,10 @@ def say(s, buffer=''):
     """normal msg"""
     prnt(buffer, '%s\t%s' %(script_nick, s))
 
-def _debug_nop(*args):
+def _no_debug(*args):
     pass
 
-debug = _debug_nop
+debug = _no_debug
 
 # -----------------------------------------------------------------------------
 # Config
@@ -403,7 +402,6 @@ def get_config_specific(config, server='', channel=''):
         value = weechat.config_get_plugin(config)
     return value
 
-
 # -----------------------------------------------------------------------------
 # Utils
 
@@ -441,7 +439,6 @@ def time_elapsed(elapsed, ret=None, level=2):
 
     ret = time_elapsed(elapsed, ret, level)
     return ret
-
 
 # -----------------------------------------------------------------------------
 # IRC utils
@@ -681,20 +678,17 @@ class Infolist(object):
             weechat.infolist_free(self.pointer)
             self.pointer = ''
 
-
 def nick_infolist(server, channel):
     try:
         return Infolist('irc_nick', '%s,%s' % (server, channel))
     except:
         raise InvalidIRCBuffer('%s.%s' % (server, channel))
 
-
 class NoArguments(Exception):
     pass
 
 class ArgumentError(Exception):
     pass
-
 
 class Command(object):
     """Class for hook WeeChat commands."""
@@ -756,7 +750,6 @@ class Command(object):
             weechat.unhook(self._pointer)
             self._pointer = ''
             self._callback = ''
-
 
 class Bar(object):
     def __init__(self, name, hidden=False, items=''):
@@ -843,7 +836,6 @@ class BufferVariables(dict):
         debug(' -- buffer[%s] %s ... %s => %s', self.buffer, k, self.get(k), v)
         self[k] = v
 
-
 class ChanopBuffers(object):
     """Keeps track of BuffersVariables instances in chanop."""
     buffer = ''
@@ -888,7 +880,6 @@ class ChanopBuffers(object):
     def get_config_int(self, config):
         return get_config_int(config, self.get_config)
 
-
 # -----------------------------------------------------------------------------
 # IRC messages queue
 
@@ -924,7 +915,6 @@ class Message(ChanopBuffers):
 
     def __repr__(self):
         return '<Message(%s, %s)>' %(self.command, self.args)
-
 
 class IrcCommands(ChanopBuffers):
     """Class that manages and sends the script's commands to WeeChat."""
@@ -1143,7 +1133,6 @@ class IrcCommands(ChanopBuffers):
     def __repr__(self):
         return '<IrcCommands(%s)>' % ', '.join(map(repr, self.commands))
 
-
 # -----------------------------------------------------------------------------
 # User/Mask classes
 
@@ -1162,14 +1151,12 @@ class CaseInsensibleString(str):
     __ne__   = lambda self, s: not self == s
     __hash__ = lambda self: hash(self.lowered)
 
-
 def caseInsensibleKey(k):
     if isinstance(k, str):
         return CaseInsensibleString(k)
     elif isinstance(k, tuple):
         return tuple(map(caseInsensibleKey, k))
     return k
-
 
 class CaseInsensibleDict(dict):
     key = staticmethod(caseInsensibleKey)
@@ -1193,10 +1180,8 @@ class CaseInsensibleDict(dict):
     def pop(self, k):
         return dict.pop(self, self.key(k))
 
-
 class CaseInsensibleDefaultDict(defaultdict, CaseInsensibleDict):
     pass
-
 
 class CaseInsensibleSet(set):
     normalize = staticmethod(caseInsensibleKey)
@@ -1216,7 +1201,6 @@ class CaseInsensibleSet(set):
 
     def remove(self, v):
         set.remove(self, self.normalize(v))
-
 
 class ChannelWatchlistSet(CaseInsensibleSet):
     _updated = False
@@ -1240,7 +1224,6 @@ class ChannelWatchlistSet(CaseInsensibleSet):
             self.update([ (server, channel) for channel in channels ])
 
 chanopChannels = ChannelWatchlistSet()
-
 
 class ServerChannelDict(CaseInsensibleDict):
     def getChannels(self, server, item=None):
@@ -1309,7 +1292,6 @@ class MaskObject(object):
     def __repr__(self):
         return "<MaskObject(%s)>" % self.mask
 
-
 class MaskList(CaseInsensibleDict):
     """Single list of masks"""
     def __init__(self, server, channel):
@@ -1343,7 +1325,6 @@ class MaskList(CaseInsensibleDict):
     def purge(self):
         pass
 
-
 class MaskCache(ServerChannelDict):
     """Keeps a cache of masks for different channels."""
     def add(self, server, channel, mask, **kwargs):
@@ -1365,12 +1346,10 @@ class MaskCache(ServerChannelDict):
         except KeyError:
             pass
 
-
 class ChanopCache(Shelf):
     def __init__(self, filename):
         path = os.path.join(weechat.info_get('weechat_dir', ''), filename)
         Shelf.__init__(self, path, writeback=True)
-
 
 class ModeCache(ChanopCache):
     """class for store channel modes lists."""
@@ -1412,7 +1391,6 @@ class ModeCache(ChanopCache):
     def purge(self):
         for cache in self.values():
             cache.purge()
-
 
 class MaskSync(object):
     """Class for fetch and sync bans of any channel and mode."""
@@ -1587,7 +1565,6 @@ class UserObject(object):
     def __repr__(self):
         return '<UserObject(%s)>' %(self.hostmask or self.nick)
 
-
 class ServerUserList(CaseInsensibleDict):
     def __init__(self, server):
         self.server = server
@@ -1606,7 +1583,6 @@ class ServerUserList(CaseInsensibleDict):
             if user._channels < 1 and (n - user.seen) > self._purge_time:
                 #debug('purging old user: %s' % nick)
                 del self[nick]
-
 
 class UserList(ServerUserList):
     def __init__(self, server, channel):
@@ -1675,7 +1651,6 @@ class UserList(ServerUserList):
                     del self[nick]
                 except KeyError:
                     pass
-
 
 class UserCache(ServerChannelDict):
     __name__ = ''
@@ -1866,7 +1841,6 @@ class CommandChanop(Command, ChanopBuffers):
         for nick in nicks:
             self.irc.Mode(mode, nick)
 
-
 class CommandWithOp(CommandChanop):
     """Base class for all the commands that requires op status for work."""
     _enable_deopNow = True
@@ -1938,7 +1912,6 @@ class CommandWithOp(CommandChanop):
         vars.deopHook = None
         return WEECHAT_RC_OK
 
-
 # Chanop commands
 class Op(CommandChanop):
     description, usage = "Request operator privileges or give it to users.", "[nick [nick ... ]]",
@@ -1969,7 +1942,6 @@ class Op(CommandChanop):
                 if self.inChannel(nick) and not self.has_op(nick):
                     self.set_mode(nick)
 
-
 class Deop(Op, CommandWithOp):
     description, usage, help = \
     "Removes operator privileges from yourself or users.", "[nick [nick ... ]]", ""
@@ -1995,7 +1967,6 @@ class Deop(Op, CommandWithOp):
     def execute_op(self, nicks):
         self.set_mode(*nicks)
 
-
 class Kick(CommandWithOp):
     description, usage = "Kick nick.", "<nick> [<reason>]"
     help = \
@@ -2012,7 +1983,6 @@ class Kick(CommandWithOp):
         else:
             say("Nick not in %s (%s)" % (self.channel, nick), self.buffer)
             self.irc.clear()
-
 
 class MultiKick(Kick):
     description = "Kick one or more nicks."
@@ -2181,7 +2151,6 @@ class Ban(CommandWithOp):
         for mask in banmasks:
             self.irc.Mode(mode, mask, **kwargs)
 
-
 class UnBan(Ban):
     description, usage = "Remove bans.", "<nick|mask> [<nick|mask> ... ]"
     command = 'ounban'
@@ -2226,7 +2195,6 @@ class UnBan(Ban):
                 banmasks.append(arg)
         self.ban(*banmasks)
 
-
 class Quiet(Ban):
     description = "Silence user or hostmask."
     command = 'oquiet'
@@ -2236,7 +2204,6 @@ class Quiet(Ban):
 
     mode = 'q'
 
-
 class UnQuiet(UnBan):
     command = 'ounquiet'
     description = "Remove quiets."
@@ -2244,7 +2211,6 @@ class UnQuiet(UnBan):
     completion = '%(chanop_unquiet_mask)|%(chanop_nicks)|%*'
 
     mode = 'q'
-
 
 class BanKick(Ban, Kick):
     description = "Bankicks nick."
@@ -2267,7 +2233,6 @@ class BanKick(Ban, Kick):
         self.ban(banmask)
         if self.inChannel(nick):
             self.irc.Kick(nick, reason, wait=1)
-
 
 class MultiBanKick(BanKick):
     description = "Bankicks one or more nicks."
@@ -2300,7 +2265,6 @@ class MultiBanKick(BanKick):
                 self.deop_delay += 1
                 self.irc.Kick(nick, reason, wait=1)
 
-
 class Topic(CommandWithOp):
     description, usage = "Changes channel topic.", "[-delete | topic]"
     help = "Clear topic if '-delete' is the new topic."
@@ -2309,7 +2273,6 @@ class Topic(CommandWithOp):
 
     def execute_op(self):
         self.irc.queue(Message('/topic %s' %self.args))
-
 
 class Voice(CommandWithOp):
     description, usage, help = "Gives voice to somebody.", "nick [nick ... ]", ""
@@ -2324,7 +2287,6 @@ class Voice(CommandWithOp):
             if self.inChannel(nick) and not self.has_voice(nick):
                 self.set_mode(nick)
 
-
 class DeVoice(Voice):
     description = "Removes voice from somebody."
     command = 'odevoice'
@@ -2333,7 +2295,6 @@ class DeVoice(Voice):
 
     def has_voice(self, nick):
         return not Voice.has_voice(self, nick)
-
 
 class Mode(CommandWithOp):
     description, usage, help = "Changes channel modes.", "<channel modes>", ""
@@ -2356,7 +2317,6 @@ class Mode(CommandWithOp):
 
         for mode, arg in L:
             self.irc.Mode(mode, arg)
-
 
 class ShowBans(CommandChanop):
     description, usage, help = "Lists bans or quiets of a channel.", "(bans|quiets) [channel]", ""
@@ -2477,7 +2437,6 @@ class ShowBans(CommandChanop):
                                                                            key[0],
                                                                            key[1],
                                                                            mask_count))
-
 
 # -----------------------------------------------------------------------------
 # Script callbacks
@@ -2717,7 +2676,6 @@ def nick_cb(server, channels, oldNick, oldHostmask, signal_data):
         userCache[server, channel][newNick] = user
     return WEECHAT_RC_OK
 
-
 # Garbage collector
 def garbage_collector_cb(data, counter):
     """This takes care of purging users and masks from channels not in watchlist, and
@@ -2798,7 +2756,7 @@ def enable_debug_cb(data, config, value):
         except NameError:
             pass
 
-        debug = _debug_nop
+        debug = _no_debug
 
     return WEECHAT_RC_OK
 
@@ -2974,7 +2932,6 @@ def users_cmpl(users, data, completion_item, buffer, completion):
         user = get_user(hostmask)
         weechat.hook_completion_list_add(completion, user, 0, weechat.WEECHAT_LIST_POS_END)
     return WEECHAT_RC_OK
-
 
 # info hooks
 def info_hostmask_from_nick(data, info_name, arguments):
