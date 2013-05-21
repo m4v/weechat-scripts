@@ -1475,8 +1475,12 @@ class MaskSync(object):
     def _maskCallback(self, data, modifier, modifier_data, string):
         """callback for store a single mask."""
         #debug("MASK %s: %s %s", modifier, modifier_data, string)
-        server, channel, mode = self.queue[0]
         args = string.split()
+        if self.queue:
+            server, channel, _ = self.queue[0]
+        else:
+            server, channel = modifier_data, args[3]
+
         if modifier == 'irc_in_367':
             try:
                 mask, op, date = args[4:]
@@ -1495,7 +1499,18 @@ class MaskSync(object):
     def _endCallback(self, data, modifier, modifier_data, string):
         """callback for end of channel's mask list."""
         #debug("MASK END %s: %s %s", modifier, modifier_data, string)
-        server, channel, mode = self.queue.pop(0)
+        if self.queue:
+            server, channel, mode = self.queue.pop(0)
+        else:
+            args = string.split()
+            server, channel = modifier_data, args[3]
+            if modifier == 'irc_in_368':
+                mode = args[7]
+            elif modifier == 'irc_in_729':
+                mode = args[4]
+            else:
+                return string
+
         maskCache = modeCache[mode]
 
         # delete old masks in cache
