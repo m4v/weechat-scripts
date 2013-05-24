@@ -2356,15 +2356,7 @@ class ShowBans(CommandChanop):
         except KeyError:
             raise ValueError('incorrect argument')
 
-        if mode not in supported_modes(self.server):
-            self.clear()
-            self.prnt("\n%sNetwork '%s' doesn't support %s" % (color_channel,
-                                                               self.server,
-                                                               type))
-            raise NoArguments
-
         self.mode = mode
-        self.maskCache = modeCache[mode]
         # fix self.type so is "readable" (ie, 'bans' instead of 'b')
         if mode == 'b':
             self.type = 'bans'
@@ -2377,6 +2369,7 @@ class ShowBans(CommandChanop):
     def get_buffer(self):
         if self.showbuffer:
             return self.showbuffer
+
         buffer = weechat.buffer_search('python', SCRIPT_NAME)
         if not buffer:
             buffer = weechat.buffer_new(SCRIPT_NAME, '', '', '', '')
@@ -2420,13 +2413,22 @@ class ShowBans(CommandChanop):
 
     def execute(self):
         self.showbuffer = ''
+        if self.mode not in supported_modes(self.server):
+            self.clear()
+            self.prnt("\n%sNetwork '%s' doesn't support %s" % (color_channel,
+                                                               self.server,
+                                                               self.type))
+            return
+
+        maskCache = modeCache[self.mode]
         key = (self.server, self.channel)
         try:
-            masklist = self.maskCache[key]
+            masklist = maskCache[key]
         except KeyError:
             if not (weechat.info_get('irc_is_channel', key[1]) and self.server):
                 error("Command /%s must be used in an IRC buffer." % self.command)
                 return
+
             masklist = None
         self.clear()
         mask_count = 0
