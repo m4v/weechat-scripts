@@ -194,6 +194,11 @@
 #
 #
 #   History:
+#   2013-05-24
+#   version 0.3.1: bug fixes
+#   * fix exceptions while fetching bans with /mode
+#   * fix crash with /olist command in networks that don't support +q channel masks.
+#
 #   2013-04-14
 #   version 0.3:
 #   * cycle between different banmasks in /oban /oquiet commands.
@@ -275,7 +280,7 @@ WEECHAT_VERSION = (0x30200, '0.3.2')
 
 SCRIPT_NAME    = "chanop"
 SCRIPT_AUTHOR  = "Elián Hanisch <lambdae2@gmail.com>"
-SCRIPT_VERSION = "0.3"
+SCRIPT_VERSION = "0.3.1"
 SCRIPT_LICENSE = "GPL3"
 SCRIPT_DESC    = "Helper script for IRC Channel Operators"
 
