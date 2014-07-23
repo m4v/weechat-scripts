@@ -234,10 +234,10 @@ def playback_cb(data, modifier, modifier_data, string):
                                      WEECHAT_HOOK_SIGNAL_STRING,
                                      ":%s JOIN :%s" % (hostmask, channel))
 
-    elif line == 'parted':
+    elif line.startswith('parted with message:'):
         tags.add('irc_part')
-        # buffextras doesn't seem to send the part's reason.
-        s = weechat.gettext("%s%s%s%s%s%s%s%s%s%s has left %s%s%s")
+        reason = line[line.find('[') + 1:-1]
+        s = weechat.gettext("%s%s%s%s%s%s%s%s%s%s has quit %s(%s%s%s)")
         s = s %(weechat.prefix('quit'),
                 COLOR_CHAT_NICK,
                 nick,
@@ -248,14 +248,15 @@ def playback_cb(data, modifier, modifier_data, string):
                 COLOR_CHAT_DELIMITERS,
                 ')',
                 COLOR_MESSAGE_QUIT,
-                COLOR_CHAT_CHANNEL,
-                channel,
-                COLOR_MESSAGE_QUIT)
+                COLOR_CHAT_DELIMITERS,
+                COLOR_REASON_QUIT,
+                reason,
+                COLOR_CHAT_DELIMITERS)
 
         if send_signals:
             weechat.hook_signal_send(server + ",irc_in_PART", 
                                      WEECHAT_HOOK_SIGNAL_STRING,
-                                     ":%s PART %s" % (hostmask, channel))
+                                     ":%s PART %s :%s" % (hostmask, channel, reason))
 
     elif line.startswith('quit with message:'):
         tags.add('irc_quit')
