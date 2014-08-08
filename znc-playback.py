@@ -237,7 +237,7 @@ def playback_cb(data, modifier, modifier_data, string):
     elif line.startswith('parted with message:'):
         tags.add('irc_part')
         reason = line[line.find('[') + 1:-1]
-        s = weechat.gettext("%s%s%s%s%s%s%s%s%s%s has quit %s(%s%s%s)")
+        s = weechat.gettext("%s%s%s%s%s%s%s%s%s%s has left %s(%s%s%s)")
         s = s %(weechat.prefix('quit'),
                 COLOR_CHAT_NICK,
                 nick,
