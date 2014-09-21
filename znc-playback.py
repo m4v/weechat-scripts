@@ -134,7 +134,7 @@ def playback_cb(data, modifier, modifier_data, string):
     if 'nick_***' in tags:
         global current_playback
         line = string.partition('\t')[2]
-        if line == 'Buffer Playback...':
+        if line in ['Buffer Playback...', 'Backlog playback...']:
             weechat.hook_signal_send("znc-playback-start",
                                      WEECHAT_HOOK_SIGNAL_STRING,
                                      buffer_name)
