@@ -44,8 +44,8 @@ try:
     from weechat import WEECHAT_RC_OK, WEECHAT_HOOK_SIGNAL_STRING, prnt_date_tags, prnt
     import_ok = True
 except ImportError:
-    print "This script must be run under WeeChat."
-    print "Get WeeChat now at: http://www.weechat.org/"
+    print("This script must be run under WeeChat.")
+    print("Get WeeChat now at: http://www.weechat.org/")
     import_ok = False
 
 import re
@@ -98,7 +98,7 @@ def catchExceptions(f):
     def function(*args, **kwargs):
         try:
             return f(*args, **kwargs)
-        except Exception, e:
+        except Exception as e:
             error(e)
     return function
 
@@ -181,7 +181,7 @@ def playback_cb(data, modifier, modifier_data, string):
 
     try:
         t = time.strptime(timestamp, znc_timestamp)
-    except ValueError, e:
+    except ValueError as e:
         # bad time format.
         error(e)
         debug("Timestamp error: %s\n%s" % (modifier_data, string))
@@ -459,7 +459,7 @@ if __name__ == '__main__' and import_ok and \
                                     COLOR_RESET)
 
     # settings
-    for opt, val in settings.iteritems():
+    for opt, val in settings.items():
         if not weechat.config_is_set_plugin(opt):
             weechat.config_set_plugin(opt, val)
 
@@ -479,7 +479,7 @@ if __name__ == '__main__' and import_ok and \
             debug = pybuffer.debugBuffer(globals(), '%s_debug' % SCRIPT_NAME)
         except:
             def debug(s, *args):
-                if not isinstance(s, basestring):
+                if not isinstance(s, str):
                     s = str(s)
                 if args:
                     s = s %args
