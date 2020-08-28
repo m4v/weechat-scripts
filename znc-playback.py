@@ -234,7 +234,7 @@ def playback_cb(data, modifier, modifier_data, string):
                                      WEECHAT_HOOK_SIGNAL_STRING,
                                      ":%s JOIN :%s" % (hostmask, channel))
 
-    elif line.startswith('parted with message:'):
+    elif line.startswith('parted with message:') or line.startswith('parted:'):
         tags.add('irc_part')
         reason = line[line.find('[') + 1:-1]
         if reason:
@@ -282,7 +282,7 @@ def playback_cb(data, modifier, modifier_data, string):
                                          WEECHAT_HOOK_SIGNAL_STRING,
                                          ":%s PART %s" % (hostmask, channel))
 
-    elif line.startswith('quit with message:'):
+    elif line.startswith('quit with message:') or line.startswith('quit:'):
         tags.add('irc_quit')
         reason = line[line.find('[') + 1:-1]
         s = weechat.gettext("%s%s%s%s%s%s%s%s%s%s has quit %s(%s%s%s)")
